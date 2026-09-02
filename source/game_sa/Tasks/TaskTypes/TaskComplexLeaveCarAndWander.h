@@ -27,7 +27,7 @@ public:
 
     CTask* CreateSubTask(eTaskType taskType);
 
-    CTask*    Clone() const override { return new CTaskComplexLeaveCarAndWander{ *this }; }
+    CTask*    Clone() const override { return new CTaskComplexLeaveCarAndWander(m_veh, m_door, m_leaveDelayMs, m_bSensibleLeaveCar); } // 0x63DAD0
     eTaskType GetTaskType() const override { return Type; }
     CTask*    CreateNextSubTask(CPed* ped) override;
     CTask*    CreateFirstSubTask(CPed* ped) override;
