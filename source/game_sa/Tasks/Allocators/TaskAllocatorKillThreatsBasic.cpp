@@ -69,7 +69,73 @@ CTaskAllocator* CTaskAllocatorKillThreatsBasic::ProcessGroup(CPedGroupIntelligen
 
 // 0x69C850
 void CTaskAllocatorKillThreatsBasic::ComputeClosestPeds(CPedGroup& group1, CPedGroup& group2, CPed** peds) {
-    plugin::Call<0x69C850, CPedGroup&, CPedGroup&, CPed**>(group1, group2, peds);
+    std::fill_n(peds, TOTAL_PED_GROUP_MEMBERS, nullptr);
+
+    float distSq[TOTAL_PED_GROUP_MEMBERS][TOTAL_PED_GROUP_MEMBERS];
+    rng::fill(distSq[0], distSq[0] + TOTAL_PED_GROUP_MEMBERS * TOTAL_PED_GROUP_MEMBERS, std::numeric_limits<float>::max());
+
+    for (auto i = 0; i < TOTAL_PED_GROUP_MEMBERS; i++) {
+        auto* memA = group1.GetMembership().GetMember(i);
+        if (!memA || !memA->IsAlive() || memA->IsPlayer()) {
+            continue;
+        }
+        for (auto j = 0; j < TOTAL_PED_GROUP_MEMBERS; j++) {
+            auto* memB = group2.GetMembership().GetMember(j);
+            if (!memB || !memB->IsAlive()) {
+                continue;
+            }
+            distSq[i][j] = (memB->GetPosition() - memA->GetPosition()).SquaredMagnitude();
+        }
+    }
+
+    // Greedy nearest-pair matching: repeatedly pick the globally-closest (group1 member, group2
+    // member) pair, assign it, then exclude that row/column from further consideration.
+    for (auto pass = 0; pass < TOTAL_PED_GROUP_MEMBERS; pass++) {
+        auto  bestRow  = -1;
+        auto  bestCol  = -1;
+        float bestDist = std::numeric_limits<float>::max();
+        for (auto row = 0; row < TOTAL_PED_GROUP_MEMBERS; row++) {
+            for (auto col = 0; col < TOTAL_PED_GROUP_MEMBERS; col++) {
+                if (distSq[row][col] < bestDist) {
+                    bestDist = distSq[row][col];
+                    bestRow  = row;
+                    bestCol  = col;
+                }
+            }
+        }
+        if (bestRow == -1 || bestCol == -1) {
+            continue;
+        }
+        for (auto k = 0; k < TOTAL_PED_GROUP_MEMBERS; k++) {
+            distSq[bestRow][k] = std::numeric_limits<float>::max();
+            distSq[k][bestCol] = std::numeric_limits<float>::max();
+        }
+        peds[bestRow] = group2.GetMembership().GetMember(bestCol);
+    }
+
+    // Fallback: any group1 member still unmatched (e.g. no living group2 member was found) gets
+    // pointed at group2's leader, or failing that the first living group2 follower.
+    if (auto* leader = group2.GetMembership().GetLeader(); leader && leader->IsAlive()) {
+        for (auto i = 0; i < TOTAL_PED_GROUP_MEMBERS; i++) {
+            if (group1.GetMembership().GetMember(i) && !peds[i]) {
+                peds[i] = leader;
+            }
+        }
+        return;
+    }
+
+    for (auto j = 0; j < CPedGroupMembership::LEADER_MEM_ID; j++) {
+        auto* mem = group2.GetMembership().GetMember(j);
+        if (!mem || !mem->IsAlive()) {
+            continue;
+        }
+        for (auto i = 0; i < TOTAL_PED_GROUP_MEMBERS; i++) {
+            if (group1.GetMembership().GetMember(i) && !peds[i]) {
+                peds[i] = mem;
+            }
+        }
+        return;
+    }
 }
 
 void CTaskAllocatorKillThreatsBasic::InjectHooks() {
@@ -79,7 +145,7 @@ void CTaskAllocatorKillThreatsBasic::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x69C710);
     RH_ScopedInstall(Destructor, 0x69C780);
 
-    RH_ScopedGlobalInstall(ComputeClosestPeds, 0x69C850, { .reversed = false });
+    RH_ScopedGlobalInstall(ComputeClosestPeds, 0x69C850);
     RH_ScopedVMTInstall(GetType, 0x69C770);
     RH_ScopedVMTInstall(AllocateTasks, 0x69D170);
     RH_ScopedVMTInstall(ProcessGroup, 0x69C7E0);
