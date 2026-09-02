@@ -10,6 +10,7 @@
 
 #include "Buoyancy.h"
 #include "CarCtrl.h"
+#include "ModelIndices.h"
 
 CVector CTrain::aStationCoors[6] = { // 0x8D48F8
     CVector{ 1741.0f, -1954.0f, 15.0f },
@@ -69,7 +70,7 @@ void CTrain::InjectHooks() {
     RH_ScopedGlobalInstall(ProcessTrainAnnouncements, 0x6F5910);
     RH_ScopedGlobalInstall(PlayAnnouncement, 0x6F5920);
     RH_ScopedGlobalInstall(MarkSurroundingEntitiesForCollisionWithTrain, 0x6F6640);
-    RH_ScopedGlobalInstall(TrainHitStuff<CPtrListSingleLink<CPhysical*>>, 0x6F5CF0, { .reversed = false });
+    RH_ScopedGlobalInstall(TrainHitStuff<CPtrListSingleLink<CPhysical*>>, 0x6F5CF0);
 }
 
 // 0x6F6030
@@ -433,7 +434,29 @@ void MarkSurroundingEntitiesForCollisionWithTrain(CVector pos, float radius, CEn
 // 0x6F5CF0
 template<typename PtrListType>
 void TrainHitStuff(PtrListType& ptrList, CEntity* entity) {
-    ((void(__cdecl*)(PtrListType&, CEntity*))0x6F5CF0)(ptrList, entity);
+    for (auto* item : ptrList) {
+        if (item == entity) {
+            continue;
+        }
+
+        item->physicalFlags.bProcessCollisionEvenIfStationary = true;
+
+        if (item->GetType() != ENTITY_TYPE_OBJECT || !(item->m_bIsStatic || item->m_bIsStaticWaitingForCollision)) {
+            continue;
+        }
+
+        // Knock the magno-crane's hook payload off when a train hits it.
+        if (item->m_nModelIndex != ModelIndices::MI_OBJECTFORMAGNOCRANE1 &&
+            item->m_nModelIndex != ModelIndices::MI_OBJECTFORMAGNOCRANE2 &&
+            item->m_nModelIndex != ModelIndices::MI_OBJECTFORMAGNOCRANE3
+        ) {
+            continue;
+        }
+
+        item->SetModelIndexNoCreate(0);
+        item->AddToMovingList();
+        item->m_nFakePhysics = 0;
+    }
 }
 
 // 0x6F6850
