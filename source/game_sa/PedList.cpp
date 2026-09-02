@@ -1,17 +1,23 @@
 #include "StdInc.h"
 #include "PedList.h"
 
+#include "PedGroupMembership.h"
+#include "PedIntelligence.h"
+#include "Pools/Pools.h"
+#include "Tasks/TaskTypes/TaskComplexKillPedOnFoot.h"
+
 void CPedList::InjectHooks() {
     RH_ScopedClass(CPedList);
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(Empty, 0x699DB0);
     RH_ScopedInstall(BuildListFromGroup_NoLeader, 0x699DD0);
+    RH_ScopedInstall(FillUpHoles, 0x699E20);
     RH_ScopedInstall(ExtractPedsWithGuns, 0x69A4C0);
-    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340, { .reversed = false });
-    RH_ScopedInstall(BuildListOfPedsOfPedType, 0x69A3B0, { .reversed = false });
-    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450, { .reversed = false });
-    RH_ScopedInstall(RemovePedsThatDontListenToPlayer, 0x69A420, { .reversed = false });
+    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340);
+    RH_ScopedInstall(BuildListOfPedsOfPedType, 0x69A3B0);
+    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450);
+    RH_ScopedInstall(RemovePedsThatDontListenToPlayer, 0x69A420);
 }
 
 // 0x699DB0
@@ -40,6 +46,7 @@ void CPedList::ExtractPedsWithGuns(CPedList& from) {
 }
 
 
+// 0x699E20
 // After nulling out a field in the
 // array there might be a hole, so it has to be filled
 void CPedList::FillUpHoles() {
@@ -48,22 +55,48 @@ void CPedList::FillUpHoles() {
 
 // 0x69A340
 void CPedList::BuildListFromGroup_NotInCar_NoLeader(CPedGroupMembership* pedGroupMembership) {
-    plugin::CallMethod<0x69A340>(this, pedGroupMembership);
+    m_count = 0;
+    for (auto* const ped : pedGroupMembership->GetFollowers()) {
+        if (!ped->GetIntelligence()->IsInACarOrEnteringOne()) {
+            AddMember(ped);
+        }
+    }
+    ClearUnused();
 }
 
 // 0x69A3B0
 void CPedList::BuildListOfPedsOfPedType(int32 pedType) {
-    plugin::CallMethod<0x69A3B0>(this, pedType);
+    m_count = 0;
+    for (auto& ped : GetPedPool()->GetAllValid()) {
+        if (ped.m_nPedType == pedType && m_count < std::size(m_peds)) {
+            AddMember(&ped);
+        }
+    }
+    ClearUnused();
 }
 
 // 0x69A450
 void CPedList::RemovePedsAttackingPedType(int32 pedType) {
-    plugin::CallMethod<0x69A450>(this, pedType);
+    for (auto i = 0u; i < m_count; i++) {
+        auto* task = m_peds[i]->GetIntelligence()->FindTaskByType(TASK_COMPLEX_KILL_PED_ON_FOOT);
+        auto* target = task ? static_cast<CTaskComplexKillPedOnFoot*>(task)->m_target : nullptr;
+        if (!target || target->m_nPedType != pedType) {
+            m_peds[i] = nullptr;
+            m_count--;
+        }
+    }
+    FillUpHoles();
 }
 
 // 0x69A420
 void CPedList::RemovePedsThatDontListenToPlayer() {
-    plugin::CallMethod<0x69A420>(this);
+    for (auto i = 0u; i < m_count; i++) {
+        if (m_peds[i]->bDoesntListenToPlayerGroupCommands) {
+            m_peds[i] = nullptr;
+            m_count--;
+        }
+    }
+    FillUpHoles();
 }
 
 //
