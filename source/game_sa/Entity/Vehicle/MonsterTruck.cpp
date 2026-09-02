@@ -10,7 +10,7 @@ void CMonsterTruck::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x6C8D60);
 
-    RH_ScopedInstall(ExtendSuspension, 0x6C7D80, { .reversed = false });
+    RH_ScopedInstall(ExtendSuspension, 0x6C7D80);
 
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6C8AE0);
     RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0, { .reversed = false });
@@ -161,7 +161,18 @@ void CMonsterTruck::PreRender() {
 
 // 0x6C7D80
 void CMonsterTruck::ExtendSuspension() {
-    plugin::CallMethod<0x6C7D80, CMonsterTruck*>(this);
+    for (auto i = 0u; i < m_wheelPosition.size(); i++) {
+        auto newPos = m_wheelPosition[i] - CTimer::GetTimeStep() * m_fSuspensionRadius * fWheelExtensionRate;
+        if (newPos >= m_aSuspensionLineLength[i]) {
+            if (newPos > m_aSuspensionSpringLength[i]) {
+                newPos = m_aSuspensionSpringLength[i];
+            }
+        } else {
+            newPos = m_aSuspensionLineLength[i];
+        }
+        m_wheelPosition[i]                = newPos;
+        m_fWheelsSuspensionCompression[i] = 1.0f;
+    }
 }
 
 // 0x6C7D40
