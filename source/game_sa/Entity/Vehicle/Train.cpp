@@ -45,9 +45,9 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(ReleaseOneMissionTrain, 0x6F5DF0);
     RH_ScopedInstall(SetTrainSpeed, 0x6F5E20);
     RH_ScopedInstall(SetTrainCruiseSpeed, 0x6F5E50);
-    RH_ScopedInstall(FindCaboose, 0x6F5E70, { .reversed = false });
-    RH_ScopedInstall(FindEngine, 0x6F5E90, { .reversed = false });
-    RH_ScopedInstall(FindCarriage, 0x6F5EB0, { .reversed = false });
+    RH_ScopedInstall(FindCaboose, 0x6F5E70);
+    RH_ScopedInstall(FindEngine, 0x6F5E90);
+    RH_ScopedInstall(FindCarriage, 0x6F5EB0);
     RH_ScopedInstall(FindSideStationIsOn, 0x6F5EF0);
     RH_ScopedInstall(FindNextStationPositionInDirection, 0x6F5F00, { .reversed = false });
     RH_ScopedInstall(IsInTunnel, 0x6F6320);
@@ -55,7 +55,7 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(RemoveMissionTrains, 0x6F6A20);
     RH_ScopedInstall(RemoveAllTrains, 0x6F6AA0, { .reversed = false });
     RH_ScopedInstall(ReleaseMissionTrains, 0x6F6B60);
-    RH_ScopedInstall(FindClosestTrackNode, 0x6F6BD0, { .reversed = false });
+    RH_ScopedInstall(FindClosestTrackNode, 0x6F6BD0);
     RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .reversed = false });
     RH_ScopedInstall(FindNearestTrain, 0x6F7090, { .reversed = false });
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
@@ -275,17 +275,33 @@ void CTrain::SetTrainCruiseSpeed(CTrain* train, float speed) {
 
 // 0x6F5E70
 CTrain* CTrain::FindCaboose(CTrain* train) {
-    return ((CTrain * (__cdecl*)(CTrain*))0x6F5E70)(train);
+    while (train->m_pNextCarriage) {
+        train = train->m_pNextCarriage;
+    }
+    return train;
 }
 
 // 0x6F5E90
 CTrain* CTrain::FindEngine(CTrain* train) {
-    return ((CTrain * (__cdecl*)(CTrain*))0x6F5E90)(train);
+    while (train->m_pPrevCarriage) {
+        train = train->m_pPrevCarriage;
+    }
+    return train;
 }
 
 // 0x6F5EB0
 CTrain* CTrain::FindCarriage(CTrain* train, uint8 carriage) {
-    return ((CTrain * (__cdecl*)(CTrain*, uint8))0x6F5EB0)(train, carriage);
+    if (!carriage) {
+        return train;
+    }
+
+    uint8 count = 0;
+    while ((train = train->m_pNextCarriage)) {
+        if (++count >= carriage) {
+            return train;
+        }
+    }
+    return nullptr;
 }
 
 // 0x6F5EF0
@@ -367,7 +383,21 @@ void CTrain::ReleaseMissionTrains() {
 
 // 0x6F6BD0
 int32 CTrain::FindClosestTrackNode(CVector posn, int32* outTrackId) {
-    return ((int32(__cdecl*)(CVector, int32*))0x6F6BD0)(posn, outTrackId);
+    auto bestDist = 99999.9f;
+    auto bestNode = 0;
+
+    for (auto track = 0; track < 4; track++) {
+        for (auto node = 0; node < NumTrackNodes[track]; node++) {
+            const auto dist = DistanceBetweenPoints(posn, pTrackNodes[track][node].GetPosn());
+            if (dist < bestDist) {
+                *outTrackId = track;
+                bestNode    = node;
+                bestDist    = dist;
+            }
+        }
+    }
+
+    return bestNode;
 }
 
 // 0x6F6CC0
