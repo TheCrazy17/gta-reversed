@@ -21,7 +21,7 @@ void CRopes::InjectHooks() {
     RH_ScopedInstall(RegisterRope, 0x556B40, { .reversed = false });
     RH_ScopedInstall(FindPickupHeight, 0x556760);
     RH_ScopedInstall(FindRope, 0x556000);
-    RH_ScopedInstall(FindCoorsAlongRope, 0x555E40, { .reversed = false });
+    RH_ScopedInstall(FindCoorsAlongRope, 0x555E40);
     RH_ScopedInstall(CreateRopeForSwatPed, 0x558D10);
     RH_ScopedInstall(IsCarriedByRope, 0x555F80);
     RH_ScopedInstall(SetSpeedOfTopNode, 0x555DF0);
@@ -92,7 +92,21 @@ int32 CRopes::FindRope(uint32 id) {
 // a4 always nullptr
 // 0x555E40
 bool CRopes::FindCoorsAlongRope(uint32 ropeId, float fDistAlongRope, CVector* outPosn, CVector* outSpeed) {
-    return plugin::CallAndReturn<bool, 0x555E40, uint32, float, CVector*, CVector*>(ropeId, fDistAlongRope, outPosn, outSpeed);
+    const auto ropeIdx = FindRope(ropeId);
+    if (ropeIdx == -1) {
+        return false;
+    }
+
+    auto& rope = aRopes[ropeIdx];
+    const auto node = (int32)fDistAlongRope;
+    const auto t     = fDistAlongRope - (float)node;
+
+    *outPosn = rope.m_aSegments[node] * (1.0f - t) + rope.m_aSegments[node + 1] * t;
+
+    if (outSpeed) {
+        *outSpeed = rope.m_aSpeed[node + 1];
+    }
+    return true;
 }
 
 // 0x558D10
