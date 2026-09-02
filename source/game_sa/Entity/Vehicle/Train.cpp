@@ -59,8 +59,8 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .reversed = false });
     RH_ScopedInstall(FindNearestTrain, 0x6F7090);
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
-    RH_ScopedInstall(IsNextStationAllowed, 0x6F7260, { .reversed = false });
-    RH_ScopedInstall(SkipToNextAllowedStation, 0x6F72F0, { .reversed = false });
+    RH_ScopedInstall(IsNextStationAllowed, 0x6F7260);
+    RH_ScopedInstall(SkipToNextAllowedStation, 0x6F72F0);
     RH_ScopedInstall(CreateMissionTrain, 0x6F7550, { .reversed = false });
     RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900, { .reversed = false });
     RH_ScopedInstall(AddNearbyPedAsRandomPassenger, 0x6F8170, { .reversed = false });
@@ -453,12 +453,40 @@ void CTrain::SetNewTrainPosition(CTrain* train, CVector posn) {
 
 // 0x6F7260
 bool CTrain::IsNextStationAllowed(CTrain* train) {
-    return ((bool(__cdecl*)(CTrain*))0x6F7260)(train);
+    train = FindEngine(train);
+
+    float distanceToStation;
+    int32 stationIndex;
+    FindNextStationPositionInDirection(train->trainFlags.bClockwiseDirection, train->m_fCurrentRailDistance, &distanceToStation, &stationIndex);
+
+    const eLevelName stationLevel = CTheZones::GetLevelFromPosition(aStationCoors[stationIndex]);
+    return CStats::GetStatValue(STAT_CITY_UNLOCKED) + 1.0f >= (float)stationLevel;
 }
 
 // 0x6F72F0
 void CTrain::SkipToNextAllowedStation(CTrain* train) {
-    ((void(__cdecl*)(CTrain*))0x6F72F0)(train);
+    train = FindEngine(train);
+
+    float      distanceToStation;
+    int32      stationIndex;
+    eLevelName stationLevel;
+    do {
+        FindNextStationPositionInDirection(train->trainFlags.bClockwiseDirection, train->m_fCurrentRailDistance, &distanceToStation, &stationIndex);
+        stationLevel = CTheZones::GetLevelFromPosition(aStationCoors[stationIndex]);
+    } while (CStats::GetStatValue(STAT_CITY_UNLOCKED) + 1.0f < (float)stationLevel);
+
+    if (train->trainFlags.bClockwiseDirection) {
+        train->m_fTrainSpeed          = 0.1f;
+        train->m_fCurrentRailDistance = distanceToStation - 20.0f; // _DAT_00858ba4
+    } else {
+        train->m_fTrainSpeed          = -0.1f;
+        train->m_fCurrentRailDistance = distanceToStation + 20.0f; // _DAT_00858ba4
+    }
+
+    CStreaming::LoadScene(aStationCoors[stationIndex]);
+    // NOTSA: the original computes a nonzero minutes value here (via an unidentified call chain
+    // starting at 0x40EA15) instead of passing 0 - not resolved this session.
+    CGameLogic::PassTime(0);
 }
 
 // 0x6F7550
