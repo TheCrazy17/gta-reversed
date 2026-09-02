@@ -6,7 +6,7 @@ void CScriptsForBrains::InjectHooks() {
     RH_ScopedClass(CScriptsForBrains);
     RH_ScopedCategory("Tasks/TaskTypes");
 
-    RH_ScopedInstall(Init, 0x46A8C0, {.reversed = false});
+    RH_ScopedInstall(Init, 0x46A8C0);
     //RH_ScopedInstall(SwitchAllObjectBrainsWithThisID, 0x46A900, {.reversed = false});
     //RH_ScopedInstall(AddNewScriptBrain, 0x46A930, {.reversed = false});
     //RH_ScopedInstall(AddNewStreamedScriptBrainForCodeUse, 0x46A9C0, {.reversed = false});
