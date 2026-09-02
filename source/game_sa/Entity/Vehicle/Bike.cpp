@@ -41,7 +41,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(BlowUpCar, 0x6BEA10, { .reversed = false });
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
     RH_ScopedVMTInstall(BurstTyre, 0x6BEB20);
-    RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310);
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6BDEA0);
     RH_ScopedVMTInstall(Render, 0x6BDE20);
     RH_ScopedVMTInstall(PreRender, 0x6BD090, { .reversed = false });
@@ -458,7 +458,116 @@ bool CBike::BurstTyre(uint8 tyreComponentId, bool bPhysicalEffect) {
 
 // 0x6BE310
 void CBike::ProcessControlInputs(uint8 playerNum) {
-    plugin::CallMethod<0x6BE310, CBike*, uint8>(this, playerNum);
+    const auto fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
+    auto*      pad      = CPad::GetPad(playerNum);
+
+    vehicleFlags.bIsHandbrakeOn = pad->GetExitVehicle() || pad->GetHandBrake() != 0;
+
+    const auto ApplyPadSteer = [&] {
+        m_nLastControlInput      = eControllerType::KEYBOARD;
+        m_fRawSteerAngle        += (-(float)pad->GetSteeringLeftRight() / 128.0f - m_fRawSteerAngle) * CTimer::GetTimeStep() / 5.0f;
+        m_RideAnimData.LeanFwd  += (-(float)pad->GetSteeringUpDown() / 128.0f - m_RideAnimData.LeanFwd) * CTimer::GetTimeStep() / 5.0f;
+    };
+
+    if (!TheCamera.m_bUseMouse3rdPerson || !m_bEnableMouseSteering) {
+        ApplyPadSteer();
+    } else if (!CPad::NewMouseControllerState.m_AmountMoved.IsZero() ||
+               (std::fabs(m_fRawSteerAngle) > 0.0f && m_nLastControlInput == eControllerType::MOUSE && !pad->IsSteeringInAnyDirection())
+    ) {
+        m_nLastControlInput = eControllerType::MOUSE;
+        if (!pad->NewState.m_bVehicleMouseLook) {
+            m_fRawSteerAngle       -= CPad::NewMouseControllerState.m_AmountMoved.x * 0.0035f;
+            m_RideAnimData.LeanFwd -= CPad::NewMouseControllerState.m_AmountMoved.y * 0.0035f;
+        }
+        if (pad->NewState.m_bVehicleMouseLook || std::fabs(m_fRawSteerAngle) < 0.35f) {
+            m_fRawSteerAngle *= std::pow(0.98f, CTimer::GetTimeStep());
+        }
+        if (pad->NewState.m_bVehicleMouseLook || std::fabs(m_RideAnimData.LeanFwd) < 0.35f) {
+            m_RideAnimData.LeanFwd *= std::pow(0.98f, CTimer::GetTimeStep());
+        }
+    } else if (pad->IsSteeringInAnyDirection() || m_nLastControlInput != eControllerType::MOUSE) {
+        ApplyPadSteer();
+    }
+    // else: no mouse movement, no pad steering input, still in mouse mode last frame -> leave both unchanged
+
+    m_fRawSteerAngle       = std::clamp(m_fRawSteerAngle, -1.0f, 1.0f);
+    m_RideAnimData.LeanFwd = std::clamp(m_RideAnimData.LeanFwd, -1.0f, 1.0f);
+
+    const auto padGasBrake = ((float)pad->GetAccelerate() - (float)pad->GetBrake()) / 255.0f;
+
+    if (std::fabs(fwdSpeed) >= 0.01f) {
+        if (fwdSpeed < 0.0f) {
+            if (padGasBrake >= 0.0f) {
+                m_BrakePedal = padGasBrake;
+                m_GasPedal   = 0.0f;
+            } else {
+                m_GasPedal   = padGasBrake;
+                m_BrakePedal = 0.0f;
+            }
+        } else {
+            if (padGasBrake < 0.0f) {
+                m_GasPedal   = 0.0f;
+                m_BrakePedal = -padGasBrake;
+            } else {
+                m_GasPedal   = padGasBrake;
+                m_BrakePedal = 0.0f;
+            }
+        }
+    } else {
+        // Nearly stationary: both pedals fully pressed at once triggers a burnout/wheelie-prep hold
+        // (NOTSA: `this+0x594 != 10` gates this too - exact field/meaning not identified this
+        // session, kept as a raw offset check).
+        if (pad->GetAccelerate() > 150 && pad->GetBrake() > 150 && *(int*)((char*)this + 0x594) != 10) {
+            m_GasPedal   = (float)pad->GetAccelerate() / 255.0f;
+            m_nBrakesOn  = true;
+            m_BrakePedal = (float)pad->GetBrake() / 255.0f;
+        } else {
+            m_GasPedal   = padGasBrake;
+            m_BrakePedal = 0.0f;
+        }
+    }
+
+    // NOTSA: `this+0x424` looks like a vehicle-recording playback slot index (checked against
+    // CVehicleRecording::bUseCarAI) gating whether the visual wheel-turn angle updates from live
+    // input - exact field name not identified this session, kept as a raw offset check.
+    if (const auto recordingSlot = *(char*)((char*)this + 0x424); recordingSlot < 0 || CVehicleRecording::bUseCarAI[recordingSlot]) {
+        const auto steerSq = m_fRawSteerAngle < 0.0f ? -(m_fRawSteerAngle * m_fRawSteerAngle) : (m_fRawSteerAngle * m_fRawSteerAngle);
+        m_fSteerAngle = m_pHandlingData->m_fSteeringLock * 0.017453f * steerSq; // 0.017453f == DAT_008595EC, ~1 degree in radians
+    }
+
+    if (vehicleFlags.bComedyControls) {
+        // Periodic "wobble the controls" effect - NOTSA: the counter this reads at 0xB7CB84 wasn't
+        // identified this session (it isn't CTimer::m_FrameCounter, that's a different address);
+        // kept as a raw address read for fidelity.
+        const auto comedyCounter = *(uint32*)0xB7CB84;
+        if ((comedyCounter & 0x3C00) < 0x3000) {
+            m_GasPedal = 1.0f;
+        }
+        if ((((char)(comedyCounter >> 10) + 6) & 0xF) < 0xC) {
+            m_BrakePedal = 0.0f;
+        }
+        vehicleFlags.bIsHandbrakeOn = false;
+        m_fSteerAngle += (comedyCounter & 0x800) ? 0.03f : -0.08f; // DAT_00858B10 / _DAT_00859018
+    }
+
+    // NOTSA: `CPad::GetPad(0)+0x10E` (a int16 field) wasn't identified this session - the original
+    // gates this whole "player just backed out of the pause/front-end menu, forcibly brake" block on
+    // it being nonzero.
+    if (*(int16*)((char*)CPad::GetPad(0) + 0x10E) != 0 && CGameLogic::SkipState != SKIP_IN_PROGRESS) {
+        m_BrakePedal                = 1.0f;
+        vehicleFlags.bIsHandbrakeOn = true;
+        m_GasPedal                  = 0.0f;
+
+        // NOTSA: `CPlayerPed::UNREVERSED` (0x60C1E0, called on `FindPlayerPed(-1)`'s result) isn't
+        // reversed anywhere in this codebase yet - kept as a raw call for fidelity.
+        if (auto* playerPed = FindPlayerPed(-1)) {
+            ((void(__thiscall*)(void*))0x60C1E0)(playerPed);
+        }
+
+        if (const auto speed = m_vecMoveSpeed.Magnitude(); speed > 0.28f) {
+            m_vecMoveSpeed *= 0.28f / speed;
+        }
+    }
 }
 
 // 0x6BDEA0
