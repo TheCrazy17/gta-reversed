@@ -25,16 +25,16 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(ReduceHornCounter, 0x6B5F90);
     RH_ScopedInstall(ProcessAI, 0x6BC930, { .reversed = false });
     RH_ScopedInstall(ProcessBuoyancy, 0x6B5FB0);
-    RH_ScopedInstall(ResetSuspension, 0x6B6740, { .reversed = false });
+    RH_ScopedInstall(ResetSuspension, 0x6B6740);
     RH_ScopedInstall(GetAllWheelsOffGround, 0x6B6790);
     RH_ScopedInstall(DebugCode, 0x6B67A0);
-    RH_ScopedInstall(DoSoftGroundResistance, 0x6B6D40, { .reversed = false });
+    RH_ScopedInstall(DoSoftGroundResistance, 0x6B6D40);
     RH_ScopedInstall(PlayHornIfNecessary, 0x6B7130);
     RH_ScopedInstall(CalculateLeanMatrix, 0x6B7150);
     RH_ScopedInstall(ProcessRiderAnims, 0x6B7280, { .reversed = false });
     RH_ScopedInstall(FixHandsToBars, 0x6B7F90, { .reversed = false });
-    RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0, { .reversed = false });
-    RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230, { .reversed = false });
+    RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0);
+    RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230);
     RH_ScopedVMTInstall(Fix, 0x6B7050);
     RH_ScopedVMTInstall(BlowUpCar, 0x6BEA10, { .reversed = false });
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
@@ -48,7 +48,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0, { .reversed = false });
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0, { .reversed = false });
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
-    RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080, { .reversed = false });
+    RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
     RH_ScopedVMTInstall(SetupDamageAfterLoad, 0x6B7070);
     RH_ScopedVMTInstall(DoBurstAndSoftGroundRatios, 0x6B6950, { .reversed = false });
     RH_ScopedVMTInstall(SetUpWheelColModel, 0x6B67E0, { .reversed = false });
@@ -525,7 +525,15 @@ void CBike::ProcessControl() {
 
 // 0x6B6740
 void CBike::ResetSuspension() {
-    ((void(__thiscall*)(CBike*))0x6B6740)(this);
+    for (auto i = 0u; i < m_aWheelPitchAngles.size(); i++) {
+        m_aWheelPitchAngles[i] = 0.0f;
+        m_WheelStates[i] = WHEEL_STATE_NORMAL;
+    }
+
+    for (auto i = 0u; i < NUM_SUSP_LINES; i++) {
+        m_aWheelRatios[i] = 1.0f;
+        m_WheelCounts[i] = 0.0f;
+    }
 }
 
 // 0x6B6790
@@ -540,7 +548,40 @@ void CBike::DebugCode() {
 
 // 0x6B6D40
 void CBike::DoSoftGroundResistance(uint32& arg0) {
-    ((void(__thiscall*)(CBike*, uint32&))0x6B6D40)(this, arg0);
+    auto isOnSandWithContact = false;
+    for (auto i = 0u; i < NUM_SUSP_LINES; i++) {
+        if (m_aWheelRatios[i] < 1.0f && g_surfaceInfos.GetAdhesionGroup(m_aWheelColPoints[i].m_nSurfaceTypeB) == ADHESION_GROUP_SAND) {
+            isOnSandWithContact = true;
+            break;
+        }
+    }
+
+    if (isOnSandWithContact) {
+        auto perp = m_vecMoveSpeed - GetUp() * DotProduct(m_vecMoveSpeed, GetUp());
+
+        if (m_GasPedal > 0.3f) {
+            if (perp.SquaredMagnitude() < sq(0.3f)) {
+                arg0 += 4;
+            }
+            perp -= GetForward() * DotProduct(perp, GetForward());
+        }
+
+        ApplyMoveForce(-CTimer::GetTimeStep() * m_fMass * 0.02f * perp);
+        return;
+    }
+
+    auto isOnRailTrackWithContact = false;
+    for (auto i = 0u; i < NUM_SUSP_LINES; i++) {
+        if (m_aWheelRatios[i] < 1.0f && m_aWheelColPoints[i].m_nSurfaceTypeB == SURFACE_RAILTRACK) {
+            isOnRailTrackWithContact = true;
+            break;
+        }
+    }
+
+    if (isOnRailTrackWithContact) {
+        const auto perp = m_vecMoveSpeed - GetUp() * DotProduct(m_vecMoveSpeed, GetUp());
+        ApplyMoveForce(-CTimer::GetTimeStep() * m_fMass * CVehicle::ms_fRailTrackResistance * perp);
+    }
 }
 
 // 0x6B7130
@@ -571,12 +612,79 @@ void CBike::FixHandsToBars(CPed* rider) {
 
 // 0x6BEEB0
 void CBike::PlaceOnRoadProperly() {
-    ((void(__thiscall*)(CBike*))0x6BEEB0)(this);
+    const auto* cm     = GetColModel();
+    const auto  fStartY =  cm->m_boundBox.m_vecMax.y;
+    const auto  fEndY   = -cm->m_boundBox.m_vecMin.y;
+
+    const auto& vecPos = GetPosition();
+
+    auto vecFrontCheck = vecPos + GetForward() * fStartY;
+    auto vecRearCheck  = vecPos - GetForward() * fEndY;
+
+    CColPoint colPoint{};
+    CEntity*  colEntity{};
+    if (CWorld::ProcessVerticalLine({ vecFrontCheck.x, vecFrontCheck.y, vecPos.z - 5.0f }, vecPos.z + 5.0f, colPoint, colEntity, true)) {
+        m_bTunnel           = colEntity->m_bTunnel;
+        m_bTunnelTransition = colEntity->m_bTunnelTransition;
+        m_pEntityWeAreOn    = colEntity;
+
+        m_FrontCollPoly.ligthing = colPoint.m_nLightingB;
+        vecFrontCheck.z          = colPoint.m_vecPoint.z;
+    } else {
+        vecFrontCheck.z = vecPos.z;
+    }
+
+    if (CWorld::ProcessVerticalLine({ vecRearCheck.x, vecRearCheck.y, vecPos.z - 5.0f }, vecPos.z + 5.0f, colPoint, colEntity, true)) {
+        m_bTunnel           = colEntity->m_bTunnel;
+        m_bTunnelTransition = colEntity->m_bTunnelTransition;
+        m_pEntityWeAreOn    = colEntity;
+
+        m_RearCollPoly.ligthing = colPoint.m_nLightingB;
+        vecRearCheck.z          = colPoint.m_vecPoint.z;
+    } else {
+        vecRearCheck.z = vecPos.z;
+    }
+
+    const auto fLength   = fEndY + fStartY;
+    const auto fPitch    = std::atan2(vecFrontCheck.z - vecRearCheck.z, fLength);
+    const auto fCosPitch = std::cos(fPitch);
+    const auto fSinPitch = std::sin(fPitch);
+
+    GetRight().Set(
+        (vecFrontCheck.y - vecRearCheck.y) / fLength,
+        -((vecFrontCheck.x - vecRearCheck.x) / fLength),
+        0.0f
+    );
+
+    GetForward().Set(
+        -(fCosPitch * GetRight().y),
+          fCosPitch * GetRight().x,
+          fSinPitch
+    );
+
+    GetUp() = CrossProduct(GetRight(), GetForward());
+
+    SetPosn({
+        (vecFrontCheck.x + vecRearCheck.x) * 0.5f,
+        (vecFrontCheck.y + vecRearCheck.y) * 0.5f,
+        GetHeightAboveRoad() + (vecFrontCheck.z + vecRearCheck.z) * 0.5f
+    });
 }
 
 // 0x6BF230
 void CBike::GetCorrectedWorldDoorPosition(CVector& out, CVector arg1, CVector arg2) {
-    ((void(__thiscall*)(CBike*, CVector&, CVector, CVector))0x6BF230)(this, out, arg1, arg2);
+    const auto fwdCrossUp = CrossProduct(GetForward(), CVector{ 0.0f, 0.0f, 1.0f });
+    const auto basis      = CrossProduct(fwdCrossUp, GetForward());
+
+    auto heightCorrection = 0.0f;
+    if (const auto& bbMax = GetColModel()->m_boundBox.m_vecMax; bbMax.x < bbMax.z) {
+        heightCorrection = bbMax.z - bbMax.x;
+    }
+
+    out  = (arg2.y - arg1.y) * GetForward();
+    out += (heightCorrection * DotProduct(fwdCrossUp, GetUp()) + (arg2.x - arg1.x)) * fwdCrossUp;
+    out += (arg2.z - arg1.z) * basis;
+    out += GetPosition();
 }
 
 // 0x6BEA10
@@ -653,7 +761,33 @@ void CBike::SetupModelNodes() {
 
 // 0x6B7080
 void CBike::PlayCarHorn() {
-    plugin::CallMethod<0x6B7080, CBike*>(this);
+    if (!((m_nAlarmState == 0 || m_nAlarmState == (uint16)-1 || GetStatus() == STATUS_WRECKED) && m_HornCounter == 0)) {
+        return;
+    }
+
+    if (m_nCarHornTimer != 0) {
+        m_nCarHornTimer--;
+        return;
+    }
+
+    m_nCarHornTimer = (int8)((rand() & 0x7F) + 150);
+    const auto pattern = m_nCarHornTimer & 7;
+
+    if (pattern > 1) {
+        if (pattern > 3) {
+            if (!m_pDriver) {
+                return;
+            }
+            m_pDriver->Say(CTX_GLOBAL_BLOCKED, 0, 1.0f);
+            return;
+        }
+
+        if (m_pDriver && m_autoPilot.carCtrlFlags.bHonkAtCar) {
+            m_pDriver->Say(CTX_GLOBAL_BLOCKED, 0, 1.0f);
+        }
+    }
+
+    m_HornCounter = 0x2D;
 }
 
 // 0x6B7070

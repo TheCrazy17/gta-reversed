@@ -38,6 +38,16 @@ perf.data*
 # code search
 /.agignore
 /.globalrc
+
+# auto-re-agent / ghidra-ai-bridge (local reversing tool config, not part of the project)
+/.ghidra-exports/
+/.cache/
+/reports/
+/re-agent-progress.json
+/re-agent.yaml
+/ghidra-bridge.yaml
+__pycache__/
+*.pyc
 /GPATH
 /GRTAGS
 /GTAGS
