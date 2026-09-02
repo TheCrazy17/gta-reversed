@@ -30,7 +30,7 @@ void CTrain::InjectHooks() {
     RH_ScopedCategory("Vehicle");
 
     RH_ScopedInstall(Constructor, 0x6F6030, { .reversed = false });
-    RH_ScopedInstall(InitTrains, 0x6F7440, { .reversed = false });
+    RH_ScopedInstall(InitTrains, 0x6F7440);
     RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0, { .reversed = false });
     RH_ScopedInstall(Shutdown, 0x6F58D0);
     RH_ScopedInstall(UpdateTrains, 0x6F5900);
@@ -143,8 +143,6 @@ void CTrain::SetupModelNodes() {
 void CTrain::InitTrains() {
     ZoneScoped;
 
-    return plugin::Call<0x6F7440>();
-
     bDisableRandomTrains = false;
     GenTrain_Status = 0;
 
@@ -156,15 +154,18 @@ void CTrain::InitTrains() {
     };
     for (auto i = 0u; i < std::size(pTrackNodes); ++i) {
         if (!pTrackNodes[i]) {
-            CTrain::ReadAndInterpretTrackFile(filenames[i], pTrackNodes, NumTrackNodes.data(), arrTotalTrackLength.data(), i);
+            CTrain::ReadAndInterpretTrackFile(filenames[i], &pTrackNodes[i], &NumTrackNodes[i], &arrTotalTrackLength[i], i);
         }
     }
 
     for (auto i = 0u; i < std::size(aStationCoors); ++i) {
         int32 trackId;
-        CTrain::FindClosestTrackNode(aStationCoors[i], &trackId);
-        auto distance = (float)pTrackNodes[trackId]->m_nDistanceFromStart;
-        StationDist[i] = distance / 3.0f;
+        const auto nodeIndex = CTrain::FindClosestTrackNode(aStationCoors[i], &trackId);
+
+        // FIX_BUGS candidate: original always reads from pTrackNodes[0] here, regardless of the
+        // track actually returned by FindClosestTrackNode - stations whose closest node isn't on
+        // track 0 get their StationDist computed from the wrong track's node array.
+        StationDist[i] = pTrackNodes[0][nodeIndex].GetDistanceFromStart();
     }
 }
 
