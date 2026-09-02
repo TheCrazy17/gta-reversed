@@ -34,7 +34,7 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0, { .reversed = false });
     RH_ScopedInstall(Shutdown, 0x6F58D0);
     RH_ScopedInstall(UpdateTrains, 0x6F5900);
-    RH_ScopedInstall(FindCoorsFromPositionOnTrack, 0x6F59E0, { .reversed = false });
+    RH_ScopedInstall(FindCoorsFromPositionOnTrack, 0x6F59E0);
     RH_ScopedInstall(FindMaximumSpeedToStopAtStations, 0x6F5BA0);
     RH_ScopedInstall(FindNumCarriagesPulled, 0x6F5CD0);
     RH_ScopedInstall(OpenTrainDoor, 0x6F5D80);
@@ -200,7 +200,31 @@ void PlayAnnouncement(uint8 arg0, uint8 arg1) {
 
 // 0x6F59E0
 void CTrain::FindCoorsFromPositionOnTrack(float railDistance, int32 trackId, CVector* outCoors) {
-    ((void(__cdecl*)(float, int32, CVector*))0x6F59E0)(railDistance, trackId, outCoors);
+    const auto numNodes = NumTrackNodes[trackId];
+    if (numNodes <= 0) {
+        return;
+    }
+
+    const auto* nodes = pTrackNodes[trackId];
+
+    auto i = 0;
+    float distFromA, distToB;
+    for (;;) {
+        distFromA = railDistance - nodes[i].GetDistanceFromStart();
+        distToB = nodes[(i + 1) % numNodes].GetDistanceFromStart() - railDistance;
+        if (distFromA >= 0.0f && distToB >= 0.0f) {
+            break;
+        }
+        if (++i >= numNodes) {
+            return;
+        }
+    }
+
+    const auto& nodeA = nodes[i];
+    const auto& nodeB = nodes[(i + 1) % numNodes];
+    const auto  t = 1.0f / (distFromA + distToB);
+
+    *outCoors = (nodeA.GetPosn() * distToB + nodeB.GetPosn() * distFromA) * t;
 }
 
 // 0x6F5BA0
