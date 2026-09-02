@@ -20,7 +20,7 @@ public:
     bool HitHurtsPed(CPed* ped);
     CTask* CreateSubTask(eTaskType);
 
-    CTask*    Clone() const override { return new CTaskComplexHitPedWithCar{ *this }; }
+    CTask*    Clone() const override { return new CTaskComplexHitPedWithCar(m_Veh, m_ImpulseMag); } // 0x6559B0
     eTaskType GetTaskType() const override { return Type; }
     CTask*    CreateNextSubTask(CPed* ped) override;
     CTask*    CreateFirstSubTask(CPed* ped) override;

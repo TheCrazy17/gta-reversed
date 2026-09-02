@@ -28,7 +28,7 @@ public:
     ~CTaskComplexFollowLeaderInFormation() override;
 
     eTaskType GetTaskType() const override { return Type; }
-    CTask*    Clone() const override { return new CTaskComplexFollowLeaderInFormation{*this}; }
+    CTask*    Clone() const override { return new CTaskComplexFollowLeaderInFormation(m_Group, m_Leader, m_Pos, m_Dist); } // 0x695740
     CTask*    CreateNextSubTask(CPed* ped) override;
     CTask*    CreateFirstSubTask(CPed* ped) override;
     CTask*    ControlSubTask(CPed* ped) override;

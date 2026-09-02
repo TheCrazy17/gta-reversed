@@ -28,7 +28,7 @@ public:
     ~CTaskComplexGoToPointAiming() override;
 
     eTaskType GetTaskType() const override { return Type; } // 0x668860
-    CTask* Clone() const override { return new CTaskComplexGoToPointAiming{ *this }; } // 0x66CD80
+    CTask* Clone() const override { return new CTaskComplexGoToPointAiming(m_moveState, m_movePos, m_aimAtEntity, m_aimPos, m_moveTargetRadius, m_slowDownDistance); } // 0x66CD80
     CTask* CreateNextSubTask(CPed* ped) override;
     CTask* CreateFirstSubTask(CPed* ped) override;
     CTask* ControlSubTask(CPed* ped) override;
