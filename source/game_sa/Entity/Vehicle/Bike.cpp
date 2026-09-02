@@ -8,6 +8,8 @@
 
 #include "Bike.h"
 
+#include "CarCtrl.h"
+
 #include "Buoyancy.h"
 
 
@@ -38,7 +40,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(Fix, 0x6B7050);
     RH_ScopedVMTInstall(BlowUpCar, 0x6BEA10, { .reversed = false });
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
-    RH_ScopedVMTInstall(BurstTyre, 0x6BEB20, { .reversed = false });
+    RH_ScopedVMTInstall(BurstTyre, 0x6BEB20);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310, { .reversed = false });
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6BDEA0);
     RH_ScopedVMTInstall(Render, 0x6BDE20);
@@ -389,7 +391,69 @@ void CBike::ProcessRiderAnims(CPed* rider, CVehicle* vehicle, CRideAnimData* rid
 
 // 0x6BEB20
 bool CBike::BurstTyre(uint8 tyreComponentId, bool bPhysicalEffect) {
-    return plugin::CallMethodAndReturn<bool, 0x6BEB20, CBike*, uint8, bool>(this, tyreComponentId, bPhysicalEffect);
+    if (vehicleFlags.bTyresDontBurst || physicalFlags.bRenderScorched) {
+        return false;
+    }
+
+    auto wheelIdx = tyreComponentId;
+    if (tyreComponentId == 0xD) {
+        wheelIdx = 0;
+    } else if (tyreComponentId == 0xF) {
+        wheelIdx = 1;
+    }
+
+    auto result = false;
+    if (!m_nWheelStatus[wheelIdx]) {
+        m_nWheelStatus[wheelIdx] = 1;
+        m_vehicleAudio.AddAudioEvent(AE_TYRE_BURST, 0.0f);
+
+        if (GetStatus() == STATUS_SIMPLE) {
+            CCarCtrl::SwitchVehicleToRealPhysics(this);
+        }
+
+        if (bPhysicalEffect) {
+            ApplyMoveForce(CGeneral::GetRandomNumberInRange(-0.02f, 0.02f) * m_fMass * GetRight());
+            ApplyTurnForce(CGeneral::GetRandomNumberInRange(-0.02f, 0.02f) * m_fTurnMass * GetRight(), GetForward());
+        }
+
+        result = true;
+    }
+
+    if (!m_pDriver) {
+        return result;
+    }
+
+    // NOTSA: the two branches below only ever run when `tyreComponentId` is literally 0xD/0xE -
+    // the two real callers (front=0xD, rear=0xF wheel component IDs) get remapped to wheelIdx 0/1
+    // above, and this second check re-tests the ORIGINAL (unmapped) tyreComponentId against 0xD/0xE
+    // (confirmed via raw disassembly, not just the decompile - `CMP BL,0xD` / `CMP BL,0xE` against
+    // the same register the remap above wrote 0/1 into), so for both real wheels this is
+    // unreachable. Kept for fidelity to the original binary.
+    auto shouldApplyForce = true;
+    if (tyreComponentId == 0xD) {
+        if (m_aRatioHistory[0] >= 1.0f) {
+            shouldApplyForce = m_aRatioHistory[1] < 1.0f;
+        }
+    } else {
+        if (tyreComponentId != 0xE) {
+            return result;
+        }
+        if (m_aRatioHistory[2] >= 1.0f) {
+            shouldApplyForce = m_aRatioHistory[3] < 1.0f;
+        }
+    }
+
+    if (const auto speed = m_vecMoveSpeed.Magnitude(); shouldApplyForce && speed > 0.3f && (GetStatus() != STATUS_SIMPLE || speed > 0.55f)) {
+        if (tyreComponentId == 0xD) {
+            // NOTSA: unresolved - original constructs and adds some CEvent here (twice: once for
+            // m_pDriver, once for m_apPassengers[0] if present), using m_vecMoveSpeed as a position
+            // argument. Not translated - see progress notes.
+        } else {
+            ApplyTurnForce(0.04f * m_fTurnMass * GetRight(), GetForward());
+        }
+    }
+
+    return result;
 }
 
 // 0x6BE310
