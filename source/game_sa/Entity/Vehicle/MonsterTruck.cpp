@@ -14,7 +14,7 @@ void CMonsterTruck::InjectHooks() {
 
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6C8AE0);
     RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0, { .reversed = false });
-    RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330);
     RH_ScopedVMTInstall(ProcessControl, 0x6C8250, { .reversed = false });
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0, { .reversed = false });
     RH_ScopedVMTInstall(PreRender, 0x6C7DE0);
@@ -123,7 +123,16 @@ void CMonsterTruck::ProcessSuspension() {
 
 // 0x6C8330
 void CMonsterTruck::ProcessControlCollisionCheck(bool applySpeed) {
-    plugin::CallMethod<0x6C8330, CMonsterTruck*, bool>(this, applySpeed);
+    ExtendSuspension();
+    CAutomobile::ProcessControlCollisionCheck(applySpeed);
+
+    for (auto i = 0u; i < m_fWheelsSuspensionCompression.size(); i++) {
+        if (m_fWheelsSuspensionCompression[i] >= 1.0f) {
+            m_fWheelsSuspensionCompression[i] = 1.0f;
+        } else {
+            m_fWheelsSuspensionCompression[i] = (m_aSuspensionSpringLength[i] - m_wheelPosition[i]) / (m_aSuspensionSpringLength[i] - m_aSuspensionLineLength[i]);
+        }
+    }
 }
 
 // 0x6C8250
