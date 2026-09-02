@@ -34,7 +34,7 @@ void CPlane::InjectHooks() {
     RH_ScopedInstall(CountPlanesAndHelis, 0x6CCA50);
     RH_ScopedInstall(AreWeInNoPlaneZone, 0x6CCAA0);
     RH_ScopedInstall(AreWeInNoBigPlaneZone, 0x6CCBB0);
-    RH_ScopedInstall(SwitchAmbientPlanes, 0x6CCC50, { .reversed = false });
+    RH_ScopedInstall(SwitchAmbientPlanes, 0x6CCC50);
     RH_ScopedVMTInstall(BlowUpCar, 0x6CCCF0, { .reversed = false });
     RH_ScopedInstall(FindPlaneCreationCoors, 0x6CD090, { .reversed = false });
     RH_ScopedInstall(DoPlaneGenerationAndRemoval, 0x6CD2F0, { .reversed = false });
@@ -339,7 +339,15 @@ bool CPlane::AreWeInNoBigPlaneZone() {
 
 // 0x6CCC50
 void CPlane::SwitchAmbientPlanes(bool enable) {
-    plugin::Call<0x6CCC50, bool>(enable);
+    if (GenPlane_Active && !enable) {
+        for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+            if ((vehicle.IsSubHeli() || vehicle.IsSubPlane()) && vehicle.m_nCreatedBy == RANDOM_VEHICLE) {
+                CWorld::Remove(&vehicle);
+                delete &vehicle;
+            }
+        }
+    }
+    GenPlane_Active = enable;
 }
 
 // 0x6CD090
