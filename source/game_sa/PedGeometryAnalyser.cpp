@@ -9,7 +9,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(CanPedJumpObstacle, "", 0x5F1B00, bool(*)(const CPed&,const CEntity&), { .reversed = false });
     RH_ScopedOverloadedInstall(CanPedJumpObstacle, "contacted", 0x5F32D0, bool(*)(const CPed&,const CEntity&,const CVector&,const CVector&), { .reversed = false });
     RH_ScopedInstall(CanPedTargetPed, 0x5F1C40);
-    RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70, { .reversed = false });
+    RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70);
     RH_ScopedInstall(ComputeBuildingHitPoints, 0x5F1E30, { .reversed = false });
     RH_ScopedInstall(ComputeClearTarget, 0x5F5D80, { .reversed = false });
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "ped", 0x5F3B70, bool (*)(const CPed& ped, CEntity& entity, CVector& point));
@@ -66,8 +66,18 @@ bool CPedGeometryAnalyser::CanPedTargetPed(CPed& ped, CPed& targetPed, bool chec
 }
 
 // 0x5F1B70
-bool CPedGeometryAnalyser::CanPedTargetPoint(const CPed& ped, const CVector& a2, bool a3) {
-    return plugin::CallMethodAndReturn<bool, 0x5F1B70>(&ped, &a2, a3);
+bool CPedGeometryAnalyser::CanPedTargetPoint(const CPed& ped, const CVector& point, bool checkDirection) {
+    const auto delta = point - ped.GetPosition();
+
+    if (checkDirection && delta.Dot(ped.GetForward()) < 0.0f) {
+        return false;
+    }
+
+    if (delta.SquaredMagnitude() > 40.0f * 40.0f) {
+        return false;
+    }
+
+    return CWorld::GetIsLineOfSightClear(ped.GetPosition() + CVector{ 0.0f, 0.0f, 0.75f }, point, true, false, false, true, false, true, false);
 }
 
 // 0x5F1E30

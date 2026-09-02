@@ -29,7 +29,7 @@ public:
     static bool CanPedJumpObstacle(const CPed& ped, const CEntity& entity, const CVector& contactNormal, const CVector& contactPos);
 
     static bool CanPedTargetPed(CPed& ped, CPed& targetPed, bool checkDirection);
-    static bool CanPedTargetPoint(const CPed& ped, const CVector& a2, bool a3);
+    static bool CanPedTargetPoint(const CPed& ped, const CVector& point, bool checkDirection);
 
     static int32 ComputeBuildingHitPoints(const CVector& a1, const CVector& a2);
     
