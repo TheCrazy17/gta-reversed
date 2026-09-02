@@ -35,7 +35,7 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(Shutdown, 0x6F58D0);
     RH_ScopedInstall(UpdateTrains, 0x6F5900);
     RH_ScopedInstall(FindCoorsFromPositionOnTrack, 0x6F59E0, { .reversed = false });
-    RH_ScopedInstall(FindMaximumSpeedToStopAtStations, 0x6F5BA0, { .reversed = false });
+    RH_ScopedInstall(FindMaximumSpeedToStopAtStations, 0x6F5BA0);
     RH_ScopedInstall(FindNumCarriagesPulled, 0x6F5CD0);
     RH_ScopedInstall(OpenTrainDoor, 0x6F5D80);
     RH_ScopedInstall(AddPassenger, 0x6F5D90);
@@ -205,7 +205,42 @@ void CTrain::FindCoorsFromPositionOnTrack(float railDistance, int32 trackId, CVe
 
 // 0x6F5BA0
 bool CTrain::FindMaximumSpeedToStopAtStations(float* speed) {
-    return ((bool(__thiscall*)(CTrain*, float*))0x6F5BA0)(this, speed);
+    *speed = 50.0f;
+
+    if (m_nTrackId != 0) { // Stations only exist on track 0
+        return false;
+    }
+
+    const auto& totalLength = arrTotalTrackLength[0];
+
+    auto minDistAhead = 10000.0f;
+    for (const auto& stationDistOnTrack : StationDist) {
+        auto dist = stationDistOnTrack - m_fCurrentRailDistance;
+        dist += trainFlags.bClockwiseDirection ? 40.0f : -40.0f; // Look-ahead buffer (train length)
+
+        while (dist > totalLength * 0.5f) {
+            dist -= totalLength;
+        }
+        while (dist < totalLength * -0.5f) {
+            dist += totalLength;
+        }
+
+        if (trainFlags.bClockwiseDirection) {
+            if (dist > 0.0f) {
+                minDistAhead = std::min(minDistAhead, dist);
+            }
+        } else if (dist < 0.0f) {
+            minDistAhead = std::min(minDistAhead, -dist);
+        }
+    }
+
+    if (minDistAhead >= 500.0f) {
+        *speed = 100000.0f;
+    } else {
+        *speed = (1.0f - (500.0f - minDistAhead) * 0.002f) * 50.0f;
+    }
+
+    return minDistAhead < 5.0f;
 }
 
 // 0x6F5CD0
