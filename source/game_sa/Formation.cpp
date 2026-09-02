@@ -3,7 +3,13 @@
 
 // 0x699F50
 void CFormation::ReturnTargetPedForPed(CPed* ped, CPed** pOutTargetPed) {
-    return plugin::Call<0x699F50, CPed*, CPed**>(ped, pOutTargetPed);
+    const auto peds = m_Peds.GetPeds();
+    for (auto i = 0u; i < peds.size(); i++) {
+        if (peds[i] == ped && m_aPedLinkToDestinations[i] >= 0) {
+            *pOutTargetPed = m_DestinationPeds.m_peds[m_aPedLinkToDestinations[i]];
+            return;
+        }
+    }
 }
 
 // 0x699FA0
@@ -98,7 +104,7 @@ void CFormation::InjectHooks() {
     RH_ScopedClass(CFormation);
     RH_ScopedCategoryGlobal();
 
-    RH_ScopedGlobalInstall(ReturnTargetPedForPed, 0x699F50, { .reversed = false });
+    RH_ScopedGlobalInstall(ReturnTargetPedForPed, 0x699F50);
     RH_ScopedGlobalInstall(ReturnDestinationForPed, 0x699FA0, { .reversed = false });
     RH_ScopedGlobalInstall(FindCoverPointsBehindBox, 0x699FF0);
     RH_ScopedGlobalInstall(GenerateGatherDestinations, 0x69A620, { .reversed = false });
