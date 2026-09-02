@@ -1,12 +1,13 @@
 #include "StdInc.h"
 
 #include "Decision.h"
+#include "Enums/eTaskType.h"
 
 void CDecision::InjectHooks() {    
     RH_ScopedClass(CDecision);
     RH_ScopedCategory("DecisionMakers");
 
-    RH_ScopedInstall(SetDefault, 0x600530, { .reversed = false });
+    RH_ScopedInstall(SetDefault, 0x600530);
     RH_ScopedInstall(Set, 0x600570);
     //RH_ScopedInstall(Add, 0x600600, { .reversed = false });
     RH_ScopedInstall(From, 0x6006B0);
@@ -21,7 +22,9 @@ CDecision::CDecision() {
 
 // 0x600530
 void CDecision::SetDefault() {
-    plugin::CallMethod<0x600530, CDecision*>(this);
+    m_Tasks.fill(TASK_INVALID);
+    m_Probs = {};
+    m_Bools = {};
 }
 
 // 0x6006B0
@@ -30,13 +33,21 @@ void CDecision::From(const CDecision& rhs) {
 }
 
 // 0x600570
+// `facialProbs` is unused by the original function.
 void CDecision::Set(
     notsa::mdarray<int32, MAX_NUM_CHOICES>&    tasks,
     notsa::mdarray<float, MAX_NUM_CHOICES, 4>& probs,
     notsa::mdarray<int32, MAX_NUM_CHOICES, 2>& bools,
     notsa::mdarray<float, MAX_NUM_CHOICES, 6>& facialProbs
 ) {
-    plugin::CallMethod<0x600570>(this, &tasks, &probs, &bools, &facialProbs);
+    for (auto i = 0u; i < MAX_NUM_CHOICES; i++) {
+        m_Tasks[i] = (eTaskType)tasks[i];
+        for (auto j = 0u; j < 4u; j++) {
+            m_Probs[i][j] = (uint8)probs[i][j];
+        }
+        m_Bools[i][0] = bools[i][0] != 0;
+        m_Bools[i][1] = bools[i][1] != 0;
+    }
 }
 
 /*
