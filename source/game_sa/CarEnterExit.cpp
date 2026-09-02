@@ -36,7 +36,7 @@ void CCarEnterExit::InjectHooks() {
     RH_ScopedInstall(IsVehicleHealthy, 0x64EEC0);
     RH_ScopedInstall(IsVehicleStealable, 0x6510D0);
     RH_ScopedInstall(MakeUndraggedDriverPedLeaveCar, 0x64F600);
-    RH_ScopedInstall(MakeUndraggedPassengerPedsLeaveCar, 0x64F540, { .reversed = false });
+    RH_ScopedInstall(MakeUndraggedPassengerPedsLeaveCar, 0x64F540);
     RH_ScopedInstall(QuitEnteringCar, 0x650130);
     RH_ScopedInstall(RemoveCarSitAnim, 0x64F680);
     RH_ScopedInstall(RemoveGetInAnims, 0x64F6E0);
@@ -601,7 +601,14 @@ void CCarEnterExit::MakeUndraggedDriverPedLeaveCar(const CVehicle* vehicle, cons
 
 // 0x64F540
 void CCarEnterExit::MakeUndraggedPassengerPedsLeaveCar(const CVehicle* targetVehicle, const CPed* draggedPed, const CPed* ped) {
-    plugin::Call<0x64F540, const CVehicle*, const CPed*, const CPed*>(targetVehicle, draggedPed, ped);
+    auto& vehicle = const_cast<CVehicle&>(*targetVehicle);
+    for (auto* passenger : vehicle.GetPassengers()) {
+        if (!passenger || passenger == draggedPed || passenger->bStayInCarOnJack) {
+            continue;
+        }
+        const auto targetDoor = (eTargetDoor)ComputeTargetDoorToExit(&vehicle, passenger);
+        passenger->GetEventGroup().Add(CEventPedEnteredMyVehicle{ const_cast<CPed*>(ped), &vehicle, targetDoor });
+    }
 }
 
 // unused
