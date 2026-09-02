@@ -13,6 +13,8 @@
 #include "Buoyancy.h"
 #include "Collision/CollisionData.h"
 #include "Enums/eSurfaceType.h"
+#include "Enums/eWantedLevel.h"
+#include "VehicleRecording.h"
 
 
 
@@ -953,7 +955,7 @@ void CBike::VehicleDamage(float damageIntensity, eVehicleCollisionComponent comp
             if (m_vecMoveSpeed.Magnitude() <= FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() &&
                 FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() > 0.1f
             ) {
-                FindPlayerPed()->SetWantedLevelNoDrop(WANTED_LEVEL_1);
+                FindPlayerPed()->SetWantedLevelNoDrop(eWantedLevel::WANTED_LEVEL_1);
             }
         }
 

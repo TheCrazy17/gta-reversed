@@ -5,6 +5,7 @@
 #include "TaskSimpleCarSetPedInAsDriver.h"
 #include "TaskComplexDriveWander.h"
 #include "TaskSimpleCarSetPedInAsPassenger.h"
+#include "Events/EventPedEnteredMyVehicle.h"
 
 void CCarEnterExit::InjectHooks() {
     RH_ScopedClass(CCarEnterExit);

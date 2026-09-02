@@ -10,7 +10,7 @@ CVector CPedShelterAttractor::GetDisplacement(int32 pedId) {
             do {
                 const auto angle  = CGeneral::GetRandomNumberInRange(0.0f, TWO_PI);
                 const auto radius = CGeneral::GetRandomNumberInRange(0.0f, 2.0f);
-                candidate = { radius * std::cos(angle), radius * std::sin(angle), 0.0f };
+                candidate = CVector{ radius * std::cos(angle), radius * std::sin(angle), 0.0f };
             } while (rng::any_of(ms_displacements, [&](const auto& existing) {
                 return (existing - candidate).SquaredMagnitude() < 1.0f;
             }));
