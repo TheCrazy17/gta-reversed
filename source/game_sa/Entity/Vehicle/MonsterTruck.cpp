@@ -17,7 +17,7 @@ void CMonsterTruck::InjectHooks() {
     RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0, { .reversed = false });
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330);
     RH_ScopedVMTInstall(ProcessControl, 0x6C8250);
-    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0, { .reversed = false });
+    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0);
     RH_ScopedVMTInstall(PreRender, 0x6C7DE0);
     RH_ScopedVMTInstall(ResetSuspension, 0x6C7D40);
     RH_ScopedVMTInstall(BurstTyre, 0x6C7D30);
@@ -158,7 +158,58 @@ void CMonsterTruck::ProcessControl() {
 
 // 0x6C7FB0
 void CMonsterTruck::SetupSuspensionLines() {
-    plugin::CallMethod<0x6C7FB0, CMonsterTruck*>(this);
+    const auto mi       = GetVehicleModelInfo();
+    const auto colModel = mi->GetColModel();
+    const auto colData  = colModel->GetData();
+
+    m_fSuspensionRadius = mi->m_fWheelSizeFront * 0.5f;
+
+    if (!colData->m_pDisks) {
+        colData->bUsesDisks  = true;
+        colData->m_nNumLines = 4;
+        colData->m_pDisks    = static_cast<CColDisk*>(CMemoryMgr::Malloc(4 * sizeof(CColDisk)));
+    } else if (!colData->bUsesDisks) {
+        CMemoryMgr::Free(colData->m_pDisks);
+        colData->bUsesDisks  = true;
+        colData->m_nNumLines = 4;
+        colData->m_pDisks    = static_cast<CColDisk*>(CMemoryMgr::Malloc(4 * sizeof(CColDisk)));
+    }
+
+    for (auto i = 0; i < 4; i++) {
+        CVector wheelPos;
+        mi->GetWheelPosn(i, wheelPos, false);
+
+        colData->m_pDisks[i].Set(
+            m_fSuspensionRadius,
+            wheelPos,
+            CVector{ i > 1 ? 1.0f : -1.0f, 0.0f, 0.0f },
+            m_fSuspensionRadius * 0.6f,
+            SURFACE_WHEELBASE,
+            CarWheelToCarPiece((eCarWheel)i)
+        );
+
+        m_aSuspensionSpringLength[i] = wheelPos.z + m_pHandlingData->m_fSuspensionUpperLimit;
+        m_aSuspensionLineLength[i]   = wheelPos.z + m_pHandlingData->m_fSuspensionLowerLimit;
+    }
+
+    m_fFrontHeightAboveRoad = m_fRearHeightAboveRoad =
+        (m_fSuspensionRadius - m_aSuspensionSpringLength[0])
+      + (m_aSuspensionSpringLength[0] - m_aSuspensionLineLength[0])
+      * (1.0f - 1.0f / (m_pHandlingData->m_fSuspensionForceLevel * 4.0f));
+
+    for (auto i = 0u; i < m_wheelPosition.size(); i++) {
+        m_fWheelsSuspensionCompression[i] = 1.0f;
+        m_wheelPosition[i]                = mi->m_fWheelSizeFront * 0.5f - m_fFrontHeightAboveRoad;
+    }
+
+    auto& bb = colModel->GetBoundingBox();
+    if (const auto belowWheel = m_fFrontHeightAboveRoad - m_fSuspensionRadius; belowWheel < bb.m_vecMin.z) {
+        bb.m_vecMin.z = belowWheel;
+    }
+
+    if (const auto radius = std::max(bb.m_vecMin.Magnitude(), bb.m_vecMax.Magnitude()); radius > colModel->GetBoundRadius()) {
+        colModel->GetBoundingSphere().m_fRadius = radius;
+    }
 }
 
 // 0x6C7DE0

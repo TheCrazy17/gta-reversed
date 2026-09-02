@@ -694,6 +694,7 @@ void InjectHooksMain() {
     CCollision::InjectHooks();
     CTempColModels::InjectHooks();
     CColSphere::InjectHooks();
+    CColDisk::InjectHooks();
     CColLine::InjectHooks();
     CColTrianglePlane::InjectHooks();
     CBox::InjectHooks();
