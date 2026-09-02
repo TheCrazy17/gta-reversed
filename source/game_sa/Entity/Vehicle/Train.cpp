@@ -53,11 +53,11 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(IsInTunnel, 0x6F6320);
     RH_ScopedInstall(RemoveRandomPassenger, 0x6F6850, { .reversed = false });
     RH_ScopedInstall(RemoveMissionTrains, 0x6F6A20);
-    RH_ScopedInstall(RemoveAllTrains, 0x6F6AA0, { .reversed = false });
+    RH_ScopedInstall(RemoveAllTrains, 0x6F6AA0);
     RH_ScopedInstall(ReleaseMissionTrains, 0x6F6B60);
     RH_ScopedInstall(FindClosestTrackNode, 0x6F6BD0);
     RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .reversed = false });
-    RH_ScopedInstall(FindNearestTrain, 0x6F7090, { .reversed = false });
+    RH_ScopedInstall(FindNearestTrain, 0x6F7090);
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
     RH_ScopedInstall(IsNextStationAllowed, 0x6F7260, { .reversed = false });
     RH_ScopedInstall(SkipToNextAllowedStation, 0x6F72F0, { .reversed = false });
@@ -369,7 +369,24 @@ void CTrain::RemoveMissionTrains() {
 
 // 0x6F6AA0
 void CTrain::RemoveAllTrains() {
-    ((void(__cdecl*)())0x6F6AA0)();
+    for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+        if (!vehicle.IsTrain()) {
+            continue;
+        }
+
+        auto isPlayerTrain = false;
+        for (auto* carriage = vehicle.AsTrain(); carriage && !isPlayerTrain; carriage = carriage->m_pPrevCarriage) {
+            isPlayerTrain = carriage == FindPlayerVehicle();
+        }
+        for (auto* carriage = vehicle.AsTrain(); carriage && !isPlayerTrain; carriage = carriage->m_pNextCarriage) {
+            isPlayerTrain = carriage == FindPlayerVehicle();
+        }
+
+        if (!isPlayerTrain) {
+            CWorld::Remove(&vehicle);
+            delete &vehicle;
+        }
+    }
 }
 
 // 0x6F6B60
@@ -407,7 +424,25 @@ void CTrain::FindPositionOnTrackFromCoors() {
 
 // 0x6F7090
 CTrain* CTrain::FindNearestTrain(CVector posn, bool mustBeMainTrain) {
-    return ((CTrain * (__cdecl*)(CVector, bool))0x6F7090)(posn, mustBeMainTrain);
+    CTrain* nearest  = nullptr;
+    auto    bestDist = 1e+07f;
+
+    for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+        if (!vehicle.IsTrain()) {
+            continue;
+        }
+
+        auto*      train    = vehicle.AsTrain();
+        const auto trainPosn = train->GetPosition();
+        const auto dist      = std::sqrt(sq(trainPosn.x - posn.x) + sq(trainPosn.y - posn.y));
+
+        if (dist < bestDist && (!mustBeMainTrain || train->trainFlags.bIsFrontCarriage)) {
+            nearest  = train;
+            bestDist = dist;
+        }
+    }
+
+    return nearest;
 }
 
 // 0x6F7140
