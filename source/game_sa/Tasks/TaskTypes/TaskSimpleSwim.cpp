@@ -536,10 +536,16 @@ void CTaskSimpleSwim::ProcessSwimmingResistance(CPed* ped) {
                 if (m_fStateChanger <= 0.001f)
                     m_fStateChanger = 0.0f;
                 else
+                    // FIX_BUGS candidate: raw per-frame decay, no CTimer::GetTimeStep() scaling -
+                    // unlike `fTheTimeStep` a few lines above (same bug shape as CBmx's
+                    // AnimLeanLeft/AnimLeanFwd decay, see Bmx.cpp). At high framerates
+                    // m_fStateChanger (drives dive/surface pitch m_fRotationX and submerge depth
+                    // fSubmergeZ) decays far faster in real time than intended.
                     m_fStateChanger *= 0.95f;
             } else {
                 float fMinimumSpeed = 0.05f * 0.5f;
                 if (m_fStateChanger > fMinimumSpeed) {
+                    // FIX_BUGS candidate: same unscaled per-frame decay as above.
                     m_fStateChanger *= 0.95f;
                 }
                 if (m_fStateChanger < fMinimumSpeed) {
@@ -552,6 +558,7 @@ void CTaskSimpleSwim::ProcessSwimmingResistance(CPed* ped) {
         } else {
             if (pedPos.z - sin(m_fRotationX) + 0.65f <= fWaterLevel) {
                 if (m_fStateChanger > 0.001f)
+                    // FIX_BUGS candidate: same unscaled per-frame decay as above.
                     m_fStateChanger *= 0.95f;
                 else
                     m_fStateChanger = 0.0f;
@@ -721,6 +728,10 @@ void CTaskSimpleSwim::ProcessControlAI(CPed* ped) {
 
     if (m_pPed && m_pPed->bIsStanding && !m_pPed->physicalFlags.bSubmergedInWater ||
         ped->bIsDyingStuck && !m_pPed->physicalFlags.bSubmergedInWater && dist2d < 1.0f) {
+        // FIX_BUGS candidate: throttled by raw CTimer::GetFrameCounter() modulo instead of an
+        // elapsed-time check, so this AI-follower ledge-climb-out test fires proportionally more
+        // often per real second at high framerates (minor: increases test frequency, doesn't
+        // itself cause an early climb abort).
         if (!((ped->m_nRandomSeedUpperByte + CTimer::GetFrameCounter() - 4) & 127)) {
             if (CTaskSimpleClimb::TestForClimb(ped, m_pClimbPos, m_fAngle, m_nSurfaceType, true)) {
                 m_nSwimState = SWIM_BACK_TO_SURFACE;
