@@ -16,28 +16,40 @@ void CProjectileInfo::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     // Install("CProjectileInfo", "", , &CProjectileInfo::);
-    RH_ScopedInstall(Initialise, 0x737B40, { .reversed = false });
-    RH_ScopedInstall(Shutdown, 0x737BC0, { .reversed = false });
+    RH_ScopedInstall(Initialise, 0x737B40);
+    RH_ScopedInstall(Shutdown, 0x737BC0);
     RH_ScopedInstall(GetProjectileInfo, 0x737BF0);
     RH_ScopedInstall(RemoveNotAdd, 0x737C00);
     RH_ScopedInstall(AddProjectile, 0x737C80, { .reversed = false });
-    RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860, { .reversed = false });
+    RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860);
     RH_ScopedInstall(RemoveProjectile, 0x7388F0, { .reversed = false });
     RH_ScopedInstall(Update, 0x738B20, { .reversed = false });
     RH_ScopedInstall(IsProjectileInRange, 0x739860);
-    RH_ScopedInstall(RemoveAllProjectiles, 0x7399B0, { .reversed = false });
+    RH_ScopedInstall(RemoveAllProjectiles, 0x7399B0);
     RH_ScopedInstall(RemoveIfThisIsAProjectile, 0x739A40);
     RH_ScopedInstall(RemoveFXSystem, 0x737B80);
 }
 
 // 0x737B40
 void CProjectileInfo::Initialise() {
-    plugin::Call<0x737B40>();
+    ms_apProjectile.fill(nullptr);
+    for (auto& info : gaProjectileInfo) {
+        info.m_nWeaponType  = WEAPON_GRENADE;
+        info.m_pCreator     = nullptr;
+        info.m_nDestroyTime = 0;
+        info.m_bActive      = false;
+        info.m_pFxSystem    = nullptr;
+    }
 }
 
 // 0x737BC0
 void CProjectileInfo::Shutdown() {
-    plugin::Call<0x737BC0>();
+    for (auto& info : gaProjectileInfo) {
+        if (info.m_pFxSystem) {
+            g_fxMan.DestroyFxSystem(info.m_pFxSystem);
+            info.m_pFxSystem = nullptr;
+        }
+    }
 }
 
 // 0x737BF0
@@ -74,7 +86,18 @@ bool CProjectileInfo::AddProjectile(CEntity* creator, eWeaponType projectileType
 
 // 0x738860
 void CProjectileInfo::RemoveDetonatorProjectiles() {
-    plugin::Call<0x738860>();
+    for (auto&& [info, proj] : rngv::zip(gaProjectileInfo, ms_apProjectile)) {
+        if (!info.m_bActive || info.m_nWeaponType != WEAPON_REMOTE_SATCHEL_CHARGE) {
+            continue;
+        }
+
+        CExplosion::AddExplosion(nullptr, info.m_pCreator, EXPLOSION_GRENADE, proj->GetPosition(), 0, true, -1.0f, false);
+
+        info.m_bActive = false;
+        info.RemoveFXSystem(false);
+
+        proj->m_bRemoveFromWorld = true;
+    }
 }
 
 // 0x7388F0
@@ -121,7 +144,19 @@ bool CProjectileInfo::IsProjectileInRange(float x1, float x2, float y1, float y2
 
 // 0x7399B0
 void CProjectileInfo::RemoveAllProjectiles() {
-    plugin::Call<0x7399B0>();
+    for (auto&& [info, proj] : rngv::zip(gaProjectileInfo, ms_apProjectile)) {
+        if (!info.m_bActive) {
+            continue;
+        }
+
+        info.m_bActive = false;
+        info.RemoveFXSystem(true);
+
+        CRadar::ClearBlipForEntity(BLIP_OBJECT, GetObjectPool()->GetRef(proj));
+
+        CWorld::Remove(proj);
+        delete proj;
+    }
 }
 
 // 0x739A40
