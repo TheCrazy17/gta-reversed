@@ -9,7 +9,7 @@ void CPedDamageResponseCalculator::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x4AD3F0);
     RH_ScopedInstall(AccountForPedDamageStats, 0x4AD430, { .reversed = false });
-    RH_ScopedInstall(AccountForPedArmour, 0x4AD550, { .reversed = false });
+    RH_ScopedInstall(AccountForPedArmour, 0x4AD550);
     RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610, { .reversed = false });
     RH_ScopedInstall(ComputeWillKillPed, 0x4B3210);
     RH_ScopedInstall(IsBleedingWeapon, 0x4B5C2A, { .reversed = false });
@@ -47,9 +47,6 @@ void CPedDamageResponseCalculator::AccountForPedDamageStats(CPed* ped, CPedDamag
  * @addr 0x4AD550
  */
 void CPedDamageResponseCalculator::AccountForPedArmour(CPed* ped, CPedDamageResponse& response) {
-    plugin::CallMethod<0x4AD550, CPedDamageResponseCalculator*, CPed*, CPedDamageResponse&>(this, ped, response);
-    return; // todo: not tested
-
     if (ped->m_fArmour == 0.0f)
         return;
 
