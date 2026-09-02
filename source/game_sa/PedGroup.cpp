@@ -7,12 +7,16 @@
 //! @addr 0x5FB010
 //! @returns Distance of the furthers member from the leader
 float CPedGroup::FindDistanceToFurthestMember() {
-    return plugin::CallMethodAndReturn<float, 0x5FB010, CPedGroup*>(this);
-    /*
-    const auto leader = GetMembership().GetLeader();
-    for (const auto& mem : GetMembership().GetMembers(true)) {
+    const auto* leader = GetMembership().GetLeader();
+    if (!leader) {
+        return 0.0f;
+    }
 
-    }*/
+    auto maxDist = 0.0f;
+    for (auto* const mem : GetMembership().GetFollowers()) {
+        maxDist = std::max(maxDist, DistanceBetweenPoints(leader->GetPosition(), mem->GetPosition()));
+    }
+    return maxDist;
 }
 
 // 0x5FB0A0
@@ -148,7 +152,7 @@ void CPedGroup::InjectHooks() {
     RH_ScopedInstall(PlayerGaveCommand_Attack, 0x5F7CC0);
     RH_ScopedInstall(IsAnyoneUsingCar, 0x5F7DB0);
     RH_ScopedInstall(GetClosestGroupPed, 0x5FACD0);
-    RH_ScopedInstall(FindDistanceToFurthestMember, 0x5FB010, {.reversed = false});
+    RH_ScopedInstall(FindDistanceToFurthestMember, 0x5FB010);
     RH_ScopedInstall(FindDistanceToNearestMember, 0x5FB0A0);
     RH_ScopedInstall(Flush, 0x5FB790);
     RH_ScopedInstall(Process, 0x5FC7E0);
