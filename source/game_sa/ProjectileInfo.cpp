@@ -9,6 +9,7 @@
 #include "Collision/Box.h"
 #include "Fx/FxManager.h"
 #include "Fx/FxSystem.h"
+#include "Explosion.h"
 
 void CProjectileInfo::InjectHooks() {
     RH_ScopedClass(CProjectileInfo);
@@ -17,15 +18,15 @@ void CProjectileInfo::InjectHooks() {
     // Install("CProjectileInfo", "", , &CProjectileInfo::);
     RH_ScopedInstall(Initialise, 0x737B40, { .reversed = false });
     RH_ScopedInstall(Shutdown, 0x737BC0, { .reversed = false });
-    RH_ScopedInstall(GetProjectileInfo, 0x737BF0, { .reversed = false });
-    RH_ScopedInstall(RemoveNotAdd, 0x737C00, { .reversed = false });
+    RH_ScopedInstall(GetProjectileInfo, 0x737BF0);
+    RH_ScopedInstall(RemoveNotAdd, 0x737C00);
     RH_ScopedInstall(AddProjectile, 0x737C80, { .reversed = false });
     RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860, { .reversed = false });
     RH_ScopedInstall(RemoveProjectile, 0x7388F0, { .reversed = false });
     RH_ScopedInstall(Update, 0x738B20, { .reversed = false });
     RH_ScopedInstall(IsProjectileInRange, 0x739860);
     RH_ScopedInstall(RemoveAllProjectiles, 0x7399B0, { .reversed = false });
-    RH_ScopedInstall(RemoveIfThisIsAProjectile, 0x739A40, { .reversed = false });
+    RH_ScopedInstall(RemoveIfThisIsAProjectile, 0x739A40);
     RH_ScopedInstall(RemoveFXSystem, 0x737B80);
 }
 
@@ -41,12 +42,29 @@ void CProjectileInfo::Shutdown() {
 
 // 0x737BF0
 CProjectileInfo* CProjectileInfo::GetProjectileInfo(int32 infoId) {
-    return plugin::CallAndReturn<CProjectileInfo*, 0x737BF0, int32>(infoId);
+    return &gaProjectileInfo[infoId];
 }
 
 // 0x737C00
 void CProjectileInfo::RemoveNotAdd(CEntity* creator, eWeaponType weaponType, CVector pos) {
-    plugin::Call<0x737C00, CEntity*, eWeaponType, CVector>(creator, weaponType, pos);
+    eExplosionType explosionType;
+    switch (weaponType) {
+    case WEAPON_GRENADE:
+    case WEAPON_REMOTE_SATCHEL_CHARGE:
+        explosionType = EXPLOSION_GRENADE;
+        break;
+    case WEAPON_MOLOTOV:
+        explosionType = EXPLOSION_MOLOTOV;
+        break;
+    case WEAPON_ROCKET:
+    case WEAPON_ROCKET_HS:
+        explosionType = EXPLOSION_ROCKET;
+        break;
+    default:
+        return;
+    }
+
+    CExplosion::AddExplosion(nullptr, creator, explosionType, pos, 0, true, -1.0f, false);
 }
 
 // 0x737C80
@@ -108,7 +126,22 @@ void CProjectileInfo::RemoveAllProjectiles() {
 
 // 0x739A40
 bool CProjectileInfo::RemoveIfThisIsAProjectile(CObject* object) {
-    return plugin::CallAndReturn<bool, 0x739A40, CObject*>(object);
+    for (auto i = 0u; i < MAX_PROJECTILES; i++) {
+        if (ms_apProjectile[i] != object || !gaProjectileInfo[i].m_bActive) {
+            continue;
+        }
+
+        gaProjectileInfo[i].m_bActive = false;
+        gaProjectileInfo[i].RemoveFXSystem(false);
+
+        CRadar::ClearBlipForEntity(BLIP_OBJECT, GetObjectPool()->GetRef(ms_apProjectile[i]));
+
+        CWorld::Remove(ms_apProjectile[i]);
+        delete ms_apProjectile[i];
+        ms_apProjectile[i] = nullptr;
+        return true;
+    }
+    return false;
 }
 
 // 0x737B80
