@@ -11,6 +11,8 @@
 #include "CarCtrl.h"
 
 #include "Buoyancy.h"
+#include "Collision/CollisionData.h"
+#include "Enums/eSurfaceType.h"
 
 
 
@@ -53,7 +55,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
     RH_ScopedVMTInstall(SetupDamageAfterLoad, 0x6B7070);
     RH_ScopedVMTInstall(DoBurstAndSoftGroundRatios, 0x6B6950, { .reversed = false });
-    RH_ScopedVMTInstall(SetUpWheelColModel, 0x6B67E0, { .reversed = false });
+    RH_ScopedVMTInstall(SetUpWheelColModel, 0x6B67E0);
     RH_ScopedVMTInstall(RemoveRefsToVehicle, 0x6B67B0);
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6B6620);
     RH_ScopedVMTInstall(GetComponentWorldPosition, 0x6B5990);
@@ -1052,7 +1054,33 @@ void CBike::DoBurstAndSoftGroundRatios() {
 
 // 0x6B67E0
 bool CBike::SetUpWheelColModel(CColModel* wheelCol) {
-    return plugin::CallMethodAndReturn<bool, 0x6B67E0, CBike*, CColModel*>(this, wheelCol);
+    auto* mi      = GetVehicleModelInfo();
+    auto* colData = wheelCol->GetData();
+
+    wheelCol->m_boundBox    = GetColModel()->m_boundBox;
+    wheelCol->m_boundSphere = GetColModel()->m_boundSphere;
+
+    // Wheel position relative to the chassis - the wheel frame's own local matrix, with every
+    // ancestor's local matrix concatenated in, stopping once the chassis frame itself is reached
+    // (its own matrix isn't included).
+    const auto GetWheelPosnRelativeToChassis = [this](RwFrame* wheelFrame) {
+        RwMatrix mat   = *RwFrameGetMatrix(wheelFrame);
+        auto*    frame = RwFrameGetParent(wheelFrame);
+        while (frame) {
+            RwMatrixTransform(&mat, RwFrameGetMatrix(frame), rwCOMBINEPOSTCONCAT);
+            frame = RwFrameGetParent(frame);
+            if (frame == m_aBikeNodes[BIKE_CHASSIS]) {
+                break;
+            }
+        }
+        return mat.pos;
+    };
+
+    colData->m_pSpheres[0].Set(mi->m_fWheelSizeFront * 0.5f, GetWheelPosnRelativeToChassis(m_aBikeNodes[BIKE_WHEEL_FRONT]), SURFACE_RUBBER, 0xd, tColLighting{ 0xFF });
+    colData->m_pSpheres[1].Set(mi->m_fWheelSizeRear  * 0.5f, GetWheelPosnRelativeToChassis(m_aBikeNodes[BIKE_WHEEL_REAR]),  SURFACE_RUBBER, 0xf, tColLighting{ 0xFF });
+
+    colData->m_nNumSpheres = 2;
+    return true;
 }
 
 // 0x6B67B0
