@@ -14,7 +14,7 @@ void CCustomBuildingRenderer::InjectHooks() {
     RH_ScopedInstall(PluginAttach, 0x5D7EF0);
     RH_ScopedInstall(AtomicSetup, 0x5D7F00, { .reversed = false });
     RH_ScopedInstall(IsCBPCPipelineAttached, 0x5D7F40, { .reversed = false });
-    RH_ScopedInstall(UpdateDayNightBalanceParam, 0x5D7F80, { .reversed = false });
+    RH_ScopedInstall(UpdateDayNightBalanceParam, 0x5D7F80);
     RH_ScopedInstall(Update, 0x5D8050, { .reversed = false });
 }
 
@@ -50,9 +50,7 @@ bool CCustomBuildingRenderer::IsCBPCPipelineAttached(RpAtomic* atomic) {
 
 // 0x5D7F80
 void CCustomBuildingRenderer::UpdateDayNightBalanceParam() {
-    plugin::Call<0x5D7F80>();
-    /*
-    const auto minutes = (float)CClock::GetMinutesToday();
+    const auto minutes = CClock::GetMinutesToday();
 
     const auto six_hours = 360.0f;
     if (minutes < six_hours) {
@@ -62,7 +60,7 @@ void CCustomBuildingRenderer::UpdateDayNightBalanceParam() {
 
     const auto seven_hours = 420.0f;
     if (minutes < seven_hours) {
-        CCustomBuildingDNPipeline::m_fDNBalanceParam = float(seven_hours - minutes) / 60.0f;
+        CCustomBuildingDNPipeline::m_fDNBalanceParam = (seven_hours - minutes) / 60.0f;
         return;
     }
 
@@ -76,8 +74,7 @@ void CCustomBuildingRenderer::UpdateDayNightBalanceParam() {
     if (minutes >= twenty_one_hour)
         CCustomBuildingDNPipeline::m_fDNBalanceParam = 1.0f;
     else
-        CCustomBuildingDNPipeline::m_fDNBalanceParam = 1.0f - float(twenty_one_hour - minutes) / 60.0f;
-    */
+        CCustomBuildingDNPipeline::m_fDNBalanceParam = 1.0f - (twenty_one_hour - minutes) / 60.0f;
 }
 
 // 0x5D8050
