@@ -18,7 +18,7 @@ void CMonsterTruck::InjectHooks() {
     RH_ScopedVMTInstall(ProcessControl, 0x6C8250, { .reversed = false });
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0, { .reversed = false });
     RH_ScopedVMTInstall(PreRender, 0x6C7DE0);
-    RH_ScopedVMTInstall(ResetSuspension, 0x6C7D40, { .reversed = false });
+    RH_ScopedVMTInstall(ResetSuspension, 0x6C7D40);
     RH_ScopedVMTInstall(BurstTyre, 0x6C7D30);
     RH_ScopedVMTInstall(SetUpWheelColModel, 0x6C7D20);
 }
@@ -166,9 +166,11 @@ void CMonsterTruck::ExtendSuspension() {
 
 // 0x6C7D40
 void CMonsterTruck::ResetSuspension() {
-    return plugin::CallMethod<0x6C7D40, CMonsterTruck*>(this);
     CAutomobile::ResetSuspension();
-    std::ranges::fill(m_wheelPosition, 1.0f);
+    for (auto i = 0u; i < m_wheelPosition.size(); i++) {
+        m_wheelPosition[i] = m_aSuspensionLineLength[i];
+        field_988[i]       = 1.0f;
+    }
 }
 
 // 0x6C7D30
