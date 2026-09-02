@@ -3,6 +3,7 @@
 #include "MonsterTruck.h"
 
 auto& fWheelExtensionRate = StaticRef<float>(0x8D33AC);
+auto& byte_8D33B0         = StaticRef<bool>(0x8D33B0); // true
 
 void CMonsterTruck::InjectHooks() {
     RH_ScopedVirtualClass(CMonsterTruck, 0x8717d8, 71);
@@ -15,7 +16,7 @@ void CMonsterTruck::InjectHooks() {
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6C8AE0);
     RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0, { .reversed = false });
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330);
-    RH_ScopedVMTInstall(ProcessControl, 0x6C8250, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessControl, 0x6C8250);
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0, { .reversed = false });
     RH_ScopedVMTInstall(PreRender, 0x6C7DE0);
     RH_ScopedVMTInstall(ResetSuspension, 0x6C7D40);
@@ -137,7 +138,22 @@ void CMonsterTruck::ProcessControlCollisionCheck(bool applySpeed) {
 
 // 0x6C8250
 void CMonsterTruck::ProcessControl() {
-    plugin::CallMethod<0x6C8250, CMonsterTruck*>(this);
+    for (auto i = 0u; i < m_fWheelsSuspensionCompression.size(); i++) {
+        if (m_fWheelsSuspensionCompression[i] >= 1.0f) {
+            m_fWheelsSuspensionCompression[i] = 1.0f;
+        } else {
+            m_fWheelsSuspensionCompression[i] = (m_aSuspensionSpringLength[i] - m_wheelPosition[i]) / (m_aSuspensionSpringLength[i] - m_aSuspensionLineLength[i]);
+            if (m_fWheelsSuspensionCompression[i] < 0.0f && byte_8D33B0) {
+                m_fWheelsSuspensionCompression[i] = 0.0f;
+            }
+        }
+    }
+
+    CAutomobile::ProcessControl();
+
+    if (!GetWasPostponed() && (GetMoveSpeed() != 0.0f || GetTurnSpeed() != 0.0f)) {
+        ExtendSuspension();
+    }
 }
 
 // 0x6C7FB0
