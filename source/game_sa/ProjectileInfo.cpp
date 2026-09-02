@@ -7,6 +7,8 @@
 #include "World.h"
 #include "Pools/Pools.h"
 #include "Collision/Box.h"
+#include "Fx/FxManager.h"
+#include "Fx/FxSystem.h"
 
 void CProjectileInfo::InjectHooks() {
     RH_ScopedClass(CProjectileInfo);
@@ -24,7 +26,7 @@ void CProjectileInfo::InjectHooks() {
     RH_ScopedInstall(IsProjectileInRange, 0x739860);
     RH_ScopedInstall(RemoveAllProjectiles, 0x7399B0, { .reversed = false });
     RH_ScopedInstall(RemoveIfThisIsAProjectile, 0x739A40, { .reversed = false });
-    RH_ScopedInstall(RemoveFXSystem, 0x737B80, { .reversed = false });
+    RH_ScopedInstall(RemoveFXSystem, 0x737B80);
 }
 
 // 0x737B40
@@ -111,5 +113,13 @@ bool CProjectileInfo::RemoveIfThisIsAProjectile(CObject* object) {
 
 // 0x737B80
 void CProjectileInfo::RemoveFXSystem(bool bInstantly) {
-    plugin::CallMethod<0x737B80, CProjectileInfo*, bool>(this, bInstantly);
+    if (!m_pFxSystem) {
+        return;
+    }
+    if (bInstantly) {
+        g_fxMan.DestroyFxSystem(m_pFxSystem);
+    } else {
+        m_pFxSystem->Kill();
+    }
+    m_pFxSystem = nullptr;
 }
