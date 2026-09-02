@@ -47,7 +47,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(PreRender, 0x6BD090, { .reversed = false });
     RH_ScopedVMTInstall(Teleport, 0x6BCFC0);
     RH_ScopedVMTInstall(ProcessControl, 0x6B9250, { .reversed = false });
-    RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0, { .reversed = false });
+    RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0);
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0, { .reversed = false });
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
     RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
@@ -801,9 +801,86 @@ void CBike::Teleport(CVector destination, bool resetRotation) {
     CWorld::Add(this);
 }
 
+// NOTSA: `CReferences::AddReference`-equivalent (0x571B70) isn't reversed as a named method in
+// this codebase yet (it's part of the yet-unreversed CReferences pool-management internals) - kept
+// as a raw call for fidelity rather than guessing at a signature.
+static void NOTSA_AddReferenceRaw(void* refSlot, void* entity) {
+    ((void(__thiscall*)(void*, void*))0x571B70)(refSlot, entity);
+}
+
 // 0x6B8EC0
 void CBike::VehicleDamage(float damageIntensity, eVehicleCollisionComponent component, CEntity* damager, CVector* vecCollisionCoors, CVector* vecCollisionDirection, eWeaponType weapon) {
-    plugin::CallMethod<0x6B8EC0, CBike*, float, eVehicleCollisionComponent, CEntity*, CVector*, CVector*, eWeaponType>(this, damageIntensity, component, damager, vecCollisionCoors, vecCollisionDirection, weapon);
+    if (damageIntensity > 0.0f || m_fDamageIntensity < 1.0f || !vehicleFlags.bCanBeDamaged) {
+        return;
+    }
+
+    auto intensity = m_fDamageIntensity;
+
+    if (GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f) {
+        intensity *= 0.5f;
+    }
+
+    if (bikeFlags.bOnSideStand && intensity > 20.0f) {
+        bikeFlags.bOnSideStand = false;
+    }
+
+    DamageKnockOffRider(this, m_fDamageIntensity, m_nPieceType, m_pDamageEntity, m_vecLastCollisionPosn, m_vecLastCollisionImpactVelocity);
+
+    if (m_pDamageEntity && m_pDamageEntity->GetIsTypeVehicle()) {
+        m_nLastWeaponDamageType = WEAPON_RAMMEDBYCAR;
+        m_pLastDamageEntity     = m_pDamageEntity;
+        NOTSA_AddReferenceRaw(&m_pLastDamageEntity, m_pDamageEntity);
+    }
+
+    if (physicalFlags.bCollisionProof ||
+        (m_pDamageEntity && m_pDamageEntity->GetIsTypeBuilding() && DotProduct(m_vecLastCollisionPosn, GetUp()) > 0.6f)) {
+        return;
+    }
+
+    if (intensity > 25.0f && GetStatus() != STATUS_WRECKED) {
+        if (vehicleFlags.bIsLawEnforcer && FindPlayerVehicle() && m_pDamageEntity == FindPlayerVehicle() && GetStatus() != STATUS_SIMPLE) {
+            if (m_vecMoveSpeed.Magnitude() <= FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() &&
+                FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() > 0.1f
+            ) {
+                FindPlayerPed()->SetWantedLevelNoDrop(WANTED_LEVEL_1);
+            }
+        }
+
+        auto damageDelta = (intensity - 25.0f) * m_pHandlingData->m_fCollisionDamageMultiplier;
+        if (damageDelta > 0.0f) {
+            if (damageDelta > 5.0f && m_pDriver && m_pDamageEntity && m_pDamageEntity->GetIsTypeVehicle() &&
+                (FindPlayerVehicle() != this || m_pDamageEntity->AsVehicle()->m_nCreatedBy != MISSION_VEHICLE) &&
+                m_pDamageEntity->AsVehicle()->m_pDriver
+            ) {
+                m_pDriver->Say(CTX_GLOBAL_CRASH_BIKE, 0, 1.0f);
+            }
+
+            const auto healthWasAlive = m_fHealth >= 1.0f;
+            if (FindPlayerVehicle() == this) {
+                damageDelta *= vehicleFlags.bTakeLessDamage ? (1.0f / 6.0f) : 0.5f;
+            } else if (vehicleFlags.bTakeLessDamage) {
+                damageDelta *= (1.0f / 12.0f);
+            } else if (m_pDamageEntity && m_pDamageEntity == FindPlayerVehicle()) {
+                damageDelta *= (2.0f / 3.0f);
+            } else {
+                damageDelta *= 0.25f;
+            }
+
+            m_fHealth -= damageDelta;
+            if (m_fHealth < 1.0f && healthWasAlive) {
+                m_fHealth = 1.0f;
+            }
+        }
+    }
+
+    if (m_fHealth < 250.0f && !bikeFlags.bEngineOnFire) {
+        bikeFlags.bEngineOnFire = true;
+        m_BlowUpTimer           = 0.0f;
+        m_Damager                = m_pLastDamageEntity;
+        if (m_pLastDamageEntity) {
+            NOTSA_AddReferenceRaw(&m_Damager, m_pLastDamageEntity);
+        }
+    }
 }
 
 // 0x6B89B0
