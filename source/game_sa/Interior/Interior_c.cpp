@@ -36,7 +36,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(ResetTiles, 0x593910);
     RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
     RH_ScopedInstall(GetFurnitureEntity, 0x5913B0, { .reversed = false });
-    RH_ScopedInstall(IsPtInside, 0x5913E0, { .reversed = false });
+    RH_ScopedInstall(IsPtInside, 0x5913E0);
     RH_ScopedInstall(CalcMatrix, 0x5914D0, { .reversed = false });
     RH_ScopedInstall(Furnish, 0x591590, { .reversed = false });
     RH_ScopedInstall(Unfurnish, 0x5915D0, { .reversed = false });
@@ -54,7 +54,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Exit, 0x592230, { .reversed = false });
     RH_ScopedInstall(FindBoundingBox, 0x5922C0, { .reversed = false });
     RH_ScopedInstall(CalcExitPts, 0x5924A0, { .reversed = false });
-    RH_ScopedInstall(IsVisible, 0x5929F0, { .reversed = false });
+    RH_ScopedInstall(IsVisible, 0x5929F0);
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .reversed = false });
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .reversed = false });
     RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .reversed = false });
@@ -299,7 +299,18 @@ FurnitureEntity_c* Interior_c::GetFurnitureEntity(CEntity* entity) {
 
 // 0x5913E0
 bool Interior_c::IsPtInside(const CVector& pt, CVector bias) {
-    return plugin::CallMethodAndReturn<bool, 0x5913E0, Interior_c*, const CVector&, CVector&>(this, pt, bias);
+    static constexpr auto TILE_SIZE = 0.5f;
+    const auto rel = pt - m_matrix.pos;
+    if (std::abs(DotProduct(m_matrix.right, rel)) > (float)m_box->m_width * TILE_SIZE + bias.x) {
+        return false;
+    }
+    if (std::abs(DotProduct(m_matrix.up, rel)) > (float)m_box->m_depth * TILE_SIZE + bias.y) {
+        return false;
+    }
+    if (std::abs(DotProduct(m_matrix.at, rel)) > (float)m_box->m_height * TILE_SIZE + bias.z) {
+        return false;
+    }
+    return true;
 }
 
 // 0x5914D0
@@ -482,7 +493,18 @@ void Interior_c::CalcExitPts() {
 
 // 0x5929F0
 bool Interior_c::IsVisible() {
-    return plugin::CallMethodAndReturn<bool, 0x5929F0, Interior_c*>(this);
+    const auto camPos = TheCamera.GetPosition();
+    if (IsPtInside(camPos, CVector{ 5.0f, 5.0f, 0.0f })) {
+        return true;
+    }
+    if (m_box->m_door > 0) {
+        const auto dx = camPos.x - m_position.x;
+        const auto dy = camPos.y - m_position.y;
+        if (dx * dx + dy * dy < 100.0f) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x592AA0
