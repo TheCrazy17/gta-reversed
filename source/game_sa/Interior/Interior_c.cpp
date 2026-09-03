@@ -45,9 +45,9 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(SetCornerTiles, 0x5917C0);
     RH_ScopedInstall(GetTileStatus, 0x5918E0);
     RH_ScopedInstall(GetNumEmptyTiles, 0x591920);
-    RH_ScopedInstall(GetRandomTile, 0x591B20, { .reversed = false });
+    RH_ScopedInstall(GetRandomTile, 0x591B20);
     RH_ScopedInstall(Shop_FurnishAisles, 0x59A590, { .reversed = false });
-    RH_ScopedInstall(GetTileCentre, 0x591BD0, { .reversed = false });
+    RH_ScopedInstall(GetTileCentre, 0x591BD0);
     RH_ScopedInstall(AddGotoPt, 0x591D20, { .reversed = false });
     RH_ScopedInstall(AddInteriorInfo, 0x591E40, { .reversed = false });
     RH_ScopedInstall(AddPickups, 0x591F90, { .reversed = false });
@@ -425,8 +425,19 @@ int32 Interior_c::GetNumEmptyTiles(int32 x, int32 y, int32 direction, int32 span
 }
 
 // 0x591B20
-int32 Interior_c::GetRandomTile(int32 a2, int32* a3, int32* a4) {
-    return plugin::CallMethodAndReturn<int32, 0x591B20, Interior_c*, int32, int32*, int32*>(this, a2, a3, a4);
+int32 Interior_c::GetRandomTile(int32 targetStatus, int32* outX, int32* outY) {
+    int32 x, y;
+    for (;;) {
+        x = CGeneral::GetRandomNumberInRange<int32>(0, m_box->m_width);
+        y = CGeneral::GetRandomNumberInRange<int32>(0, m_box->m_depth);
+        const auto status = (x >= 0 && y >= 0 && x < m_box->m_width && y < m_box->m_depth) ? m_tiles[x][y] : (int8)1;
+        if (status == targetStatus) {
+            break;
+        }
+    }
+    *outX = x;
+    *outY = y;
+    return targetStatus;
 }
 
 // 0x59A590
@@ -436,7 +447,12 @@ void Interior_c::Shop_FurnishAisles() {
 
 // 0x591BD0
 CVector* Interior_c::GetTileCentre(float offsetX, float offsetY, CVector* pointsIn) {
-    return plugin::CallMethodAndReturn<CVector*, 0x591BD0, Interior_c*, float, float, CVector*>(this, offsetX, offsetY, pointsIn);
+    static constexpr auto TILE_SIZE = 0.5f;
+    pointsIn->x = -(float)(int)m_box->m_width * TILE_SIZE + offsetX + TILE_SIZE;
+    pointsIn->y = -(float)(int)m_box->m_depth * TILE_SIZE + offsetY + TILE_SIZE;
+    pointsIn->z = -(float)(int)m_box->m_height * TILE_SIZE;
+    RwV3dTransformPoints(pointsIn, pointsIn, 1, &m_matrix);
+    return pointsIn;
 }
 
 // 0x591D20
