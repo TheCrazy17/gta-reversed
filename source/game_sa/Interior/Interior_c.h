@@ -24,7 +24,7 @@ public:
     tEffectInterior*  m_box;                // 0x14
     RwMatrix          m_matrix;             // 0x18
     int32             field_58;             // 0x58
-    TList_c<void>     m_list;               // 0x5C - TODO: Figure out type
+    TList_c<FurnitureEntity_c> m_list;       // 0x5C
     char              m_tiles[30][30];      // 0x68 - tile status grid, indexed [x][y] (see tEffectInterior::m_width/m_depth)
     int16             field_3EC;            // 0x3EC
     int16             field_3EE;            // 0x3EE

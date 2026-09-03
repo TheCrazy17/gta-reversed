@@ -35,7 +35,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Init, 0x593BF0, { .reversed = false });
     RH_ScopedInstall(ResetTiles, 0x593910);
     RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
-    RH_ScopedInstall(GetFurnitureEntity, 0x5913B0, { .reversed = false });
+    RH_ScopedInstall(GetFurnitureEntity, 0x5913B0);
     RH_ScopedInstall(IsPtInside, 0x5913E0);
     RH_ScopedInstall(CalcMatrix, 0x5914D0, { .reversed = false });
     RH_ScopedInstall(Furnish, 0x591590, { .reversed = false });
@@ -294,7 +294,12 @@ CObject* Interior_c::PlaceObject(uint8 isStealable, Furniture_c* furniture, floa
 
 // 0x5913B0
 FurnitureEntity_c* Interior_c::GetFurnitureEntity(CEntity* entity) {
-    return plugin::CallMethodAndReturn<FurnitureEntity_c*, 0x5913B0, Interior_c*, CEntity*>(this, entity);
+    for (auto* furn = m_list.GetHead(); furn; furn = m_list.GetNext(furn)) {
+        if (furn->m_entity == entity) {
+            return furn;
+        }
+    }
+    return nullptr;
 }
 
 // 0x5913E0
