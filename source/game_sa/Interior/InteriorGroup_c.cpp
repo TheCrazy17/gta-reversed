@@ -9,7 +9,7 @@ void InteriorGroup_c::InjectHooks() {
     //RH_ScopedInstall(Constructor, 0x597FE0, { .reversed = false });
     //RH_ScopedInstall(Destructor, 0x597FF0, { .reversed = false });
 
-    RH_ScopedInstall(Init, 0x5947E0, { .reversed = false });
+    RH_ScopedInstall(Init, 0x5947E0);
     RH_ScopedInstall(Update, 0x5968E0, { .reversed = false });
     RH_ScopedInstall(SetupPeds, 0x596890, { .reversed = false });
     RH_ScopedInstall(UpdatePeds, 0x596830, { .reversed = false });
@@ -36,8 +36,22 @@ void InteriorGroup_c::InjectHooks() {
 }
 
 // 0x5947E0
-void InteriorGroup_c::Init(CEntity* entity, int32 id) {
-    plugin::CallMethod<0x5947E0, InteriorGroup_c*, CEntity*, int32>(this, entity, id);
+void InteriorGroup_c::Init(CEntity* entity, uint8 groupId) {
+    for (auto& interior : m_interiors) {
+        interior = nullptr;
+    }
+    for (auto i = 0; i < std::size(m_peds); i++) {
+        m_peds[i]         = nullptr;
+        m_pedsToRemove[i] = nullptr;
+    }
+    m_numInteriors        = 0;
+    m_pathSetupComplete   = 0;
+    m_updatePeds          = 0;
+    m_isVisible           = false;
+    m_lastIsVisible       = false;
+    m_animBlockReferenced = 0;
+    m_pEntity             = entity;
+    m_groupId             = groupId;
 }
 
 // 0x5968E0

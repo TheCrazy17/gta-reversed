@@ -43,7 +43,7 @@ public:
     auto GetInteriors() { return m_interiors | rng::views::take(m_numInteriors); }
     auto GetPeds() { return m_peds | rng::views::take(m_numPeds); }
 
-    void Init(CEntity* entity, int32 id);
+    void Init(CEntity* entity, uint8 groupId);
     void Update();
     int32 AddInterior(Interior_c* interior);
     void SetupPeds();
