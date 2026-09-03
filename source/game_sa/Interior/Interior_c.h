@@ -113,7 +113,7 @@ public:
                               int32* a12, int32* a13, int32* a14, int32* a15);
     void PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11, int32* a12,
                                 int32* a13);
-    bool FindEmptyTiles(int32 a3, int32 a4, int32* arg8, int32* a5);
+    bool FindEmptyTiles(int32 xSpan, int32 ySpan, int32* outX, int32* outY);
     void FurnishShop(int32 a2);
 
     auto GetNodeAddress() const { return m_nodeAddress; }

@@ -58,7 +58,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .reversed = false });
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .reversed = false });
     RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .reversed = false });
-    RH_ScopedInstall(FindEmptyTiles, 0x591C50, { .reversed = false });
+    RH_ScopedInstall(FindEmptyTiles, 0x591C50);
     RH_ScopedInstall(FurnishShop, 0x59A790, { .reversed = false });
 }
 
@@ -591,8 +591,17 @@ void Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureS
 }
 
 // 0x591C50
-bool Interior_c::FindEmptyTiles(int32 a3, int32 a4, int32* arg8, int32* a5) {
-    return plugin::CallMethodAndReturn<bool, 0x591C50, Interior_c*, int32, int32, int32*, int32*>(this, a3, a4, arg8, a5);
+bool Interior_c::FindEmptyTiles(int32 xSpan, int32 ySpan, int32* outX, int32* outY) {
+    for (auto i = 0; i < 100; i++) {
+        const auto x = CGeneral::GetRandomNumberInRange<int32>(0, m_box->m_width);
+        const auto y = CGeneral::GetRandomNumberInRange<int32>(0, m_box->m_depth);
+        if (CheckTilesEmpty(x, y, xSpan, ySpan, true)) {
+            *outX = x;
+            *outY = y;
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x59A790
