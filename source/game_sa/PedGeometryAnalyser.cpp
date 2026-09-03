@@ -10,7 +10,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(CanPedJumpObstacle, "contacted", 0x5F32D0, bool(*)(const CPed&,const CEntity&,const CVector&,const CVector&), { .reversed = false });
     RH_ScopedInstall(CanPedTargetPed, 0x5F1C40);
     RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70);
-    RH_ScopedInstall(ComputeBuildingHitPoints, 0x5F1E30, { .reversed = false });
+    RH_ScopedInstall(ComputeBuildingHitPoints, 0x5F1E30);
     RH_ScopedInstall(ComputeClearTarget, 0x5F5D80, { .reversed = false });
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "ped", 0x5F3B70, bool (*)(const CPed& ped, CEntity& entity, CVector& point));
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "posn", 0x5F36F0, bool(*)(const CVector&,CEntity&,CVector&), { .reversed = false });
