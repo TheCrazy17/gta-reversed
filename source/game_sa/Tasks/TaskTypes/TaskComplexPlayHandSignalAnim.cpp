@@ -1,5 +1,6 @@
 #include "StdInc.h"
 #include "TaskComplexPlayHandSignalAnim.h"
+#include "Ragdoll/IKChainManager.h"
 
 void CTaskComplexPlayHandSignalAnim::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexPlayHandSignalAnim, 0x86d5dc, 11);
@@ -14,7 +15,7 @@ void CTaskComplexPlayHandSignalAnim::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x61BA00);
     RH_ScopedVMTInstall(GetTaskType, 0x61B2E0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x61B570);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x61B4F0, {.reversed = false});
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x61B4F0);
     RH_ScopedVMTInstall(ControlSubTask, 0x61B580, {.reversed = false});
 }
 
@@ -90,7 +91,19 @@ CTask* CTaskComplexPlayHandSignalAnim::CreateNextSubTask(CPed* ped) {
 
 // 0x61B4F0
 CTask* CTaskComplexPlayHandSignalAnim::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x61B4F0, CTaskComplexPlayHandSignalAnim*, CPed*>(this, ped);
+    if (IKChainManager_c::IsArmPointing(IK_ARM_LEFT, ped)) {
+        return nullptr;
+    }
+
+    if (m_animationId == ANIM_ID_UNDEFINED) {
+        m_animationId = GetAnimIdForPed(ped);
+        if (m_animationId == ANIM_ID_UNDEFINED) {
+            return nullptr;
+        }
+    }
+
+    m_DoUseFatHands = ped->GetModelId() == MODEL_BALLAS2 || ped->GetModelId() == MODEL_FAM1 || ped->GetModelId() == MODEL_FAM3;
+    return CreateSubTask(TASK_SIMPLE_STAND_STILL);
 }
 
 // 0x61B580
