@@ -53,6 +53,8 @@ public:
     int8              field_793;            // 0x793
 
 public:
+    static constexpr auto TILE_SIZE = 0.5f;
+
     static void InjectHooks();
 
     Interior_c() = default;

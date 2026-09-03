@@ -14,8 +14,8 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(FurnishKitchen, 0x5970B0, { .reversed = false });
     RH_ScopedInstall(Lounge_AddTV, 0x597240, { .reversed = false });
     RH_ScopedInstall(Lounge_AddHifi, 0x597430, { .reversed = false });
-    RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0, { .reversed = false });
-    RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0, { .reversed = false });
+    RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
+    RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
     RH_ScopedInstall(FurnishLounge, 0x597740, { .reversed = false });
     RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210, { .reversed = false });
     RH_ScopedInstall(Office_PlaceDesk, 0x5993E0, { .reversed = false });
@@ -49,7 +49,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Shop_FurnishAisles, 0x59A590, { .reversed = false });
     RH_ScopedInstall(GetTileCentre, 0x591BD0);
     RH_ScopedInstall(AddGotoPt, 0x591D20, { .reversed = false });
-    RH_ScopedInstall(AddInteriorInfo, 0x591E40, { .reversed = false });
+    RH_ScopedInstall(AddInteriorInfo, 0x591E40);
     RH_ScopedInstall(AddPickups, 0x591F90, { .reversed = false });
     RH_ScopedInstall(Exit, 0x592230, { .reversed = false });
     RH_ScopedInstall(FindBoundingBox, 0x5922C0, { .reversed = false });
@@ -103,13 +103,47 @@ CObject* Interior_c::Lounge_AddHifi(int32 a2, int32 a3, int32 a4, int32 a5) {
 }
 
 // 0x5974E0
-void Interior_c::Lounge_AddChairInfo(int32 a2, int32 a3, CEntity* entityIgnoredCollision) {
-    plugin::CallMethod<0x5974E0, Interior_c*, int32, int32, CEntity*>(this, a2, a3, entityIgnoredCollision);
+void Interior_c::Lounge_AddChairInfo(int32 side, int32 offset, CEntity* entityIgnoredCollision) {
+    switch (side) {
+    case 0: AddInteriorInfo(1, (float)offset + TILE_SIZE, (float)(m_box->m_depth - 1) - 1.0f, 2, entityIgnoredCollision); break;
+    case 2: AddInteriorInfo(1, (float)offset + TILE_SIZE, 1.0f, 0, entityIgnoredCollision); break;
+    case 1: AddInteriorInfo(1, 1.0f, (float)offset + TILE_SIZE, 3, entityIgnoredCollision); break;
+    case 3: AddInteriorInfo(1, (float)(m_box->m_width - 1) - 1.0f, (float)offset + TILE_SIZE, 1, entityIgnoredCollision); break;
+    default: break;
+    }
 }
 
 // 0x5975C0
-void Interior_c::Lounge_AddSofaInfo(int32 sitType, int32 offsetX, CEntity* entityIgnoredCollision) {
-    plugin::CallMethod<0x5975C0, Interior_c*, int32, int32, CEntity*>(this, sitType, offsetX, entityIgnoredCollision);
+void Interior_c::Lounge_AddSofaInfo(int32 sitType, int32 offset, CEntity* entityIgnoredCollision) {
+    switch (sitType) {
+    case 0: {
+        const auto x = (float)offset + TILE_SIZE;
+        const auto y = (float)(m_box->m_depth - 1) - 1.0f;
+        AddInteriorInfo(1, x, y, 2, entityIgnoredCollision);
+        AddInteriorInfo(1, x + 1.0f, y, 2, entityIgnoredCollision);
+        break;
+    }
+    case 2: {
+        const auto x = (float)offset + TILE_SIZE;
+        AddInteriorInfo(1, x, 1.0f, 0, entityIgnoredCollision);
+        AddInteriorInfo(1, x + 1.0f, 1.0f, 0, entityIgnoredCollision);
+        break;
+    }
+    case 1: {
+        const auto y = (float)offset + TILE_SIZE;
+        AddInteriorInfo(1, 1.0f, y, 3, entityIgnoredCollision);
+        AddInteriorInfo(1, 1.0f, y + 1.0f, 3, entityIgnoredCollision);
+        break;
+    }
+    case 3: {
+        const auto x = (float)(m_box->m_width - 1) - 1.0f;
+        const auto y = (float)offset + TILE_SIZE;
+        AddInteriorInfo(1, x, y, 1, entityIgnoredCollision);
+        AddInteriorInfo(1, x, y + 1.0f, 1, entityIgnoredCollision);
+        break;
+    }
+    default: break;
+    }
 }
 
 // 0x597740
@@ -304,7 +338,6 @@ FurnitureEntity_c* Interior_c::GetFurnitureEntity(CEntity* entity) {
 
 // 0x5913E0
 bool Interior_c::IsPtInside(const CVector& pt, CVector bias) {
-    static constexpr auto TILE_SIZE = 0.5f;
     const auto rel = pt - m_matrix.pos;
     if (std::abs(DotProduct(m_matrix.right, rel)) > (float)m_box->m_width * TILE_SIZE + bias.x) {
         return false;
@@ -463,7 +496,6 @@ void Interior_c::Shop_FurnishAisles() {
 
 // 0x591BD0
 CVector* Interior_c::GetTileCentre(float offsetX, float offsetY, CVector* pointsIn) {
-    static constexpr auto TILE_SIZE = 0.5f;
     pointsIn->x = -(float)(int)m_box->m_width * TILE_SIZE + offsetX + TILE_SIZE;
     pointsIn->y = -(float)(int)m_box->m_depth * TILE_SIZE + offsetY + TILE_SIZE;
     pointsIn->z = -(float)(int)m_box->m_height * TILE_SIZE;
@@ -478,7 +510,34 @@ void Interior_c::AddGotoPt(int32 a, int32 b, float a3, float a4) {
 
 // 0x591E40
 bool Interior_c::AddInteriorInfo(int32 actionType, float offsetX, float offsetY, int32 direction, CEntity* entityIgnoredCollision) {
-    return plugin::CallMethodAndReturn<bool, 0x591E40, Interior_c*, int32, float, float, int32, CEntity*>(this, actionType, offsetX, offsetY, direction, entityIgnoredCollision);
+    if (m_interiorInfosCount >= 16) {
+        return false;
+    }
+
+    CVector pos;
+    GetTileCentre(offsetX, offsetY, &pos);
+    pos.z += 0.8f;
+
+    CVector dir{};
+    if (direction != -1) {
+        switch (direction) {
+        case 3: dir.x = -1.0f; break;
+        case 1: dir.x =  1.0f; break;
+        case 2: dir.y =  1.0f; break;
+        case 0: dir.y = -1.0f; break;
+        default: break;
+        }
+        RwV3dTransformVectors(&dir, &dir, 1, &m_matrix);
+    }
+
+    auto& info = m_interiorInfos[m_interiorInfosCount];
+    info.Type                   = static_cast<eInteriorInfoType>(actionType);
+    info.Pos                    = pos;
+    info.Dir                    = dir;
+    info.IsInUse                = false;
+    info.EntityIgnoredCollision = entityIgnoredCollision;
+    m_interiorInfosCount++;
+    return true;
 }
 
 // 0x591F90
