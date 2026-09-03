@@ -11,7 +11,7 @@ public:
     CTaskComplexCarDriveWander(CVehicle* vehicle, eCarDrivingStyle carDrivingStyle = DRIVING_STYLE_STOP_FOR_CARS, float fSpeed = 10.f);
     ~CTaskComplexCarDriveWander() override = default;
 
-    CTask* Clone() const override { return new CTaskComplexCarDrive(m_Veh, m_CruiseSpeed, MODEL_INVALID, static_cast<eCarDrivingStyle>(m_CarDrivingStyle)); };
+    CTask* Clone() const override { return new CTaskComplexCarDriveWander{*this}; };
     eTaskType GetTaskType() const override { return Type; }
     void SetUpCar() override;
     CTask* CreateSubTaskCannotGetInCar(CPed* ped) override;
