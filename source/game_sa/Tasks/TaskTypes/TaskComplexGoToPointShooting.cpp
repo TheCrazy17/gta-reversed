@@ -34,7 +34,7 @@ CTaskComplexGoToPointShooting::CTaskComplexGoToPointShooting(
 }
 
 CTaskComplexGoToPointShooting::CTaskComplexGoToPointShooting(const CTaskComplexGoToPointShooting& o) :
-    CTaskComplexGoToPointAiming{*this}
+    CTaskComplexGoToPointAiming{o}
 {
 }
 
