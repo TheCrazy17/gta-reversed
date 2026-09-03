@@ -22,7 +22,24 @@ CTaskSimpleChoking::CTaskSimpleChoking(const CTaskSimpleChoking& o) :
 
 // 0x6203F0
 bool CTaskSimpleChoking::MakeAbortable(CPed* ped, eAbortPriority priority, CEvent const* event) {
-    return plugin::CallMethodAndReturn<bool, 0x6203F0, CTaskSimpleChoking*, CPed*, eAbortPriority, CEvent const*>(this, ped, priority, event);
+    if (priority == ABORT_PRIORITY_URGENT || priority == ABORT_PRIORITY_IMMEDIATE) {
+        if (event && event->GetEventPriority() < 57) {
+            return false;
+        }
+        if (m_pAnim) {
+            m_pAnim->m_BlendDelta = -4.0f;
+            m_pAnim->SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
+            m_pAnim = nullptr;
+        }
+        m_bIsFinished = true;
+    } else if (m_pAnim) {
+        m_pAnim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+        m_pAnim->m_BlendDelta = -4.0f;
+        m_pAnim->SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
+        m_pAnim = nullptr;
+        return true;
+    }
+    return true;
 }
 
 // 0x620490
@@ -62,6 +79,6 @@ void CTaskSimpleChoking::InjectHooks() {
 
     RH_ScopedVMTInstall(Clone, 0x623220);
     RH_ScopedVMTInstall(GetTaskType, 0x620360);
-    RH_ScopedVMTInstall(MakeAbortable, 0x6203F0, { .reversed = false });
+    RH_ScopedVMTInstall(MakeAbortable, 0x6203F0);
     RH_ScopedVMTInstall(ProcessPed, 0x620490, { .reversed = false });
 }
