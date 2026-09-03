@@ -15,6 +15,8 @@
 #include "Enums/eSurfaceType.h"
 #include "Enums/eWantedLevel.h"
 #include "VehicleRecording.h"
+#include "Plugins/RpAnimBlendPlugin/RpAnimBlend.h"
+#include "Animation/AnimBlendAssociation.h"
 
 
 
@@ -27,7 +29,7 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(dmgDrawCarCollidingParticles, 0x6B5A00);
     RH_ScopedInstall(DamageKnockOffRider, 0x6B5A10);
     RH_ScopedInstall(KnockOffRider, 0x6B5F40);
-    RH_ScopedInstall(SetRemoveAnimFlags, 0x6B5F50, { .reversed = false });
+    RH_ScopedInstall(SetRemoveAnimFlags, 0x6B5F50);
     RH_ScopedInstall(ReduceHornCounter, 0x6B5F90);
     RH_ScopedInstall(ProcessAI, 0x6BC930, { .reversed = false });
     RH_ScopedInstall(ProcessBuoyancy, 0x6B5FB0);
@@ -281,7 +283,13 @@ CPed* CBike::KnockOffRider(eWeaponType arg0, uint8 arg1, CPed* ped, bool arg3) {
 
 // 0x6B5F50
 void CBike::SetRemoveAnimFlags(CPed* ped) {
-    ((void(__thiscall*)(CBike*, CPed*))0x6B5F50)(this, ped);
+    if (!ped->GetIsTypePed()) {
+        return;
+    }
+
+    for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(ped->GetRpClump(), ANIMATION_SECONDARY_TASK_ANIM); assoc; assoc = RpAnimBlendGetNextAssociation(assoc, ANIMATION_SECONDARY_TASK_ANIM)) {
+        assoc->SetFlag(ANIMATION_IS_BLEND_AUTO_REMOVE);
+    }
 }
 
 // 0x6B5F90
