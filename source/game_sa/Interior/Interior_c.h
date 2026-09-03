@@ -25,7 +25,7 @@ public:
     RwMatrix          m_matrix;             // 0x18
     int32             field_58;             // 0x58
     TList_c<void>     m_list;               // 0x5C - TODO: Figure out type
-    char              field_68[900];        // 0x68
+    char              m_tiles[30][30];      // 0x68 - tile status grid, indexed [x][y] (see tEffectInterior::m_width/m_depth)
     int16             field_3EC;            // 0x3EC
     int16             field_3EE;            // 0x3EE
     CNodeAddress      m_nodeAddress;        // 0x3F0
@@ -92,11 +92,11 @@ public:
     void CalcMatrix(CVector* translation);
     void Furnish();
     void Unfurnish();
-    int8 CheckTilesEmpty(int32 a1, int32 a2, int32 a3, int32 a4, uint8 a5);
-    void SetTilesStatus(int32 a, int32 b, int32 a3, int32 a4, int32 a5, int8 a6);
-    void SetCornerTiles(int32 a4, int32 a3, int32 a5, uint8 a6);
+    bool  CheckTilesEmpty(int32 x, int32 y, int32 xSpan, int32 ySpan, bool bAllowWindowTiles);
+    void  SetTilesStatus(int32 x, int32 y, int32 xSpan, int32 ySpan, int8 status, bool bOverwriteSpecial);
+    void  SetCornerTiles(int32 corner, int32 size, int8 status, bool bOverwriteSpecial);
     int32 GetTileStatus(int32 x, int32 y);
-    int32 GetNumEmptyTiles(int32 a2, int32 a3, int32 a4, int32 a5);
+    int32 GetNumEmptyTiles(int32 x, int32 y, int32 direction, int32 span);
     int32 GetRandomTile(int32 a2, int32* a3, int32* a4);
     void Shop_FurnishAisles();
     CVector* GetTileCentre(float offsetX, float offsetY, CVector* pointsIn);
