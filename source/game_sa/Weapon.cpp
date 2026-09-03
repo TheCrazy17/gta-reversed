@@ -57,7 +57,7 @@ void CWeapon::InjectHooks() {
     RH_ScopedInstall(Fire, 0x742300);
     RH_ScopedGlobalInstall(DoTankDoomAiming, 0x73D1E0, { .reversed = false });
     RH_ScopedGlobalInstall(DoDriveByAutoAiming, 0x73D720, { .reversed = false });
-    RH_ScopedGlobalInstall(FindNearestTargetEntityWithScreenCoors, 0x73E240, { .reversed = false });
+    RH_ScopedGlobalInstall(FindNearestTargetEntityWithScreenCoors, 0x73E240);
     RH_ScopedGlobalInstall(EvaluateTargetForHeatSeekingMissile, 0x73E560);
     RH_ScopedGlobalInstall(CheckForShootingVehicleOccupant, 0x73F480, { .reversed = false });
     RH_ScopedGlobalInstall(PickTargetForHeatSeekingMissile, 0x73F910);
