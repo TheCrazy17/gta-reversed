@@ -28,7 +28,7 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(SetupOfficePeds, 0x594BF0, { .reversed = false });
     RH_ScopedInstall(GetEntity, 0x594BD0);
     RH_ScopedInstall(GetPed, 0x594B90);
-    RH_ScopedInstall(FindClosestInteriorInfo, 0x594A50, { .reversed = false });
+    RH_ScopedInstall(FindClosestInteriorInfo, 0x594A50);
     RH_ScopedInstall(FindInteriorInfo, 0x594970, { .reversed = false });
     RH_ScopedInstall(GetNumInteriorInfos, 0x594920);
     RH_ScopedInstall(GetRandomInterior, 0x5948C0);
@@ -177,9 +177,38 @@ CPed* InteriorGroup_c::GetPed(int32 idx) {
 }
 
 // 0x594A50
-bool InteriorGroup_c::FindClosestInteriorInfo(int32 a, CVector point, float b, InteriorInfo_t** interiorInfo, Interior_c** interior, float* pSome) {
-    return plugin::CallMethodAndReturn<bool, 0x594A50, InteriorGroup_c*, int32, CVector, float, InteriorInfo_t**, Interior_c**, float*>(this, a, point, b, interiorInfo, interior,
-                                                                                                                                      pSome);
+bool InteriorGroup_c::FindClosestInteriorInfo(int32 infoType, CVector point, float maxDist, InteriorInfo_t** outInfo, Interior_c** outInterior, float* outDistSq) {
+    const auto maxDistSq = maxDist * maxDist;
+
+    InteriorInfo_t* closest         = nullptr;
+    Interior_c*     closestInterior = nullptr;
+    auto            closestDistSq   = 999999.0f;
+
+    for (auto* interior : m_interiors) {
+        if (!interior || !interior->IsPtInside(point)) {
+            continue;
+        }
+        for (auto i = 0; i < interior->m_interiorInfosCount; i++) {
+            auto& info = interior->m_interiorInfos[i];
+            if ((infoType != -1 && info.Type != (eInteriorInfoType)infoType) || info.IsInUse) {
+                continue;
+            }
+            const auto distSq = CVector::DistSqr(point, info.Pos);
+            if (distSq < maxDistSq && distSq < closestDistSq) {
+                closest         = &info;
+                closestInterior = interior;
+                closestDistSq   = distSq;
+            }
+        }
+    }
+
+    if (!closest) {
+        return false;
+    }
+    *outInfo     = closest;
+    *outInterior = closestInterior;
+    *outDistSq   = closestDistSq;
+    return true;
 }
 
 // 0x594970

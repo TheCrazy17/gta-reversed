@@ -65,7 +65,7 @@ public:
     void SetupOfficePeds();
     CEntity* GetEntity();
     CPed* GetPed(int32);
-    bool FindClosestInteriorInfo(int32 a, CVector point, float b, InteriorInfo_t** interiorInfo, Interior_c** interior, float* pSome);
+    bool FindClosestInteriorInfo(int32 infoType, CVector point, float maxDist, InteriorInfo_t** outInfo, Interior_c** outInterior, float* outDistSq);
     bool FindInteriorInfo(eInteriorInfoType infoType, InteriorInfo_t** a3, Interior_c** a4);
     int32 GetNumInteriorInfos(eInteriorInfoType infoType);
     int32 GetRandomInterior();
