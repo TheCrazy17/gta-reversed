@@ -9,7 +9,7 @@ void CTaskComplexHitPedWithCar::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x6539A0);
     RH_ScopedInstall(Destructor, 0x653A30);
 
-    RH_ScopedGlobalInstall(ComputeEvasiveStepMoveDir, 0x653B40, { .reversed = false });
+    RH_ScopedGlobalInstall(ComputeEvasiveStepMoveDir, 0x653B40);
 
     RH_ScopedInstall(HitHurtsPed, 0x653AE0);
     RH_ScopedInstall(CreateSubTask, 0x6560E0, { .reversed = false });
