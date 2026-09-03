@@ -9,8 +9,8 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x65EAA0, { .reversed = false });
     RH_ScopedInstall(Destructor, 0x65EBB0, { .reversed = false });
     //RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40, { .reversed = false }); // not hooked because i want to keep CVector return, but original function took a CVector&
-    RH_ScopedInstall(Clone, 0x65ECB0, { .reversed = false });
-    RH_ScopedInstall(MakeAbortable, 0x65EC30, { .reversed = false });
+    RH_ScopedInstall(Clone, 0x65ECB0);
+    RH_ScopedInstall(MakeAbortable, 0x65EC30);
     RH_ScopedInstall(CreateNextSubTask, 0x665E00, { .reversed = false });
     RH_ScopedInstall(CreateFirstSubTask, 0x666160, { .reversed = false });
     RH_ScopedInstall(ControlSubTask, 0x662A10, { .reversed = false });
@@ -36,12 +36,23 @@ CVector CTaskComplexGangFollower::CalculateOffsetPosition() {
 
 // 0x65ECB0
 CTask* CTaskComplexGangFollower::Clone() const {
-    return plugin::CallMethodAndReturn<CTask*, 0x65ECB0, const CTaskComplexGangFollower*>(this);
+    auto* clone = new CTaskComplexGangFollower(m_PedGroup, m_Leader, byte3C, dword20, dword38);
+    clone->m_Flags = (clone->m_Flags & ~4) | (m_Flags & 4);
+    return clone;
 }
 
 // 0x65EC30
 bool CTaskComplexGangFollower::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event) {
-    return plugin::CallMethodAndReturn<bool, 0x65EC30, CTaskComplexGangFollower*, CPed*, int32, CEvent const*>(this, ped, priority, event);
+    if (m_pSubTask && !m_pSubTask->MakeAbortable(ped, priority, event)) {
+        return false;
+    }
+
+    // NOTSA: clears two unidentified CPed-level task/flag bits (this+0x474 bit 0x400000,
+    // this+0x478 bit 0x10000) - exact field names not identified this session, kept as raw
+    // offset writes for fidelity.
+    *(uint32*)((char*)ped + 0x478) &= ~0x10000u;
+    *(uint32*)((char*)ped + 0x474) &= ~0x400000u;
+    return true;
 }
 
 // 0x665E00
