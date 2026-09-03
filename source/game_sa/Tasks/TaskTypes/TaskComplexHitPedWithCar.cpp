@@ -16,8 +16,8 @@ void CTaskComplexHitPedWithCar::InjectHooks() {
 
     RH_ScopedVMTInstall(Clone, 0x6559B0);
     RH_ScopedVMTInstall(GetTaskType, 0x653A20);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x657AF0, { .reversed = false });
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x656300, { .reversed = false });
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x657AF0);
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x656300);
     RH_ScopedVMTInstall(ControlSubTask, 0x653A90);
 
 }
@@ -68,12 +68,40 @@ CTask* CTaskComplexHitPedWithCar::CreateSubTask(eTaskType tt) {
 
 // 0x657AF0
 CTask* CTaskComplexHitPedWithCar::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x657AF0, CTaskComplexHitPedWithCar*, CPed*>(this, ped);
+    const auto subTaskType = m_pSubTask->GetTaskType();
+    if (subTaskType < TASK_SIMPLE_EVASIVE_DIVE) {
+        if (subTaskType != TASK_COMPLEX_EVASIVE_STEP && subTaskType != TASK_NONE &&
+            subTaskType != TASK_COMPLEX_FALL_AND_GET_UP && subTaskType != TASK_SIMPLE_HIT_BEHIND
+        ) {
+            return nullptr;
+        }
+    } else if (subTaskType != TASK_SIMPLE_KILL_PED_WITH_CAR) {
+        if (subTaskType != TASK_SIMPLE_HURT_PED_WITH_CAR) {
+            return nullptr;
+        }
+        // NOTSA: `m_pSubTask+0x10` is CTaskSimpleHurtPedWithCar's private `m_bWillKillPed` -
+        // no public accessor exists, kept as a raw offset check.
+        if (*(bool*)((char*)m_pSubTask + 0x10)) {
+            return nullptr;
+        }
+        return CreateSubTask(TASK_COMPLEX_FALL_AND_GET_UP);
+    }
+    return CreateSubTask(TASK_FINISHED);
 }
 
 // 0x656300
 CTask* CTaskComplexHitPedWithCar::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x656300, CTaskComplexHitPedWithCar*, CPed*>(this, ped);
+    m_PedHitSide = CPedGeometryAnalyser::ComputePedHitSide(*ped, *m_Veh);
+
+    const auto threshold = ped->IsPlayer() ? 20.0f : 12.0f;
+    if (m_ImpulseMag <= threshold) {
+        if (!HitHurtsPed(ped)) {
+            m_MoveDir = ComputeEvasiveStepMoveDir(ped, m_Veh);
+            return CreateSubTask(TASK_COMPLEX_EVASIVE_STEP);
+        }
+        return CreateSubTask(TASK_SIMPLE_HURT_PED_WITH_CAR);
+    }
+    return CreateSubTask(TASK_SIMPLE_KILL_PED_WITH_CAR);
 }
 
 // 0x653A90
