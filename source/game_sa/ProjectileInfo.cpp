@@ -10,6 +10,7 @@
 #include "Fx/FxManager.h"
 #include "Fx/FxSystem.h"
 #include "Explosion.h"
+#include "Audio/AudioEngine.h"
 
 void CProjectileInfo::InjectHooks() {
     RH_ScopedClass(CProjectileInfo);
@@ -22,7 +23,7 @@ void CProjectileInfo::InjectHooks() {
     RH_ScopedInstall(RemoveNotAdd, 0x737C00);
     RH_ScopedInstall(AddProjectile, 0x737C80, { .reversed = false });
     RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860);
-    RH_ScopedInstall(RemoveProjectile, 0x7388F0, { .reversed = false });
+    RH_ScopedInstall(RemoveProjectile, 0x7388F0);
     RH_ScopedInstall(Update, 0x738B20, { .reversed = false });
     RH_ScopedInstall(IsProjectileInRange, 0x739860);
     RH_ScopedInstall(RemoveAllProjectiles, 0x7399B0);
@@ -102,7 +103,40 @@ void CProjectileInfo::RemoveDetonatorProjectiles() {
 
 // 0x7388F0
 void CProjectileInfo::RemoveProjectile(CProjectileInfo* info, CProjectile* object) {
-    plugin::Call<0x7388F0, CProjectileInfo*, CProjectile*>(info, object);
+    const auto pos = object->GetPosition();
+
+    switch (info->m_nWeaponType) {
+    case WEAPON_GRENADE:
+    case WEAPON_FREEFALL_BOMB:
+        CExplosion::AddExplosion(nullptr, info->m_pCreator, EXPLOSION_GRENADE, pos, 0, true, -1.0f, false);
+        break;
+    case WEAPON_MOLOTOV:
+        CExplosion::AddExplosion(nullptr, info->m_pCreator, EXPLOSION_MOLOTOV, pos, 0, true, -1.0f, false);
+        AudioEngine.ReportObjectDestruction(object);
+        break;
+    case WEAPON_ROCKET: {
+        auto* creator = info->m_pCreator;
+        if (creator && creator->GetIsTypeVehicle()) {
+            creator = creator->AsVehicle()->GetDriver();
+        }
+        CExplosion::AddExplosion(nullptr, creator, EXPLOSION_ROCKET, pos, 0, true, -1.0f, false);
+        break;
+    }
+    case WEAPON_ROCKET_HS: {
+        const auto explosionType = info->m_pCreator == FindPlayerPed() ? EXPLOSION_ROCKET : EXPLOSION_WEAK_ROCKET;
+        CExplosion::AddExplosion(nullptr, info->m_pCreator, explosionType, pos, 0, true, -1.0f, false);
+        break;
+    }
+    default:
+        break;
+    }
+
+    info->m_bActive = false;
+    info->RemoveFXSystem(false);
+
+    CRadar::ClearBlipForEntity(BLIP_OBJECT, GetObjectPool()->GetRef(object));
+    CWorld::Remove(object);
+    delete object;
 }
 
 // 0x738B20
