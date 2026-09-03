@@ -53,7 +53,7 @@ public:
     int8 ArePathsLoaded();
     void Setup();
     int8 Exit();
-    int8 ContainsInteriorType(int32 a2);
+    int8 ContainsInteriorType(int32 type);
     int8 CalcIsVisible();
 
     void DereferenceAnims();
@@ -67,7 +67,7 @@ public:
     CPed* GetPed(int32);
     bool FindClosestInteriorInfo(int32 a, CVector point, float b, InteriorInfo_t** interiorInfo, Interior_c** interior, float* pSome);
     bool FindInteriorInfo(eInteriorInfoType infoType, InteriorInfo_t** a3, Interior_c** a4);
-    int32 GetNumInteriorInfos(int32 a2);
+    int32 GetNumInteriorInfos(eInteriorInfoType infoType);
     int32 GetRandomInterior();
     auto GetId() const { return m_id; }
 

@@ -1,5 +1,6 @@
 #include "StdInc.h"
 #include "InteriorGroup_c.h"
+#include "Interior_c.h"
 
 void InteriorGroup_c::InjectHooks() {
     RH_ScopedClass(InteriorGroup_c);
@@ -17,21 +18,21 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(ArePathsLoaded, 0x595380, { .reversed = false });
     RH_ScopedInstall(Setup, 0x595320, { .reversed = false });
     RH_ScopedInstall(Exit, 0x595290, { .reversed = false });
-    RH_ScopedInstall(ContainsInteriorType, 0x595250, { .reversed = false });
-    RH_ScopedInstall(CalcIsVisible, 0x595200, { .reversed = false });
+    RH_ScopedInstall(ContainsInteriorType, 0x595250);
+    RH_ScopedInstall(CalcIsVisible, 0x595200);
     RH_ScopedInstall(DereferenceAnims, 0x595160);
     RH_ScopedInstall(ReferenceAnims, 0x5950D0);
     RH_ScopedInstall(UpdateOfficePeds, 0x594E90, { .reversed = false });
     RH_ScopedInstall(RemovePed, 0x594E30, { .reversed = false });
     RH_ScopedInstall(SetupShopPeds, 0x594C10, { .reversed = false });
     RH_ScopedInstall(SetupOfficePeds, 0x594BF0, { .reversed = false });
-    RH_ScopedInstall(GetEntity, 0x594BD0, { .reversed = false });
+    RH_ScopedInstall(GetEntity, 0x594BD0);
     RH_ScopedInstall(GetPed, 0x594B90, { .reversed = false });
     RH_ScopedInstall(FindClosestInteriorInfo, 0x594A50, { .reversed = false });
     RH_ScopedInstall(FindInteriorInfo, 0x594970, { .reversed = false });
-    RH_ScopedInstall(GetNumInteriorInfos, 0x594920, { .reversed = false });
-    RH_ScopedInstall(GetRandomInterior, 0x5948C0, { .reversed = false });
-    RH_ScopedInstall(AddInterior, 0x594840, { .reversed = false });
+    RH_ScopedInstall(GetNumInteriorInfos, 0x594920);
+    RH_ScopedInstall(GetRandomInterior, 0x5948C0);
+    RH_ScopedInstall(AddInterior, 0x594840);
 }
 
 // 0x5947E0
@@ -46,7 +47,14 @@ void InteriorGroup_c::Update() {
 
 // 0x594840
 int32 InteriorGroup_c::AddInterior(Interior_c* interior) {
-    return plugin::CallMethodAndReturn<int32, 0x594840, InteriorGroup_c*, Interior_c*>(this, interior);
+    for (auto i = 0; i < std::size(m_interiors); i++) {
+        if (!m_interiors[i]) {
+            m_interiors[i] = interior;
+            m_numInteriors++;
+            return i;
+        }
+    }
+    return -1;
 }
 
 // 0x596890
@@ -85,13 +93,26 @@ int8 InteriorGroup_c::Exit() {
 }
 
 // 0x595250
-int8 InteriorGroup_c::ContainsInteriorType(int32 a2) {
-    return plugin::CallMethodAndReturn<int8, 0x595250, InteriorGroup_c*, int32>(this, a2);
+int8 InteriorGroup_c::ContainsInteriorType(int32 type) {
+    for (auto* interior : m_interiors) {
+        if (interior && interior->m_box->m_type == type) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x595200
 int8 InteriorGroup_c::CalcIsVisible() {
-    return plugin::CallMethodAndReturn<int8, 0x595200, InteriorGroup_c*>(this);
+    m_lastIsVisible = m_isVisible;
+    m_isVisible = false;
+    for (auto* interior : GetInteriors()) {
+        if (interior->IsVisible()) {
+            m_isVisible = true;
+            break;
+        }
+    }
+    return m_isVisible;
 }
 
 // 0x595160
@@ -139,7 +160,7 @@ void InteriorGroup_c::SetupOfficePeds() {
 
 // 0x594BD0
 CEntity* InteriorGroup_c::GetEntity() {
-    return plugin::CallMethodAndReturn<CEntity*, 0x594BD0, InteriorGroup_c*>(this);
+    return m_pEntity;
 }
 
 // 0x594B90
@@ -159,13 +180,34 @@ bool InteriorGroup_c::FindInteriorInfo(eInteriorInfoType infoType, InteriorInfo_
 }
 
 // 0x594920
-int32 InteriorGroup_c::GetNumInteriorInfos(int32 a2) {
-    return plugin::CallMethodAndReturn<int32, 0x594920, InteriorGroup_c*, int32>(this, a2);
+int32 InteriorGroup_c::GetNumInteriorInfos(eInteriorInfoType infoType) {
+    int32 count = 0;
+    for (auto* interior : m_interiors) {
+        if (!interior) {
+            continue;
+        }
+        for (auto i = 0; i < interior->m_interiorInfosCount; i++) {
+            if (interior->m_interiorInfos[i].Type == infoType) {
+                count++;
+            }
+        }
+    }
+    return count;
 }
 
 // 0x5948C0
 int32 InteriorGroup_c::GetRandomInterior() {
-    return plugin::CallMethodAndReturn<int32, 0x5948C0, InteriorGroup_c*>(this);
+    const auto r = CGeneral::GetRandomNumberInRange<int32>(0, m_numInteriors);
+    auto validIdx = 0;
+    for (auto* interior : m_interiors) {
+        if (interior) {
+            if (validIdx == r) {
+                return reinterpret_cast<int32>(interior);
+            }
+            validIdx++;
+        }
+    }
+    return 0;
 }
 
 //! @notsa
