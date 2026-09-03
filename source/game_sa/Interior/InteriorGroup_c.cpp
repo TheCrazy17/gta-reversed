@@ -23,11 +23,11 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(DereferenceAnims, 0x595160);
     RH_ScopedInstall(ReferenceAnims, 0x5950D0);
     RH_ScopedInstall(UpdateOfficePeds, 0x594E90, { .reversed = false });
-    RH_ScopedInstall(RemovePed, 0x594E30, { .reversed = false });
+    RH_ScopedInstall(RemovePed, 0x594E30);
     RH_ScopedInstall(SetupShopPeds, 0x594C10, { .reversed = false });
     RH_ScopedInstall(SetupOfficePeds, 0x594BF0, { .reversed = false });
     RH_ScopedInstall(GetEntity, 0x594BD0);
-    RH_ScopedInstall(GetPed, 0x594B90, { .reversed = false });
+    RH_ScopedInstall(GetPed, 0x594B90);
     RH_ScopedInstall(FindClosestInteriorInfo, 0x594A50, { .reversed = false });
     RH_ScopedInstall(FindInteriorInfo, 0x594970, { .reversed = false });
     RH_ScopedInstall(GetNumInteriorInfos, 0x594920);
@@ -144,8 +144,16 @@ void InteriorGroup_c::UpdateOfficePeds() {
 }
 
 // 0x594E30
-int8 InteriorGroup_c::RemovePed(CPed* a2) {
-    return plugin::CallMethodAndReturn<int8, 0x594E30, InteriorGroup_c*, CPed*>(this, a2);
+int8 InteriorGroup_c::RemovePed(CPed* ped) {
+    for (auto i = 0; i < std::size(m_peds); i++) {
+        if (m_peds[i] == ped) {
+            CPopulation::RemovePed(ped);
+            m_peds[i] = nullptr;
+            m_numPeds--;
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x594C10
@@ -165,7 +173,7 @@ CEntity* InteriorGroup_c::GetEntity() {
 
 // 0x594B90
 CPed* InteriorGroup_c::GetPed(int32 idx) {
-    return plugin::CallMethodAndReturn<CPed*, 0x594B90, InteriorGroup_c*, int32>(this, idx);
+    return m_peds[idx];
 }
 
 // 0x594A50
