@@ -13,7 +13,7 @@ void CTaskComplexPlayHandSignalAnim::InjectHooks() {
 
     RH_ScopedVMTInstall(Clone, 0x61BA00);
     RH_ScopedVMTInstall(GetTaskType, 0x61B2E0);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x61B570, {.reversed = false});
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x61B570);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x61B4F0, {.reversed = false});
     RH_ScopedVMTInstall(ControlSubTask, 0x61B580, {.reversed = false});
 }
@@ -85,7 +85,7 @@ CTask* CTaskComplexPlayHandSignalAnim::Clone() const {
 
 // 0x61B570
 CTask* CTaskComplexPlayHandSignalAnim::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x61B570, CTaskComplexPlayHandSignalAnim*, CPed*>(this, ped);
+    return nullptr;
 }
 
 // 0x61B4F0
