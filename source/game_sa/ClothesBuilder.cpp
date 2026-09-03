@@ -26,7 +26,7 @@ void CClothesBuilder::InjectHooks() {
     //RH_ScopedInstall(nullptr, 0x5A43A0, { .reversed = false });
     //RH_ScopedInstall(nullptr, 0x5A44A0, { .reversed = false }); DestroyTextureCB
     RH_ScopedInstall(PreprocessClothesDesc, 0x5A44C0, { .reversed = false });
-    RH_ScopedInstall(ReleaseGeometry, 0x5A47B0, { .reversed = false });
+    RH_ScopedInstall(ReleaseGeometry, 0x5A47B0);
     RH_ScopedGlobalInstall(GetAtomicWithName, 0x5A4810);
     RH_ScopedInstall(AddWeightToBoneVertex, 0x5A4840);
     RH_ScopedInstall(StoreBoneArray, 0x5A48B0);
