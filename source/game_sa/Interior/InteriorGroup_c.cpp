@@ -25,7 +25,7 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(UpdateOfficePeds, 0x594E90, { .reversed = false });
     RH_ScopedInstall(RemovePed, 0x594E30);
     RH_ScopedInstall(SetupShopPeds, 0x594C10, { .reversed = false });
-    RH_ScopedInstall(SetupOfficePeds, 0x594BF0, { .reversed = false });
+    RH_ScopedInstall(SetupOfficePeds, 0x594BF0);
     RH_ScopedInstall(GetEntity, 0x594BD0);
     RH_ScopedInstall(GetPed, 0x594B90);
     RH_ScopedInstall(FindClosestInteriorInfo, 0x594A50);
@@ -184,7 +184,11 @@ int32 InteriorGroup_c::SetupShopPeds() {
 
 // 0x594BF0
 void InteriorGroup_c::SetupOfficePeds() {
-    plugin::CallMethod<0x594BF0, InteriorGroup_c*>(this);
+    CStreaming::StreamPedsForInterior(2);
+    // NOTSA: pumps the low-level CD-audio streaming state machine (deep in the obfuscated
+    // audio-streaming subsystem, same `thunk_FUN_0156xxxx` pattern seen elsewhere - not reversed).
+    ((void(__cdecl*)(uint8))0x40EA15)(0);
+    m_numPeds = 0;
 }
 
 // 0x594BD0
