@@ -2,6 +2,11 @@
 
 #include "TaskComplexGoToAttractor.h"
 #include "PedAtmAttractor.h"
+#include "TaskComplexSequence.h"
+#include "TaskComplexGoToPointAndStandStill.h"
+#include "TaskSimpleSlideToCoord.h"
+#include "TaskSimpleStandStill.h"
+#include "PedPlacement.h"
 
 void CTaskComplexGoToAttractor::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGoToAttractor, 0x86FF3C, 11);
@@ -12,7 +17,7 @@ void CTaskComplexGoToAttractor::InjectHooks() {
 
     RH_ScopedVMTInstall(Clone, 0x66D130);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x66B6C0);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x670420, { .reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x670420);
 }
 
 // 0x66B640
@@ -41,7 +46,23 @@ CTask* CTaskComplexGoToAttractor::CreateNextSubTask(CPed* ped) {
 
 // 0x670420
 CTask* CTaskComplexGoToAttractor::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x670420, CTaskComplexGoToAttractor*, CPed*>(this, ped);
+    auto moveState = m_MoveState;
+    if (m_Attractor->GetType() == PED_ATTRACTOR_SHELTER) {
+        moveState = PEDMOVE_RUN;
+    }
+
+    if (!ped->bUseAttractorInstantly) {
+        return new CTaskComplexSequence{
+            new CTaskComplexGoToPointAndStandStill{moveState, m_vecAttrPosn, 0.5f, 2.0f, false, false},
+            new CTaskSimpleSlideToCoord{m_vecAttrPosn, m_fAttrHeading, 0.5f}
+        };
+    }
+
+    m_vecAttrPosn = std::get<CVector>(CPedPlacement::FindZCoorForPed(m_vecAttrPosn));
+    ped->GetPosition() = m_vecAttrPosn;
+    ped->m_fCurrentRotation = m_fAttrHeading;
+    ped->m_fAimingRotation  = m_fAttrHeading;
+    return new CTaskSimpleStandStill{};
 }
 
 // 0x66B710
