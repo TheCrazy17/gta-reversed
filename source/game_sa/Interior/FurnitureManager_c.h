@@ -5,9 +5,8 @@
 #include "FurnitureSubGroup_c.h"
 #include "FurnitureItem.h"
 #include "FurnitureEntity_c.h"
+#include "Furniture_c.h"
 #include "List_c.h"
-
-class Furniture_c;
 
 class FurnitureManager_c {
 private:
@@ -42,3 +41,6 @@ static inline auto& g_furnitureMan = StaticRef<FurnitureManager_c>(0xBAB380);
 
 //! Pool of currently-unused FurnitureEntity_c nodes, recycled by Interior_c::Unfurnish/PlaceObject.
 static inline auto& g_furnitureEntityFreeList = StaticRef<TList_c<FurnitureEntity_c>>(0xBAD3EC);
+
+//! Pool of Furniture_c nodes handed out by FurnitureSubGroup_c::AddFurniture, indexed by g_currFurnitureId.
+static inline auto& g_furnitureStore = StaticRef<std::array<Furniture_c, 256>>(0xBAE1F8);
