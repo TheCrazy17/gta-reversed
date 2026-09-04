@@ -3,6 +3,8 @@
 #include "IdleCam.h"
 #include "InterestingEvents.h"
 #include "HandShaker.h"
+#include "World.h"
+#include "Cam.h"
 
 auto& gIdleCam = StaticRef<CIdleCam>(0xB6FDA0);
 auto& gbCineyCamProcessedOnFrame = StaticRef<uint32>(0xB6EC40);
@@ -21,7 +23,7 @@ void CIdleCam::InjectHooks() {
     RH_ScopedInstall(IsTargetValid, 0x517770);
     RH_ScopedInstall(ProcessTargetSelection, 0x517870);
     RH_ScopedInstall(ProcessSlerp, 0x5179E0);
-    RH_ScopedInstall(ProcessFOVZoom, 0x517BF0, { .reversed = false });
+    RH_ScopedInstall(ProcessFOVZoom, 0x517BF0);
     RH_ScopedInstall(Run, 0x51D3E0);
     RH_ScopedInstall(Process, 0x522C80);
     RH_ScopedInstall(IdleCamGeneralProcess, 0x50E690);
@@ -126,7 +128,99 @@ void CIdleCam::GetLookAtPositionOnTarget(const CEntity* target, CVector& outPos)
 
 // 0x517BF0
 void CIdleCam::ProcessFOVZoom(float time) {
-    NOTSA_UNREACHABLE();
+    const auto now = (float)CTimer::GetTimeInMS();
+
+    auto targetFOV     = m_ZoomNearest;
+    auto shouldZoomOut = false;
+    if (m_Target) {
+        CVector lookAtPos;
+        GetLookAtPositionOnTarget(m_Target, lookAtPos);
+        const auto dist = (m_Cam->m_vecSource - lookAtPos).Magnitude();
+
+        if (m_Target->GetIsTypePed() && IsPedTypeFemale(m_Target->AsPed()->m_nPedType)) {
+            shouldZoomOut = true;
+            targetFOV *= 0.5f;
+            if (dist < 8.0f) {
+                m_nForceAZoomOut = true;
+            }
+        }
+        if (m_DistStartFOVZoom < dist) {
+            shouldZoomOut = true;
+        }
+    }
+
+    if (time >= 1.0f) {
+        const auto oldZoomState = m_ZoomState;
+        if (shouldZoomOut) {
+            if (m_TimeBeforeNewZoomIn < now - m_TimeLastZoomIn) {
+                auto losClear = true;
+                if (m_Target) {
+                    auto* const savedIgnoreEntity = CWorld::pIgnoreEntity;
+                    CWorld::pIgnoreEntity = m_Target;
+                    CVector lookAtPos;
+                    GetLookAtPositionOnTarget(m_Target, lookAtPos);
+                    losClear = CWorld::GetIsLineOfSightClear(m_Cam->m_vecSource, lookAtPos, true, false, false, true, false, false, true);
+                    CWorld::pIgnoreEntity = savedIgnoreEntity;
+                }
+                if (m_TargetLOSCounter > 10 && m_ZoomState == eIdleCamZoomState::UNK_2) {
+                    m_ZoomState = eIdleCamZoomState::UNK_1;
+                }
+                if (m_ZoomState == eIdleCamZoomState::UNK_3 && !m_bHasZoomedIn && losClear) {
+                    m_ZoomState = eIdleCamZoomState::UNK_0;
+                    m_ZoomTo    = targetFOV;
+                    if (oldZoomState != eIdleCamZoomState::UNK_0) {
+                        m_TimeZoomStarted = now;
+                        m_ZoomFrom        = m_CurFOV;
+                    }
+                }
+            }
+        } else if (oldZoomState == eIdleCamZoomState::UNK_2) {
+            m_ZoomState       = eIdleCamZoomState::UNK_1;
+            m_ZoomTo          = m_ZoomFarthest;
+            m_TimeZoomStarted = now;
+            m_ZoomFrom        = m_CurFOV;
+        }
+
+        if (m_ZoomState == eIdleCamZoomState::UNK_2) {
+            m_TimeLastZoomIn = now;
+        }
+        if (m_nForceAZoomOut && m_ZoomState == eIdleCamZoomState::UNK_2) {
+            m_TimeZoomStarted = now;
+            m_ZoomFrom        = m_CurFOV;
+            m_ZoomState       = eIdleCamZoomState::UNK_1;
+            m_ZoomTo          = m_ZoomFarthest;
+        }
+        m_nForceAZoomOut = false;
+
+        switch (m_ZoomState) {
+        case eIdleCamZoomState::UNK_0:
+            if (std::abs(m_CurFOV - targetFOV) < 1.0f) {
+                m_ZoomState    = eIdleCamZoomState::UNK_2;
+                m_bHasZoomedIn = true;
+                m_CurFOV       = targetFOV;
+                break;
+            }
+            [[fallthrough]];
+        case eIdleCamZoomState::UNK_1:
+            // NOTSA: `m_ZoomState == UNK_1` here distinguishes a genuine UNK_1 entry from a
+            // fallthrough out of UNK_0 above - matches the original asm's 2 separate jump targets.
+            if (m_ZoomState == eIdleCamZoomState::UNK_1 && std::abs(m_CurFOV - m_ZoomFarthest) < 1.0f) {
+                m_ZoomState = eIdleCamZoomState::UNK_3;
+                m_CurFOV    = m_ZoomFarthest;
+                break;
+            }
+            m_CurFOV = (m_ZoomTo - m_ZoomFrom) * (std::sin(DegreesToRadians(270.0f - (now - m_TimeZoomStarted) / m_DurationFOVZoom * 180.0f)) + 1.0f) * 0.5f + m_ZoomFrom;
+            break;
+        case eIdleCamZoomState::UNK_2:
+            m_CurFOV = targetFOV;
+            break;
+        case eIdleCamZoomState::UNK_3:
+            m_CurFOV = m_ZoomFarthest;
+            break;
+        }
+    }
+
+    m_Cam->m_fFOV = m_CurFOV;
 }
 
 // 0x517770
