@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "MenuSystem.h"
+#include "Models/VehicleModelInfo.h"
 
 auto& MenuNumber = StaticRef<std::array<CMenuSystem::Menu*, 2>>(0xBA82D8);
 
@@ -26,7 +27,7 @@ void CMenuSystem::InjectHooks() {
     RH_ScopedInstall(CreateNewMenu, 0x582300);
     RH_ScopedInstall(ActivateItems, 0x581990);
     RH_ScopedInstall(ActivateOneItem, 0x581B30);
-    RH_ScopedInstall(FillGridWithCarColours, 0x5820E0, { .reversed = false });
+    RH_ScopedInstall(FillGridWithCarColours, 0x5820E0);
     RH_ScopedInstall(InsertMenu, 0x581E00);
     RH_ScopedInstall(SwitchOffMenu, 0x580750);
 }
@@ -603,7 +604,37 @@ void CMenuSystem::ActivateOneItem(MenuId id, uint8 row, bool enable) {
 
 // 0x5820E0
 void CMenuSystem::FillGridWithCarColours(MenuId id) {
-    plugin::Call<0x5820E0, MenuId>(id);
+    // Picks MENU_CAR_COLOR_COUNT colors from the vehicle color table that are all at least
+    // somewhat visually distinct from one another (per-channel difference >= 15), falling back
+    // to accepting a similar one if the whole table gets exhausted before enough are picked.
+    std::array<CRGBA, MENU_CAR_COLOR_COUNT> pickedColors{};
+
+    auto* const menu      = MenuNumber[id];
+    auto        colorIdx  = 0;
+    auto        numPicked = 0;
+    while (numPicked < MENU_CAR_COLOR_COUNT) {
+        const auto& candidate = CVehicleModelInfo::ms_vehicleColourTable[colorIdx];
+
+        auto tooSimilar = false;
+        for (auto i = 0; i < numPicked; i++) {
+            const auto& existing = pickedColors[i];
+            if (std::abs(existing.r - candidate.r) < 15
+                && std::abs(existing.g - candidate.g) < 15
+                && std::abs(existing.b - candidate.b) < 15) {
+                tooSimilar = true;
+                break;
+            }
+        }
+
+        if (!tooSimilar || colorIdx + 1 >= CVehicleModelInfo::NUM_VEHICLE_COLORS) {
+            pickedColors[numPicked]              = candidate;
+            menu->m_anUsedCarColors[numPicked]    = (uint8)colorIdx;
+            numPicked++;
+            colorIdx = 0;
+        } else {
+            colorIdx++;
+        }
+    }
 }
 
 // Insert menu column
