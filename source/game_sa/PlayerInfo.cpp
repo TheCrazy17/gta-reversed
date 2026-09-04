@@ -11,7 +11,7 @@ void CPlayerInfo::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x571920, { .enabled = false, .locked = true }); // hooking ctor will produce bugs with weapons, you will never give weapon through cheat or something
     RH_ScopedInstall(CancelPlayerEnteringCars, 0x56E860);
-    RH_ScopedInstall(FindObjectToSteal, 0x56DBD0, { .reversed = false });
+    RH_ScopedInstall(FindObjectToSteal, 0x56DBD0);
     RH_ScopedInstall(EvaluateCarPosition, 0x56DAD0);
     RH_ScopedInstall(Process, 0x56F8D0, { .reversed = false });
     RH_ScopedInstall(FindClosestCarSectorList, 0x56F4E0, { .reversed = false });
@@ -74,7 +74,53 @@ void CPlayerInfo::CancelPlayerEnteringCars(CVehicle* vehicle) {
 
 // 0x56DBD0
 CEntity* CPlayerInfo::FindObjectToSteal(CPed* ped) {
-    return plugin::CallAndReturn<CEntity*, 0x56DBD0, CPed*>(ped);
+    const auto& fwd = ped->GetForward();
+    const auto& pos = ped->GetPosition();
+
+    const CVector center{
+        fwd.x * 0.5f * 3.0f + pos.x,
+        fwd.y * 0.5f * 3.0f + pos.y,
+        fwd.z * 0.5f * 3.0f + pos.z
+    };
+
+    const auto minX = std::max(0, CWorld::GetSectorX(center.x - 3.0f));
+    const auto minY = std::max(0, CWorld::GetSectorY(center.y - 3.0f));
+    const auto maxX = std::min(MAX_SECTORS_X - 1, CWorld::GetSectorX(center.x + 3.0f));
+    const auto maxY = std::min(MAX_SECTORS_Y - 1, CWorld::GetSectorY(center.y + 3.0f));
+
+    CWorld::AdvanceCurrentScanCode();
+
+    CEntity* found = nullptr;
+    if (maxY < minY) {
+        return found;
+    }
+
+    for (auto y = minY; y <= maxY; y++) {
+        if (minX > maxX) {
+            continue;
+        }
+        for (auto x = minX; x <= maxX; x++) {
+            for (auto* object : CWorld::GetRepeatSector(x, y).Objects) {
+                if (!object->objectFlags.bIsLiftable || object->IsScanCodeCurrent()) {
+                    continue;
+                }
+
+                const auto delta = object->GetPosition() - center;
+                if (delta.SquaredMagnitude() >= 4.5f) {
+                    continue;
+                }
+
+                auto dot = DotProduct(delta, fwd);
+                if (dot < 0.0f) {
+                    dot = 10.0f - dot;
+                }
+                if (dot + std::fabs(DotProduct(delta, ped->GetRight())) * 3.0f < 1000.0f) {
+                    found = object;
+                }
+            }
+        }
+    }
+    return found;
 }
 
 // 0x56DAD0
