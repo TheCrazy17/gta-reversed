@@ -14,7 +14,7 @@ void CMonsterTruck::InjectHooks() {
     RH_ScopedInstall(ExtendSuspension, 0x6C7D80);
 
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6C8AE0);
-    RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0);
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330);
     RH_ScopedVMTInstall(ProcessControl, 0x6C8250);
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6C7FB0);
@@ -119,7 +119,95 @@ int32 CMonsterTruck::ProcessEntityCollision(CEntity* entity, CColPoint* colPoint
 
 // 0x6C83A0
 void CMonsterTruck::ProcessSuspension() {
-    plugin::CallMethod<0x6C83A0, CMonsterTruck*>(this);
+    const auto& up  = m_matrix->GetUp();
+    const auto  pos = GetPosition();
+
+    std::array<CVector, 4> direction{};
+    std::array<CVector, 4> collisionPointRel{};
+    for (auto i = 0u; i < 4u; i++) {
+        direction[i] = -up;
+        collisionPointRel[i] = m_fWheelsSuspensionCompression[i] >= 1.0f
+            ? CVector{}
+            : m_wheelColPoint[i].m_vecPoint - pos;
+    }
+
+    // Apply the spring force pushing each (compressed) wheel back out
+    std::array<float, 4> springForceDampingLimit{};
+    for (auto i = 0u; i < 4u; i++) {
+        if (m_fWheelsSuspensionCompression[i] >= 1.0f) {
+            continue;
+        }
+        auto suspensionBias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
+        if (i == 1 || i == 3) { // Rear wheels use the inverse bias
+            suspensionBias = 1.0f - suspensionBias;
+        }
+        ApplySpringCollisionAlt(
+            m_pHandlingData->m_fSuspensionForceLevel,
+            direction[i],
+            collisionPointRel[i],
+            m_fWheelsSuspensionCompression[i],
+            suspensionBias,
+            m_wheelColPoint[i].m_vecNormal,
+            springForceDampingLimit[i]
+        );
+    }
+
+    // Compute each wheel's velocity relative to whatever it's resting on (if anything), and steepen
+    // the spring direction towards the actual collision normal once significantly compressed
+    std::array<CVector, 4> relativeVelocity{};
+    for (auto i = 0u; i < 4u; i++) {
+        relativeVelocity[i] = GetSpeed(collisionPointRel[i]);
+        if (auto* const other = m_apWheelCollisionEntity[i]) {
+            relativeVelocity[i] -= other->GetSpeed(m_vWheelCollisionPos[i]);
+        }
+
+        if (m_fWheelsSuspensionCompression[i] < 1.0f && m_wheelColPoint[i].m_vecNormal.z > 0.35f) {
+            direction[i] = -m_wheelColPoint[i].m_vecNormal;
+        }
+    }
+
+    // Damp the spring so it doesn't oscillate forever
+    for (auto i = 0u; i < 4u; i++) {
+        if (m_fWheelsSuspensionCompression[i] >= 1.0f) {
+            continue;
+        }
+        ApplySpringDampening(
+            m_pHandlingData->m_fSuspensionDampingLevel,
+            springForceDampingLimit[i],
+            direction[i],
+            collisionPointRel[i],
+            relativeVelocity[i]
+        );
+    }
+
+    // If a wheel is heavily compressed against another vehicle, crush it a little and push back
+    for (auto i = 0u; i < 4u; i++) {
+        auto* const other = m_apWheelCollisionEntity[i];
+        if (m_fWheelsSuspensionCompression[i] < 1.0f && other && other->GetIsTypeVehicle()) {
+            if (m_fWheelsSuspensionCompression[i] < 0.5f) {
+                other->AsVehicle()->VehicleDamage(
+                    (1.0f - m_fWheelsSuspensionCompression[i]) * m_fMass * 0.05f,
+                    (eVehicleCollisionComponent)m_wheelColPoint[i].m_nPieceTypeB,
+                    this,
+                    &m_wheelColPoint[i].m_vecPoint,
+                    &m_wheelColPoint[i].m_vecNormal,
+                    WEAPON_RAMMEDBYCAR
+                );
+            }
+
+            if (m_wheelColPoint[i].m_vecNormal.z > 0.5f) {
+                const auto oneMinusCompression = 1.0f - m_fWheelsSuspensionCompression[i];
+                const auto otherMass           = other->m_fMass;
+                const auto force = CVector{
+                    m_wheelColPoint[i].m_vecNormal.x * 0.25f * -0.05f * oneMinusCompression * otherMass,
+                    m_wheelColPoint[i].m_vecNormal.y * 0.25f * -0.05f * oneMinusCompression * otherMass,
+                    m_wheelColPoint[i].m_vecNormal.z * -0.05f * oneMinusCompression * otherMass
+                };
+                ApplyForce(force, m_wheelColPoint[i].m_vecPoint - other->GetPosition(), true);
+            }
+        }
+        m_apWheelCollisionEntity[i] = nullptr;
+    }
 }
 
 // 0x6C8330
