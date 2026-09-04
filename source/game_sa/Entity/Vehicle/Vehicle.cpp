@@ -26,6 +26,7 @@
 #include "TaskComplexEnterCarAsPassenger.h"
 #include "Shadows.h"
 #include "PedClothesDesc.h"
+#include "VisibilityPlugins.h"
 
 auto& planeRotorDmgTimeMS = StaticRef<uint32>(0xC1CC1C);
 
@@ -222,13 +223,13 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(GetRopeHeightForHeli, 0x6D3D10);
     RH_ScopedInstall(SetRopeHeightForHeli, 0x6D3D30);
 
-    RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Object", 0x6D2690, RwObject*(*)(RwObject*, void*), { .reversed = false });
+    RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Object", 0x6D2690, RwObject*(*)(RwObject*, void*));
     RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Frame", 0x6D26D0, RwFrame*(*)(RwFrame*, void*));
     // RH_ScopedGlobalInstall(SetCompAlphaCB, 0x6D2950);
     RH_ScopedGlobalInstall(IsVehiclePointerValid, 0x6E38F0);
     // RH_ScopedGlobalInstall(RemoveUpgradeCB, 0x6D3300);
     // RH_ScopedGlobalInstall(FindUpgradeCB, 0x6D3370);
-    RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Object", 0x6D33B0, RwObject*(*)(RwObject*, void*), { .reversed = false });
+    RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Object", 0x6D33B0, RwObject*(*)(RwObject*, void*));
     RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Frame", 0x6D3420, RwFrame*(*)(RwFrame*, void*));
     RH_ScopedGlobalInstall(CopyObjectsCB, 0x6D3450);
     // RH_ScopedGlobalInstall(FindReplacementUpgradeCB, 0x6D3490);
@@ -1889,7 +1890,11 @@ float CVehicle::HeightAboveCeiling(float height, eFlightModel flightModel) {
 
 // 0x6D2690
 RwObject* SetVehicleAtomicVisibilityCB(RwObject* object, void* data) {
-    return ((RwObject * (__cdecl*)(RwObject*, void*))0x6D2690)(object, data);
+    const auto atomic = (RpAtomic*)object;
+    if (const auto componentId = CVisibilityPlugins::GetAtomicId(atomic) & 3; componentId != 0) {
+        RpAtomicSetFlags(atomic, componentId == (uint32)(size_t)data ? rpATOMICRENDER : 0);
+    }
+    return object;
 }
 
 // 0x6D26D0
@@ -2276,7 +2281,24 @@ RpAtomic* FindUpgradeCB(RpAtomic* atomic, void* data) {
 
 // 0x6D33B0
 RwObject* RemoveObjectsCB(RwObject* object, void* data) {
-    return ((RwObject * (__cdecl*)(RwObject*, void*))0x6D33B0)(object, data);
+    if (RwObjectGetType(object) == rpATOMIC) {
+        const auto atomic = (RpAtomic*)object;
+        const auto flags  = CVisibilityPlugins::GetAtomicId(atomic);
+        *(uint32*)data = flags;
+        if ((flags & 0x800) == 0) {
+            auto* const modelInfo = CVisibilityPlugins::GetModelInfo(atomic);
+            auto* const frame     = RpAtomicGetFrame(atomic);
+            RpClumpRemoveAtomic(RpAtomicGetClump(atomic), atomic);
+            RpAtomicDestroy(atomic);
+            if (CVisibilityPlugins::GetFrameHierarchyId(frame) == 0) {
+                RwFrameDestroy(frame);
+            }
+            if (modelInfo) {
+                modelInfo->RemoveRef();
+            }
+        }
+    }
+    return object;
 }
 
 // 0x6D3420
