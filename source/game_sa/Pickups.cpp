@@ -22,7 +22,7 @@ void CPickups::InjectHooks() {
     RH_ScopedInstall(Init, 0x454A70);
     RH_ScopedInstall(ReInit, 0x456E60);
     RH_ScopedInstall(AddToCollectedPickupsArray, 0x455240);
-    RH_ScopedOverloadedInstall(CreatePickupCoorsCloseToCoors, "", 0x458A80, void(*)(float, float, float, float&, float&, float&), {.reversed = false});
+    RH_ScopedOverloadedInstall(CreatePickupCoorsCloseToCoors, "", 0x458A80, void(*)(float, float, float, float&, float&, float&));
     RH_ScopedInstall(CreateSomeMoney, 0x458970);
     RH_ScopedInstall(DetonateMinesHitByGunShot, 0x4590C0);
     RH_ScopedInstall(DoCollectableEffects, 0x455E20);
@@ -97,7 +97,47 @@ void CPickups::AddToCollectedPickupsArray(int32 pickupIndex) {
  * @param [out] outX, outY, outZ Created pickup's position
  */
 void CPickups::CreatePickupCoorsCloseToCoors(float inX, float inY, float inZ, float& outX, float& outY, float& outZ) {
-    plugin::Call<0x458A80, float, float, float, float&, float&, float&>(inX, inY, inZ, outX, outY, outZ);
+    for (auto attempt = 0; ; attempt++) {
+        if (attempt > 31) {
+            outX = inX;
+            outY = inY;
+            outZ = inZ + 0.4f;
+            return;
+        }
+
+        const auto angle = (float)(CGeneral::GetRandomNumber() & 0xff) * (TWO_PI / 256.0f);
+        const auto candX = inX + std::sinf(angle) * 1.5f;
+        const auto candY = inY + std::cosf(angle) * 1.5f;
+
+        bool foundGround;
+        const auto groundZ = CWorld::FindGroundZFor3DCoord({ candX, candY, inZ }, &foundGround, nullptr) + 0.5f;
+        if (!foundGround) {
+            continue;
+        }
+
+        const CVector probeBase{ inX, inY, inZ + 0.3f };
+        const CVector delta{ candX - inX, candY - inY, groundZ - probeBase.z };
+        const auto    mag      = delta.Magnitude();
+        const auto    probeEnd = probeBase + delta * ((mag + 0.4f) / mag);
+
+        const auto playerCoors    = FindPlayerCoors();
+        const auto distFromPlayer = std::sqrtf(sq(probeEnd.x - playerCoors.x) + sq(probeEnd.y - playerCoors.y));
+
+        const auto checkWorld = distFromPlayer > 2.0f
+            ? (attempt > 16 || !TestForPickupsInBubble({ candX, candY, groundZ }, 1.3f))
+            : attempt > 16;
+        if (!checkWorld) {
+            continue;
+        }
+
+        const auto losClear = CWorld::GetIsLineOfSightClear(probeEnd, probeBase, true, attempt < 16, false, attempt < 16, false, false, false);
+        if (losClear && (attempt > 16 || !CWorld::TestSphereAgainstWorld({ candX, candY, groundZ }, 1.2f, nullptr, false, true, false, false, false, false))) {
+            outX = candX;
+            outY = candY;
+            outZ = groundZ;
+            return;
+        }
+    }
 }
 
 /*!
