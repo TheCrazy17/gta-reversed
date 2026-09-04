@@ -16,7 +16,7 @@ void CCustomBuildingRenderer::InjectHooks() {
     RH_ScopedInstall(AtomicSetup, 0x5D7F00);
     RH_ScopedInstall(IsCBPCPipelineAttached, 0x5D7F40);
     RH_ScopedInstall(UpdateDayNightBalanceParam, 0x5D7F80);
-    RH_ScopedInstall(Update, 0x5D8050, { .reversed = false });
+    RH_ScopedInstall(Update, 0x5D8050);
 }
 
 // 0x5D7EC0
@@ -91,17 +91,11 @@ void CCustomBuildingRenderer::UpdateDayNightBalanceParam() {
 void CCustomBuildingRenderer::Update() {
     ZoneScoped;
 
-    plugin::Call<0x5D8050>();
+    UpdateDayNightBalanceParam();
 
-    /*
-    void sub_5D6830(int a1) {
-        static uint32 dword_C02C14, dword_C02C18 = 0;
-
-        dword_C02C14 = (dword_C02C14 + 1) & 15;
-        dword_C02C18 = a1;
-    }
-
-    CCustomBuildingRenderer::UpdateDayNightBalanceParam();
-    sub_5D6830(0);
-    */
+    // 0x5D6830
+    auto& s_Magic1 = StaticRef<uint32>(0xC02C14);
+    auto& s_Magic2 = StaticRef<uint32>(0xC02C18);
+    s_Magic1 = (s_Magic1 + 1) & 15;
+    s_Magic2 = 0;
 }
