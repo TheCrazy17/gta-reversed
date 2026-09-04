@@ -1,5 +1,6 @@
 #include "StdInc.h"
 #include "Interior_c.h"
+#include "FurnitureManager_c.h"
 
 void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
@@ -39,7 +40,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(IsPtInside, 0x5913E0);
     RH_ScopedInstall(CalcMatrix, 0x5914D0, { .reversed = false });
     RH_ScopedInstall(Furnish, 0x591590, { .reversed = false });
-    RH_ScopedInstall(Unfurnish, 0x5915D0, { .reversed = false });
+    RH_ScopedInstall(Unfurnish, 0x5915D0);
     RH_ScopedInstall(CheckTilesEmpty, 0x591680);
     RH_ScopedInstall(SetTilesStatus, 0x591700);
     RH_ScopedInstall(SetCornerTiles, 0x5917C0);
@@ -363,7 +364,27 @@ void Interior_c::Furnish() {
 
 // 0x5915D0
 void Interior_c::Unfurnish() {
-    plugin::CallMethod<0x5915D0, Interior_c*>(this);
+    for (auto* furn = m_list.GetHead(); furn;) {
+        auto* const next = m_list.GetNext(furn);
+
+        auto* const player = FindPlayerPed();
+        auto* const held   = player ? player->GetEntityThatThisPedIsHolding() : nullptr;
+        if (!held || held != furn->m_entity || !held->GetIsTypeObject() || !((CObject*)held)->objectFlags.bIsLiftable) {
+            CWorld::Remove(furn->m_entity);
+            delete furn->m_entity;
+        } else {
+            CObject::nNoTempObjects++;
+            auto* const obj    = (CObject*)held;
+            obj->m_nObjectType = 3;
+            obj->m_nRemovalTime = CTimer::GetTimeInMS() + 99999999;
+        }
+
+        furn->m_entity = nullptr;
+        m_list.RemoveItem(furn);
+        g_furnitureEntityFreeList.AddItem(furn);
+
+        furn = next;
+    }
 }
 
 // 0x591680

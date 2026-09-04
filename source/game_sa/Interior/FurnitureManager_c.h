@@ -4,6 +4,7 @@
 #include "FurnitureGroup_c.h"
 #include "FurnitureSubGroup_c.h"
 #include "FurnitureItem.h"
+#include "FurnitureEntity_c.h"
 #include "List_c.h"
 
 class Furniture_c;
@@ -38,3 +39,6 @@ private:
 VALIDATE_SIZE(FurnitureManager_c, 0x2078);
 
 static inline auto& g_furnitureMan = StaticRef<FurnitureManager_c>(0xBAB380);
+
+//! Pool of currently-unused FurnitureEntity_c nodes, recycled by Interior_c::Unfurnish/PlaceObject.
+static inline auto& g_furnitureEntityFreeList = StaticRef<TList_c<FurnitureEntity_c>>(0xBAD3EC);
