@@ -44,7 +44,7 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0);
     RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230);
     RH_ScopedVMTInstall(Fix, 0x6B7050);
-    RH_ScopedVMTInstall(BlowUpCar, 0x6BEA10, { .reversed = false });
+    RH_ScopedVMTInstall(BlowUpCar, 0x6BEA10);
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
     RH_ScopedVMTInstall(BurstTyre, 0x6BEB20);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310);
@@ -1016,7 +1016,28 @@ void CBike::GetCorrectedWorldDoorPosition(CVector& out, CVector arg1, CVector ar
 
 // 0x6BEA10
 void CBike::BlowUpCar(CEntity* damager, bool bHideExplosion) {
-    plugin::CallMethod<0x6BEA10, CBike*, CEntity*, uint8>(this, damager, bHideExplosion);
+    if (!vehicleFlags.bCanBeDamaged) {
+        return;
+    }
+
+    m_vecMoveSpeed.z += 0.13f;
+    SetStatus(STATUS_WRECKED);
+    physicalFlags.bRenderScorched = true;
+    CVisibilityPlugins::SetClumpForAllAtomicsFlag(GetRpClump(), 0x4000);
+
+    const auto pos = GetPosition();
+    m_fHealth    = 0.0f;
+    m_wBombTimer = 0;
+
+    TheCamera.CamShake(0.4f, pos);
+    KillPedsInVehicle();
+    m_nOverrideLights      = NO_CAR_LIGHT_OVERRIDE;
+    vehicleFlags.bEngineOn = false;
+    vehicleFlags.bLightsOn = false;
+    ChangeLawEnforcerState(false);
+
+    CExplosion::AddExplosion(this, damager, EXPLOSION_CAR, pos, 0, true, -1.0f, bHideExplosion);
+    CDarkel::RegisterCarBlownUpByPlayer(*this, 0);
 }
 
 // 0x6B7050
