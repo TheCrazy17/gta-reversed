@@ -1,6 +1,12 @@
 #include "StdInc.h"
 #include "TaskComplexPlayHandSignalAnim.h"
 #include "Ragdoll/IKChainManager.h"
+#include "TaskComplexSequence.h"
+#include "TaskTypes/TaskSimpleStandStill.h"
+#include "TaskTypes/TaskSimplePlayHandSignalAnim.h"
+#include "Streaming.h"
+#include "Animation/AnimManager.h"
+#include "Models/ModelInfo.h"
 
 void CTaskComplexPlayHandSignalAnim::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexPlayHandSignalAnim, 0x86d5dc, 11);
@@ -10,13 +16,13 @@ void CTaskComplexPlayHandSignalAnim::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x61BDF0);
 
     RH_ScopedInstall(GetAnimIdForPed, 0x61B460);
-    RH_ScopedInstall(CreateSubTask, 0x61B2F0, {.reversed = false});
+    RH_ScopedInstall(CreateSubTask, 0x61B2F0);
 
     RH_ScopedVMTInstall(Clone, 0x61BA00);
     RH_ScopedVMTInstall(GetTaskType, 0x61B2E0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x61B570);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x61B4F0);
-    RH_ScopedVMTInstall(ControlSubTask, 0x61B580, {.reversed = false});
+    RH_ScopedVMTInstall(ControlSubTask, 0x61B580);
 }
 
 // 0x61B2B0
@@ -73,7 +79,18 @@ AnimationId CTaskComplexPlayHandSignalAnim::GetAnimIdForPed(CPed* ped) {
 
 // 0x61B2F0
 CTask* CTaskComplexPlayHandSignalAnim::CreateSubTask(eTaskType taskType) {
-    return plugin::CallMethodAndReturn<CTask*, 0x61B2F0>(this, taskType);
+    if (taskType == CTaskSimpleStandStill::Type) {
+        return new CTaskSimpleStandStill(0, true, false, 8.0f);
+    }
+
+    if (taskType == CTaskSimplePlayHandSignalAnim::Type) {
+        auto* sequence = new CTaskComplexSequence();
+        sequence->AddTask(new CTaskSimpleStandStill(CGeneral::GetRandomNumberInRange(0, 1500), false, false, 8.0f));
+        sequence->AddTask(new CTaskSimplePlayHandSignalAnim(m_animationId, m_AnimBlenDelta, m_DoUseFatHands, false));
+        return sequence;
+    }
+
+    return nullptr;
 }
 
 // 0x61BA00
@@ -108,5 +125,41 @@ CTask* CTaskComplexPlayHandSignalAnim::CreateFirstSubTask(CPed* ped) {
 
 // 0x61B580
 CTask* CTaskComplexPlayHandSignalAnim::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x61B580, CTaskComplexPlayHandSignalAnim*, CPed*>(this, ped);
+    const auto RequestHand = [](eModelID model, bool alreadyLoaded) {
+        if (CStreaming::IsModelLoaded(model)) {
+            if (!alreadyLoaded) {
+                CModelInfo::GetModelInfo(model)->AddRef();
+            }
+            return true;
+        }
+        CStreaming::RequestModel(model, STREAMING_KEEP_IN_MEMORY);
+        return alreadyLoaded;
+    };
+
+    if (!m_DoUseFatHands) {
+        m_bLeftHandLoaded  = RequestHand(MODEL_SHANDL, m_bLeftHandLoaded);
+        m_bRightHandLoaded = RequestHand(MODEL_SHANDR, m_bRightHandLoaded);
+    } else {
+        m_bLeftHandLoaded  = RequestHand(MODEL_FHANDL, m_bLeftHandLoaded);
+        m_bRightHandLoaded = RequestHand(MODEL_FHANDR, m_bRightHandLoaded);
+    }
+
+    if (m_bLeftHandLoaded && m_bRightHandLoaded) {
+        if (ms_animBlock == ~0u) {
+            ms_animBlock = (uint32)CAnimManager::GetAnimationBlockIndex("ghands");
+        }
+        if (CStreaming::IsModelLoaded(IFPToModelId(ms_animBlock))) {
+            if (!m_bAnimationLoaded) {
+                CAnimManager::AddAnimBlockRef(ms_animBlock);
+                m_bAnimationLoaded = true;
+            }
+        } else {
+            CStreaming::RequestModel(IFPToModelId(ms_animBlock), STREAMING_KEEP_IN_MEMORY);
+        }
+    }
+
+    if (m_bAnimationLoaded && m_pSubTask->GetTaskType() == CTaskSimpleStandStill::Type) {
+        return CreateSubTask(CTaskSimplePlayHandSignalAnim::Type);
+    }
+    return m_pSubTask;
 }
