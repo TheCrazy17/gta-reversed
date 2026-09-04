@@ -2,6 +2,10 @@
 #include "InteriorGroup_c.h"
 #include "Interior_c.h"
 
+// NOTSA: enables interior ped setup/update - purpose not fully derived, cross-referenced from
+// Interior_c::Init's `m_box->m_type != 'c'` branch and here.
+static auto& bInteriorPedsEnabled = StaticRef<bool>(0xBB3DC2);
+
 void InteriorGroup_c::InjectHooks() {
     RH_ScopedClass(InteriorGroup_c);
     RH_ScopedCategory("Interior");
@@ -11,8 +15,8 @@ void InteriorGroup_c::InjectHooks() {
 
     RH_ScopedInstall(Init, 0x5947E0);
     RH_ScopedInstall(Update, 0x5968E0, { .reversed = false });
-    RH_ScopedInstall(SetupPeds, 0x596890, { .reversed = false });
-    RH_ScopedInstall(UpdatePeds, 0x596830, { .reversed = false });
+    RH_ScopedInstall(SetupPeds, 0x596890);
+    RH_ScopedInstall(UpdatePeds, 0x596830);
     RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .reversed = false });
     RH_ScopedInstall(SetupPaths, 0x595590, { .reversed = false });
     RH_ScopedInstall(ArePathsLoaded, 0x595380, { .reversed = false });
@@ -73,12 +77,34 @@ int32 InteriorGroup_c::AddInterior(Interior_c* interior) {
 
 // 0x596890
 void InteriorGroup_c::SetupPeds() {
-    plugin::CallMethod<0x596890, InteriorGroup_c*>(this);
+    if (!m_EnEx || !bInteriorPedsEnabled) {
+        return;
+    }
+    switch ((eInteriorGroupType)m_groupType) {
+    case eInteriorGroupType::HOUSE:  SetupHousePeds(); break;
+    case eInteriorGroupType::SHOP:   SetupShopPeds();  break;
+    case eInteriorGroupType::OFFICE: SetupOfficePeds(); break;
+    }
+    m_updatePeds = true;
 }
 
 // 0x596830
 void InteriorGroup_c::UpdatePeds() {
-    plugin::CallMethod<0x596830, InteriorGroup_c*>(this);
+    if (!m_EnEx || !bInteriorPedsEnabled) {
+        return;
+    }
+    for (auto& ped : m_pedsToRemove) {
+        if (!ped) {
+            continue;
+        }
+        if (ped->IsPointerValid()) {
+            RemovePed(ped);
+        }
+        ped = nullptr;
+    }
+    if (m_groupType == (uint8)eInteriorGroupType::OFFICE) {
+        UpdateOfficePeds();
+    }
 }
 
 // 0x5965E0
