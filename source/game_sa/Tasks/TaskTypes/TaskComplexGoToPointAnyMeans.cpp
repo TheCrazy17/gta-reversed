@@ -1,6 +1,13 @@
 #include "StdInc.h"
 
 #include "TaskComplexGoToPointAnyMeans.h"
+#include "TaskSimpleCreateCarAndGetIn.h"
+#include "TaskComplexEnterCarAsDriver.h"
+#include "TaskComplexDriveToPoint.h"
+#include "TaskComplexLeaveCar.h"
+#include "TaskComplexGoToPointAndStandStill.h"
+#include "TaskComplexFollowNodeRoute.h"
+#include "CarEnterExit.h"
 
 void CTaskComplexGoToPointAnyMeans::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGoToPointAnyMeans, 0x86FF68, 11);
@@ -9,10 +16,10 @@ void CTaskComplexGoToPointAnyMeans::InjectHooks() {
     RH_ScopedOverloadedInstall(Constructor, "1", 0x66B720, CTaskComplexGoToPointAnyMeans*(CTaskComplexGoToPointAnyMeans::*)(int32, CVector const&, float, int32));
     RH_ScopedOverloadedInstall(Constructor, "2", 0x66B790, CTaskComplexGoToPointAnyMeans*(CTaskComplexGoToPointAnyMeans::*)(int32, CVector const&, CVehicle*, float, int32));
     RH_ScopedInstall(Destructor, 0x66B830);
-    RH_ScopedInstall(CreateSubTask, 0x6705D0, { .reversed = false });
-    RH_ScopedInstall(CreateNextSubTask, 0x6728A0, { .reversed = false });
+    RH_ScopedInstall(CreateSubTask, 0x6705D0);
+    RH_ScopedInstall(CreateNextSubTask, 0x6728A0);
     RH_ScopedInstall(CreateFirstSubTask, 0x6729C0);
-    RH_ScopedInstall(ControlSubTask, 0x672A50, { .reversed = false });
+    RH_ScopedInstall(ControlSubTask, 0x672A50);
 }
 
 // 0x66B720
@@ -44,12 +51,41 @@ CTaskComplexGoToPointAnyMeans::~CTaskComplexGoToPointAnyMeans() {
 
 // 0x6705D0
 CTask* CTaskComplexGoToPointAnyMeans::CreateSubTask(int32 taskType, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6705D0, CTaskComplexGoToPointAnyMeans*, int32, CPed*>(this, taskType, ped);
+    switch (taskType) {
+    case TASK_SIMPLE_CREATE_CAR_AND_GET_IN:
+        return new CTaskSimpleCreateCarAndGetIn{ ped->GetPosition(), m_nModelId };
+    case TASK_COMPLEX_ENTER_CAR_AS_DRIVER:
+        return new CTaskComplexEnterCarAsDriver{ m_Vehicle };
+    case TASK_COMPLEX_LEAVE_CAR:
+        return new CTaskComplexLeaveCar{ ped->m_pVehicle, 0, 0, true, false };
+    case TASK_COMPLEX_CAR_DRIVE_TO_POINT:
+        return new CTaskComplexDriveToPoint{ m_Vehicle, m_Pos, -1.0f, 0, (eModelID)-1, -1.0f, (eCarDrivingStyle)0 };
+    case TASK_COMPLEX_GO_TO_POINT_AND_STAND_STILL:
+        return new CTaskComplexGoToPointAndStandStill{ m_MoveState, m_Pos, m_fRadius, 2.0f, false, false };
+    case TASK_COMPLEX_FOLLOW_NODE_ROUTE:
+        return new CTaskComplexFollowNodeRoute{ m_MoveState, m_Pos, m_fRadius };
+    default:
+        return nullptr;
+    }
 }
 
 // 0x6728A0
 CTask* CTaskComplexGoToPointAnyMeans::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6728A0, CTaskComplexGoToPointAnyMeans*, CPed*>(this, ped);
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_SIMPLE_CREATE_CAR_AND_GET_IN:
+        return CreateSubTask(ped->bInVehicle ? TASK_COMPLEX_CAR_DRIVE_TO_POINT : TASK_COMPLEX_FOLLOW_NODE_ROUTE, ped);
+    case TASK_COMPLEX_ENTER_CAR_AS_DRIVER:
+        return CreateSubTask(ped->bInVehicle && ped->m_pVehicle ? TASK_COMPLEX_CAR_DRIVE_TO_POINT : TASK_COMPLEX_FOLLOW_NODE_ROUTE, ped);
+    case TASK_COMPLEX_LEAVE_CAR:
+        return CreateSubTask(TASK_COMPLEX_GO_TO_POINT_AND_STAND_STILL, ped);
+    case TASK_COMPLEX_CAR_DRIVE_TO_POINT:
+        return CreateSubTask(TASK_COMPLEX_LEAVE_CAR, ped);
+    case TASK_COMPLEX_GO_TO_POINT_AND_STAND_STILL:
+    case TASK_COMPLEX_FOLLOW_NODE_ROUTE:
+        return CreateSubTask(TASK_FINISHED, ped);
+    default:
+        return nullptr;
+    }
 }
 
 // 0x6729C0
@@ -66,5 +102,38 @@ CTask* CTaskComplexGoToPointAnyMeans::CreateFirstSubTask(CPed* ped) {
 
 // 0x672A50
 CTask* CTaskComplexGoToPointAnyMeans::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x672A50, CTaskComplexGoToPointAnyMeans*, CPed*>(this, ped);
+    if (m_pSubTask->GetTaskType() != TASK_COMPLEX_FOLLOW_NODE_ROUTE) {
+        return m_pSubTask;
+    }
+
+    if (m_nModelId != -1 && !m_bRefreshTime) {
+        m_nStartTimeInMs = CTimer::GetTimeInMS();
+        m_nTimeOffsetInMs = 3000;
+        m_bRefreshTime = true;
+    }
+
+    if (m_nModelId != -1 || m_bRefreshTime) {
+        if (m_bResetStartTime) {
+            m_nStartTimeInMs = CTimer::GetTimeInMS();
+            m_bResetStartTime = false;
+        }
+        if (m_nStartTimeInMs + m_nTimeOffsetInMs <= CTimer::GetTimeInMS()) {
+            auto* const newTask = CreateSubTask(TASK_SIMPLE_CREATE_CAR_AND_GET_IN, ped);
+            m_nTimeOffsetInMs = 3000;
+            m_bRefreshTime = true;
+            m_nStartTimeInMs = CTimer::GetTimeInMS();
+            return newTask;
+        }
+    }
+
+    if ((ped->GetPosition() - m_Pos).SquaredMagnitude() > 50.0f * 50.0f) {
+        if (auto* const veh = ped->GetIntelligence()->GetVehicleScanner().GetClosestVehicleInRange()) {
+            if (veh != m_Vehicle && CCarEnterExit::IsVehicleStealable(veh, ped)) {
+                CEntity::SetEntityReference(m_Vehicle, veh);
+                return CreateSubTask(TASK_COMPLEX_ENTER_CAR_AS_DRIVER, ped);
+            }
+        }
+    }
+
+    return m_pSubTask;
 }
