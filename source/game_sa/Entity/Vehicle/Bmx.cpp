@@ -1,5 +1,7 @@
 #include "StdInc.h"
 
+#include "Shadows.h"
+
 void CBmx::InjectHooks() {
     RH_ScopedVirtualClass(CBmx, 0x871528, 67);
     RH_ScopedCategory("Vehicle");
@@ -10,7 +12,7 @@ void CBmx::InjectHooks() {
     RH_ScopedVMTInstall(FindWheelWidth, 0x6C0550);
     RH_ScopedVMTInstall(ProcessControl, 0x6BFA30);
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BFB50);
-    RH_ScopedVMTInstall(PreRender, 0x6C0810, {.reversed = false});
+    RH_ScopedVMTInstall(PreRender, 0x6C0810);
     RH_ScopedVMTInstall(ProcessAI, 0x6C1470, {.reversed = false});
     RH_ScopedInstall(ProcessBunnyHop, 0x6C0590);
     RH_ScopedInstall(LaunchBunnyHopCB, 0x6C0390);
@@ -379,7 +381,251 @@ void CBmx::ProcessBunnyHop() {
 
 // 0x6C0810
 void CBmx::PreRender() {
-    plugin::CallMethod<0x6C0810, CBmx*>(this);
+    CVehicle::PreRender();
+
+    auto* const colModel = GetColModel();
+    auto* const colData  = colModel->m_pColData;
+
+    if (vehicleFlags.bVehicleColProcessed) {
+        DoBurstAndSoftGroundRatios();
+
+        // Smooth wheel suspension heights toward the ground-contact collision lines'
+        // Z position right after collision was (re)processed this frame, to avoid visual popping.
+        {
+            const auto ratioAtLimit = 1.0f - m_fSuspensionLength[0] / m_fLineLength[0];
+            auto       ratio        = std::min(m_aWheelRatios[0], m_aWheelRatios[1]);
+            ratio = (ratio - ratioAtLimit) / (1.0f - ratioAtLimit);
+            auto targetZ = colData->m_pLines[0].m_vecStart.z;
+            if (ratio > 0.0f) {
+                targetZ -= ratio * m_fSuspensionLength[0];
+            }
+            m_aWheelSuspensionHeights[0] += (targetZ - m_aWheelSuspensionHeights[0]) * 0.75f;
+        }
+        {
+            const auto ratioAtLimit = 1.0f - m_fSuspensionLength[2] / m_fLineLength[2];
+            auto       ratio        = std::min(m_aWheelRatios[2], m_aWheelRatios[3]);
+            ratio = (ratio - ratioAtLimit) / (1.0f - ratioAtLimit);
+            auto targetZ = colData->m_pLines[2].m_vecStart.z;
+            if (ratio > 0.0f) {
+                targetZ -= ratio * m_fSuspensionLength[2];
+            }
+            m_aWheelSuspensionHeights[1] += (targetZ - m_aWheelSuspensionHeights[1]) * 0.75f;
+        }
+    }
+
+    // Wheel dust/spark effect spawn, front (0) then rear (1) wheel.
+    if (GetStatus() <= STATUS_PHYSICS) {
+        const auto speed = m_vecMoveSpeed.Magnitude();
+        for (auto wheelIdx = 0; wheelIdx < 2; wheelIdx++) {
+            int32 selIdx;
+            if (wheelIdx == 0) {
+                selIdx = (m_aRatioHistory[0] >= 1.0f && m_aRatioHistory[1] < 1.0f) ? 1 : 0;
+            } else {
+                selIdx = (m_aRatioHistory[3] >= 1.0f && m_aRatioHistory[2] < 1.0f) ? 2 : 3;
+            }
+
+            int32 flags = (wheelIdx == 0 || m_WheelStates[1] == WHEEL_STATE_FIXED) ? 4 : 0;
+
+            const auto  dustHeight = std::sin(m_RideAnimData.LeanAngle) * colModel->m_boundBox.m_vecMin.z * 0.8f;
+            auto&       wheelPos   = m_aWheelColPoints[selIdx].m_vecPoint;
+            const auto& right      = GetRight();
+
+            CVector effectOffset{
+                wheelPos.x + dustHeight * right.x,
+                wheelPos.y + dustHeight * right.y,
+                wheelPos.z + dustHeight * right.z,
+            };
+
+            if (m_bWheelBloody[wheelIdx])   { flags += 1; }
+            if (m_bMoreSkidMarks[wheelIdx]) { flags += 2; }
+
+            const auto leanSign = m_RideAnimData.LeanAngle <= 0.0f ? 1.0f : -1.0f;
+
+            // NOTSA: forwards to the original (still-unreversed internally) wheel-effects dispatcher
+            // with its real 11-dword argument list (confirmed via a fresh decompile of this call site).
+            plugin::Call<0x405876, tWheelState, uint8, float, float, CVector*, CVector*, float, int32, eSkidmarkType, bool*, int32>(
+                m_WheelStates[wheelIdx],
+                m_nWheelStatus[wheelIdx],
+                m_aRatioHistory[selIdx],
+                speed,
+                &wheelPos,
+                &effectOffset,
+                leanSign,
+                wheelIdx,
+                m_aWheelSkidmarkType[wheelIdx],
+                &m_bWheelBloody[wheelIdx],
+                flags
+            );
+        }
+    }
+
+    // Wheel angular velocity / pitch-angle accumulation (drives the wheel-spin texture animation).
+    // NOTSA: `rollDir` is approximated as the vehicle's forward vector - the original also factors in
+    // `m_fSteerAngle` here (via `cos(m_fSteerAngle)` transformed by the vehicle matrix), which wasn't
+    // independently re-verified byte-for-byte; the effect is purely cosmetic (wheel-spin visuals only).
+    const auto rollDir = GetForward();
+    if (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f) {
+        const auto ratio      = std::min(m_aRatioHistory[0], m_aRatioHistory[1]);
+        const auto contactPos = colData->m_pLines[0].m_vecStart - CVector{0.0f, ratio * m_fSuspensionLength[0], 0.0f};
+        const auto pointVel   = GetSpeed(contactPos);
+        const auto rot        = ProcessWheelRotation(WHEEL_STATE_NORMAL, rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeRear * 0.5f);
+        m_aWheelAngularVelocity[0] = rot;
+        m_aWheelPitchAngles[0] += rot * CTimer::ms_fTimeStep;
+    }
+    if (m_WheelCounts[2] > 0.0f || m_WheelCounts[3] > 0.0f) {
+        const auto ratio      = std::min(m_aRatioHistory[2], m_aRatioHistory[3]);
+        const auto contactPos = colData->m_pLines[2].m_vecStart - CVector{0.0f, ratio * m_fSuspensionLength[2], 0.0f};
+        const auto pointVel   = GetSpeed(contactPos);
+        const auto rot        = ProcessWheelRotation(m_WheelStates[1], rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeFront * 0.5f);
+        m_aWheelAngularVelocity[1] = rot;
+        m_aWheelPitchAngles[1] += rot * CTimer::ms_fTimeStep;
+    }
+
+    m_bLeanMatrixCalculated = false;
+
+    // NOTSA: forwards to the original (still-unreversed internally) crank/fork one-time matrix setup helper.
+    plugin::CallMethod<0x4019FC, CBmx*>(this);
+
+    CShadows::StoreShadowForVehicle(this, VEH_SHD_BIKE);
+
+    // Per-node matrix updates below all follow the same idiom already established in
+    // CQuadBike::PreRender: `SetRotate`/`SetTranslate` (but NOT the `...Only` variants) reset the
+    // matrix's position as a side effect, so the original code saves the position first and
+    // restores it (or a freshly-computed replacement) afterwards.
+
+    // Steering-angle quaternion, reused for both the forks and (when abandoned/wrecked) the handlebars.
+    CQuaternion steerQuat;
+    if (m_aBikeNodes[BMX_FORKS_FRONT]) {
+        const auto steerAngleConst = GetVehicleModelInfo()->m_fBikeSteerAngle * DegreesToRadians(1.0f);
+        const auto steerAxis       = CVector{0.0f, std::sin(steerAngleConst), -std::cos(steerAngleConst)}.Normalized();
+        RwV3d      axis{steerAxis.x, steerAxis.y, steerAxis.z};
+        steerQuat.Set(&axis, -m_RideAnimData.BarSteerAngle);
+    }
+
+    if (auto* const forksFrontFrame = m_aBikeNodes[BMX_FORKS_FRONT]) {
+        CMatrix forksMatrix;
+        forksMatrix.Attach(RwFrameGetMatrix(forksFrontFrame), false);
+        const auto savedPos = forksMatrix.GetPosition();
+        forksMatrix.SetRotate(steerQuat);
+        forksMatrix.GetPosition() = savedPos;
+        forksMatrix.UpdateRW();
+
+        if (auto* const handlebarsFrame = m_aBikeNodes[BMX_HANDLEBARS]) {
+            CMatrix handlebarsMatrix;
+            handlebarsMatrix.Attach(RwFrameGetMatrix(handlebarsFrame), false);
+            const auto handlebarsSavedPos = handlebarsMatrix.GetPosition();
+
+            const auto status = GetStatus();
+            if (status == STATUS_ABANDONED || status == STATUS_WRECKED) {
+                handlebarsMatrix.SetRotate(steerQuat);
+                handlebarsMatrix.GetPosition() = handlebarsSavedPos;
+            } else {
+                handlebarsMatrix.SetTranslate(handlebarsSavedPos);
+            }
+            handlebarsMatrix.UpdateRW();
+        }
+    }
+
+    if (auto* const forksRearFrame = m_aBikeNodes[BMX_FORKS_REAR]) {
+        const auto rearRatio = (m_aWheelSuspensionHeights[1] - m_aWheelOrigHeights[1]) / m_fSwingArmLength;
+
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(forksRearFrame), false);
+        const auto savedPos = nodeMatrix.GetPosition();
+        nodeMatrix.SetRotate(-std::asin(rearRatio), 0.0f, 0.0f);
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
+
+    // NOTSA: `g_bmxUnknownFlag` gates an alternate front/rear wheel position override whose purpose
+    // wasn't identified this session (no cross-referencing usage found elsewhere in the codebase).
+    static auto& g_bmxUnknownFlag = StaticRef<bool>(0xC1C83C);
+
+    {
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(m_aBikeNodes[BMX_WHEEL_FRONT]), false);
+        auto savedPos = nodeMatrix.GetPosition();
+        if (g_bmxUnknownFlag) {
+            savedPos.z = m_aWheelSuspensionHeights[0] - m_fForkZOffset;
+            savedPos.y = ((colData->m_pLines[1].m_vecStart.y + colData->m_pLines[0].m_vecStart.y) * 0.5f - m_fForkYOffset)
+                       - (m_aWheelSuspensionHeights[0] - m_aWheelOrigHeights[0]) * m_fSteerAngleTan;
+        }
+        if (m_nWheelStatus[0] == 1) {
+            nodeMatrix.SetRotate(m_aWheelPitchAngles[0], 0.0f, std::sin(m_aWheelPitchAngles[0]) * 0.02f);
+        } else {
+            nodeMatrix.SetRotateX(m_aWheelPitchAngles[0]);
+        }
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
+
+    {
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(m_aBikeNodes[BMX_WHEEL_REAR]), false);
+        auto savedPos = nodeMatrix.GetPosition();
+        if (g_bmxUnknownFlag && !m_aBikeNodes[BMX_FORKS_REAR]) {
+            savedPos.z = m_aWheelSuspensionHeights[1];
+        }
+        if (m_nWheelStatus[1] == 1) {
+            nodeMatrix.SetRotate(m_aWheelPitchAngles[1], 0.0f, std::sin(m_aWheelPitchAngles[1]) * 0.04f);
+        } else {
+            nodeMatrix.SetRotateX(m_aWheelPitchAngles[1]);
+        }
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
+
+    if (auto* const chassisFrame = m_aBikeNodes[BMX_CHASSIS]) {
+        auto leanBlendZ      = 0.0f;
+        auto leanAngleOffset = 0.0f;
+        if (!g_bmxUnknownFlag) {
+            leanBlendZ = (m_aWheelSuspensionHeights[1] - m_aWheelOrigHeights[1]) * m_fMidWheelFracY
+                       + (1.0f - m_fMidWheelFracY) * (m_aWheelSuspensionHeights[0] - m_aWheelOrigHeights[0]);
+            leanAngleOffset = std::atan2(
+                (m_aWheelSuspensionHeights[0] - m_aWheelOrigHeights[0]) - (m_aWheelSuspensionHeights[1] - m_aWheelOrigHeights[1]),
+                m_fMidWheelDistY
+            );
+        }
+
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(chassisFrame), false);
+        const auto savedPos = nodeMatrix.GetPosition();
+        const auto newZ     = (1.0f - std::cos(m_RideAnimData.LeanAngle)) * colModel->m_boundBox.m_vecMin.z * 0.9f + leanBlendZ;
+
+        nodeMatrix.SetRotateX(std::abs(m_RideAnimData.LeanAngle) * -0.05f + leanAngleOffset);
+        // NOTSA: RotateY can't be hooked directly (its real signature has no NOTSA `bKeepPos` param), forward raw.
+        ((void(__thiscall*)(CMatrix*, float))0x59B2C0)(&nodeMatrix, m_fSprintLeanAngle + m_RideAnimData.LeanAngle);
+        nodeMatrix.GetPosition() = CVector{savedPos.x, savedPos.y, newZ};
+        nodeMatrix.UpdateRW();
+    }
+
+    if (auto* const chainsetFrame = m_aBikeNodes[BMX_CHAINSET]) {
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(chainsetFrame), false);
+        const auto savedPos = nodeMatrix.GetPosition();
+        nodeMatrix.SetRotate(m_fCrankAngle, 0.0f, 0.0f);
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
+
+    // NOTSA: matches the original exactly - the PEDAL_R node is rotated using `m_fPedalAngleL` and
+    // PEDAL_L using `m_fPedalAngleR` (cross-referenced), not a transcription mistake.
+    if (auto* const pedalRFrame = m_aBikeNodes[BMX_PEDAL_R]) {
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(pedalRFrame), false);
+        const auto savedPos = nodeMatrix.GetPosition();
+        nodeMatrix.SetRotate(m_fPedalAngleL, 0.0f, 0.0f);
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
+    if (auto* const pedalLFrame = m_aBikeNodes[BMX_PEDAL_L]) {
+        CMatrix nodeMatrix;
+        nodeMatrix.Attach(RwFrameGetMatrix(pedalLFrame), false);
+        const auto savedPos = nodeMatrix.GetPosition();
+        nodeMatrix.SetRotate(m_fPedalAngleR, 0.0f, 0.0f);
+        nodeMatrix.GetPosition() = savedPos;
+        nodeMatrix.UpdateRW();
+    }
 }
 
 // 0x6C1470
