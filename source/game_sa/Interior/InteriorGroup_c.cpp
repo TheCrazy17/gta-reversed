@@ -14,7 +14,7 @@ void InteriorGroup_c::InjectHooks() {
     //RH_ScopedInstall(Destructor, 0x597FF0, { .reversed = false });
 
     RH_ScopedInstall(Init, 0x5947E0);
-    RH_ScopedInstall(Update, 0x5968E0, { .reversed = false });
+    RH_ScopedInstall(Update, 0x5968E0);
     RH_ScopedInstall(SetupPeds, 0x596890);
     RH_ScopedInstall(UpdatePeds, 0x596830);
     RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .reversed = false });
@@ -60,7 +60,19 @@ void InteriorGroup_c::Init(CEntity* entity, uint8 groupId) {
 
 // 0x5968E0
 void InteriorGroup_c::Update() {
-    plugin::CallMethod<0x5968E0, InteriorGroup_c*>(this);
+    CalcIsVisible();
+
+    if (!m_pathSetupComplete) {
+        SetupPaths();
+    }
+    if (m_pathSetupComplete && !m_updatePeds) {
+        SetupPeds();
+    }
+    if (m_updatePeds) {
+        UpdatePeds();
+    }
+
+    ReferenceAnims();
 }
 
 // 0x594840
