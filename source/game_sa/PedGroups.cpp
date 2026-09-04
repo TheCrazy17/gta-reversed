@@ -8,6 +8,7 @@ void CPedGroups::InjectHooks() {
 
     RH_ScopedInstall(Process, 0x5FC800);
     RH_ScopedInstall(RemoveGroup, 0x5FB870);
+    RH_ScopedInstall(AddGroup, 0x5FB800);
 }
 
 #ifdef ANDROID
@@ -23,7 +24,23 @@ void CPedGroups::Load() {
 // return the index of the added group , return -1 if failed.
 // 0x5FB800
 int32 CPedGroups::AddGroup() {
-    return plugin::CallAndReturn<int32, 0x5FB800>();
+    for (auto i = 0; i < (int32)ms_activeGroups.size(); i++) {
+        if (ms_activeGroups[i]) {
+            continue;
+        }
+        ms_activeGroups[i] = true;
+
+        auto& group = GetGroup(i);
+        for (auto memberIdx = 0; memberIdx < TOTAL_PED_GROUP_MEMBERS; memberIdx++) {
+            if (group.GetMembership().GetMember(memberIdx)) {
+                group.GetMembership().RemoveMember(memberIdx);
+            }
+        }
+        group.GetIntelligence().Flush();
+        group.m_bIsMissionGroup = false;
+        return i;
+    }
+    return -1;
 }
 
 // 0x5FB870
