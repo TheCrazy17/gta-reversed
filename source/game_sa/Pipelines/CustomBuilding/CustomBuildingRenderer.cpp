@@ -4,6 +4,7 @@
 
 #include "CustomBuildingDNPipeline.h"
 #include "CustomBuildingPipeline.h"
+#include "Plugins/PipelinePlugin/PipelinePlugin.h"
 
 void CCustomBuildingRenderer::InjectHooks() {
     RH_ScopedClass(CCustomBuildingRenderer);
@@ -12,8 +13,8 @@ void CCustomBuildingRenderer::InjectHooks() {
     RH_ScopedInstall(Initialise, 0x5D7EC0);
     RH_ScopedInstall(Shutdown, 0x5D7EE0);
     RH_ScopedInstall(PluginAttach, 0x5D7EF0);
-    RH_ScopedInstall(AtomicSetup, 0x5D7F00, { .reversed = false });
-    RH_ScopedInstall(IsCBPCPipelineAttached, 0x5D7F40, { .reversed = false });
+    RH_ScopedInstall(AtomicSetup, 0x5D7F00);
+    RH_ScopedInstall(IsCBPCPipelineAttached, 0x5D7F40);
     RH_ScopedInstall(UpdateDayNightBalanceParam, 0x5D7F80);
     RH_ScopedInstall(Update, 0x5D8050, { .reversed = false });
 }
@@ -40,12 +41,21 @@ bool CCustomBuildingRenderer::PluginAttach() {
 
 // 0x5D7F00
 void CCustomBuildingRenderer::AtomicSetup(RpAtomic* atomic) {
-    plugin::Call<0x5D7F00, RpAtomic*>(atomic);
+    auto* const geometry = RpAtomicGetGeometry(atomic);
+    if (CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry) && *(int32*)((char*)geometry + 0x30) != 0) {
+        CCustomBuildingDNPipeline::CustomPipeAtomicSetup(atomic);
+    } else {
+        CCustomBuildingPipeline::CustomPipeAtomicSetup(atomic);
+    }
 }
 
 // 0x5D7F40
 bool CCustomBuildingRenderer::IsCBPCPipelineAttached(RpAtomic* atomic) {
-    return plugin::CallAndReturn<bool, 0x5D7F40, RpAtomic*>(atomic);
+    if (GetPipelineID(atomic) == 0x53F20098) { // NOTSA: magic ID for the custom-building pipeline, no named constant found
+        return true;
+    }
+    auto* const geometry = RpAtomicGetGeometry(atomic);
+    return CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry) && *(int32*)((char*)geometry + 0x30) != 0;
 }
 
 // 0x5D7F80
