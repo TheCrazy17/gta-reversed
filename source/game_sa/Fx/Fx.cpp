@@ -35,7 +35,7 @@ void Fx_c::InjectHooks() {
     // + RH_ScopedInstall(GetFxQuality, 0x49EA50);
     // RH_ScopedInstall(AddBlood, 0x49EB00);
     // RH_ScopedInstall(AddWood, 0x49EE10);
-    // RH_ScopedInstall(AddSparks, 0x49F040);
+    RH_ScopedInstall(AddSparks, 0x49F040);
     // RH_ScopedInstall(AddTyreBurst, 0x49F300);
     // RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
     // RH_ScopedInstall(AddPunchImpact, 0x49F670);
@@ -238,9 +238,38 @@ void Fx_c::AddWood(const CVector& pos, const CVector& direction, int32 amount, f
     ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32, float))0x49EE10)(this, pos, direction, amount, lightMult);
 }
 
-// 0x49F040
+// 0x49F040 (real body at 0x49F045)
 void Fx_c::AddSparks(const CVector& origin, const CVector& direction, float force, int32 amount, CVector across, eSparkType sparksType, float spread, float life) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, float, int32, CVector, uint8, float, float))0x49F040)(this, origin, direction, force, amount, across, sparksType, spread, life);
+    const auto distSq = CVector::DistSqr(TheCamera.GetPosition(), origin);
+    if (distSq > 22500.0f || (distSq > 225.0f && (CTimer::m_FrameCounter & 1) != 0)) {
+        return;
+    }
+
+    const FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, life * 0.8f };
+
+    across.x *= CTimer::ms_fTimeStep;
+    across.y *= CTimer::ms_fTimeStep;
+    across.z *= CTimer::ms_fTimeStep;
+
+    auto* const system = sparksType == SPARK_PARTICLE_SPARK ? m_Spark : m_Spark2;
+
+    for (auto i = 0; i < amount; i++) {
+        const auto t  = 1.0f - (float)i / (float)amount;
+        const auto rx = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+        const auto ry = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+        const auto rz = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+        const CVector vel{
+            (2.0f * spread * rx - spread + direction.x) * force,
+            (2.0f * spread * ry - spread + direction.y) * force,
+            (2.0f * spread * rz - spread + direction.z) * force,
+        };
+        const CVector pos{
+            origin.x - across.x * t,
+            origin.y - across.y * t,
+            origin.z - across.z * t,
+        };
+        system->AddParticle(pos, vel, t * 0.05f, prtMult);
+    }
 }
 
 // 0x49F300
