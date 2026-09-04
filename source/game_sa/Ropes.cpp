@@ -9,6 +9,7 @@
 
 #include "Rope.h"
 #include "Ropes.h"
+#include "Timer.h"
 
 void CRopes::InjectHooks() {
     RH_ScopedClass(CRopes);
@@ -18,7 +19,7 @@ void CRopes::InjectHooks() {
     RH_ScopedInstall(Shutdown, 0x556B10);
     RH_ScopedInstall(Update, 0x558D70);
     RH_ScopedInstall(Render, 0x556AE0);
-    RH_ScopedInstall(RegisterRope, 0x556B40, { .reversed = false });
+    RH_ScopedInstall(RegisterRope, 0x556B40);
     RH_ScopedInstall(FindPickupHeight, 0x556760);
     RH_ScopedInstall(FindRope, 0x556000);
     RH_ScopedInstall(FindCoorsAlongRope, 0x555E40);
@@ -71,7 +72,79 @@ void CRopes::Render() {
 // Must be used in loop to make attached to holder
 // 0x556B40
 bool CRopes::RegisterRope(uint32 ropeID, uint32 ropeType, CVector startPos, bool bExpires, uint8 segmentCount, uint8 flags, CPhysical* holder, uint32 timeExpire) {
-    return plugin::CallAndReturn<bool, 0x556B40, uint32, uint32, CVector, bool, uint8, uint8, CPhysical*, uint32>(ropeID, ropeType, startPos, bExpires, segmentCount, flags, holder, timeExpire);
+    // If a rope with this ID is already registered, just collapse all its segments back to the start position
+    for (auto& rope : aRopes) {
+        if (rope.m_nType == eRopeType::NONE || rope.m_nId != ropeID) {
+            continue;
+        }
+
+        rope.m_nFlags2 |= 1;
+        rope.m_nSegments = segmentCount;
+        for (auto i = 0u; i <= rope.m_nSegments; i++) { // NOTSA: `<=` matches original
+            rope.m_aSegments[i] = startPos;
+            rope.m_aSpeed[i] = CVector{};
+        }
+        rope.CreateHookObjectForRope();
+        return true;
+    }
+
+    // Otherwise register it into the first free slot
+    const auto freeRope = std::ranges::find(aRopes, eRopeType::NONE, &CRope::m_nType);
+    if (freeRope == aRopes.end()) {
+        return false;
+    }
+    auto& rope = *freeRope;
+
+    rope.m_nId               = ropeID;
+    rope.m_aSegments[0]      = startPos;
+    rope.m_aSpeed[0]         = CVector{};
+    rope.m_nSegments         = segmentCount;
+    rope.m_nFlags2           = (uint8)((flags & 1) << 2) | (rope.m_nFlags2 & 0xF9) | 1; // NOTSA: unclear leftover flag bits, see m_nFlags2's header comment
+    rope.m_fGroundZ          = 0.0f;
+    rope.m_pAttachedEntity   = nullptr;
+    rope.m_pRopeAttachObject = nullptr;
+    rope.m_fSegmentLength    = (holder && holder->GetIsTypeVehicle()) ? 0.9f : 0.5f;
+    rope.m_nFlags1           = 0;
+    rope.m_pRopeHolder       = holder;
+    rope.m_nType             = (eRopeType)ropeType;
+    if (holder) {
+        CEntity::RegisterReference(rope.m_pRopeHolder);
+    }
+    rope.m_nTime = bExpires ? CTimer::m_snTimeInMilliseconds + timeExpire : 0;
+
+    switch (rope.m_nType) {
+    case eRopeType::MAGNET:
+        rope.m_fMass = 10.0f;
+        rope.m_fTotalLength = 0.3225806f;
+        break;
+    case eRopeType::CRANE_MAGNO:
+        rope.m_fMass = 50.0f;
+        rope.m_fTotalLength = 1.612903f;
+        break;
+    case eRopeType::WRECKING_BALL:
+    case eRopeType::QUARRY_CRANE_ARM:
+    case eRopeType::CRANE_TROLLEY:
+        rope.m_fMass = 68.0f;
+        rope.m_fTotalLength = 2.193548f;
+        break;
+    default:
+        rope.m_fMass = 20.0f;
+        rope.m_fTotalLength = 0.6451613f;
+        break;
+    }
+
+    // Cranes with a heavy hanging load dangle straight down; other rope types zigzag horizontally for visual slack
+    const auto hangsStraight = rope.m_nType >= eRopeType::CRANE_MAGNO && rope.m_nType <= eRopeType::CRANE_TROLLEY;
+    for (auto i = 1u; i < NUM_ROPE_SEGMENTS; i++) {
+        const auto& prev = rope.m_aSegments[i - 1];
+        rope.m_aSegments[i] = hangsStraight
+            ? CVector{ prev.x, prev.y, prev.z - rope.m_fTotalLength }
+            : CVector{ prev.x + ((i & 1) ? rope.m_fTotalLength : -rope.m_fTotalLength), prev.y, prev.z };
+        rope.m_aSpeed[i] = CVector{};
+    }
+
+    rope.CreateHookObjectForRope();
+    return true;
 }
 
 // 0x556760
