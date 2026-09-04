@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "PedShelterAttractor.h"
+#include "Tasks/TaskTypes/TaskComplexGoToAttractor.h"
 
 // 0x5EF420
 CVector CPedShelterAttractor::GetDisplacement(int32 pedId) {
@@ -35,7 +36,28 @@ void CPedShelterAttractor::ComputeAttractHeading(int32 bQueue, float& heading) {
 
 // 0x5EF570
 bool CPedShelterAttractor::BroadcastDeparture(CPed* ped) {
-    return plugin::CallMethodAndReturn<bool, 0x5EF570, CPedShelterAttractor*, CPed*>(this, ped);
+    const auto it = rng::find(m_ArrivedPeds, ped);
+    if (it == m_ArrivedPeds.end()) {
+        return false;
+    }
+
+    if (const auto taskIt = rng::find(m_PedTaskPairs, ped, &CPedTaskPair::Ped); taskIt != m_PedTaskPairs.end()) {
+        m_PedTaskPairs.erase(taskIt);
+    }
+    m_ArrivedPeds.erase(it);
+
+    for (auto* const attractedPed : m_AttractPeds) {
+        const auto idx = (int32)(m_ArrivedPeds.size());
+        SetTaskForPed(attractedPed, new CTaskComplexGoToAttractor{
+            this,
+            CPedAttractor::ComputeAttractPos(idx),
+            CPedAttractor::ComputeAttractHeading(idx),
+            m_AchieveQueueTime,
+            idx,
+            PEDMOVE_WALK
+        });
+    }
+    return true;
 }
 
 void CPedShelterAttractor::InjectHooks() {
@@ -45,5 +67,5 @@ void CPedShelterAttractor::InjectHooks() {
     RH_ScopedInstall(GetDisplacement, 0x5EF420);
     RH_ScopedVMTInstall(ComputeAttractPos, 0x5EFC40);
     RH_ScopedVMTInstall(ComputeAttractHeading, 0x5E9690);
-    RH_ScopedVMTInstall(BroadcastDeparture, 0x5EF570, { .reversed = false });
+    RH_ScopedVMTInstall(BroadcastDeparture, 0x5EF570);
 }
