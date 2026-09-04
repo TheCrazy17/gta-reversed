@@ -1,6 +1,11 @@
 #include "StdInc.h"
 
 #include "TaskComplexHitPedWithCar.h"
+#include "TaskComplexEvasiveStep.h"
+#include "TaskComplexFallAndGetUp.h"
+#include "TaskSimpleHitFromBehind.h"
+#include "TaskSimpleKillPedWithCar.h"
+#include "TaskSimpleHurtPedWithCar.h"
 
 void CTaskComplexHitPedWithCar::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexHitPedWithCar, 0x86f294, 11);
@@ -12,7 +17,7 @@ void CTaskComplexHitPedWithCar::InjectHooks() {
     RH_ScopedGlobalInstall(ComputeEvasiveStepMoveDir, 0x653B40);
 
     RH_ScopedInstall(HitHurtsPed, 0x653AE0);
-    RH_ScopedInstall(CreateSubTask, 0x6560E0, { .reversed = false });
+    RH_ScopedInstall(CreateSubTask, 0x6560E0);
 
     RH_ScopedVMTInstall(Clone, 0x6559B0);
     RH_ScopedVMTInstall(GetTaskType, 0x653A20);
@@ -61,9 +66,36 @@ bool CTaskComplexHitPedWithCar::HitHurtsPed(CPed* ped) {
     return m_ImpulseMag > 3.0f;
 }
 
-// 0x6560E0
+// 0x6560E0 (real body at 0x6560E6, 0x6560E0 is an SEH-frame-setup trampoline)
 CTask* CTaskComplexHitPedWithCar::CreateSubTask(eTaskType tt) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6560E0, CTaskComplexHitPedWithCar*, eTaskType>(this, tt);
+    switch (tt) {
+    case TASK_COMPLEX_EVASIVE_STEP:
+        return new CTaskComplexEvasiveStep(m_Veh, m_MoveDir);
+    case TASK_COMPLEX_FALL_AND_GET_UP: {
+        AnimationId fallAnimId;
+        switch (m_PedHitSide) {
+        case 0:  fallAnimId = ANIM_ID_KO_SKID_BACK;  break;
+        case 1:  fallAnimId = ANIM_ID_KO_SPIN_R;     break;
+        case 2:  fallAnimId = ANIM_ID_KO_SKID_FRONT; break;
+        case 3:  fallAnimId = ANIM_ID_KO_SPIN_L;     break;
+        default: fallAnimId = (AnimationId)tt;       break;
+        }
+        return new CTaskComplexFallAndGetUp(fallAnimId, ANIM_GROUP_DEFAULT, m_DownTime);
+    }
+    case TASK_SIMPLE_HIT_BEHIND:
+        return new CTaskSimpleHitFromBehind();
+    case TASK_SIMPLE_KILL_PED_WITH_CAR:
+        return new CTaskSimpleKillPedWithCar(m_Veh, m_ImpulseMag);
+    case TASK_SIMPLE_HURT_PED_WITH_CAR:
+        return new CTaskSimpleHurtPedWithCar(m_Veh, m_ImpulseMag);
+    case TASK_NONE:
+        // NOTSA: original game code constructs a bare 8-byte CTask here via an obfuscated
+        // (SecuROM `0x156xxxx`-pattern) helper - confirmed unreachable: neither of this class's
+        // 2 real callers (CreateFirstSubTask/CreateNextSubTask), nor any caller elsewhere in the
+        // codebase, ever requests TASK_NONE from this function. Falls through to `default`.
+    default:
+        return nullptr;
+    }
 }
 
 // 0x657AF0
