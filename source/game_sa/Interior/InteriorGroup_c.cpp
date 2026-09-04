@@ -16,7 +16,7 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .reversed = false });
     RH_ScopedInstall(SetupPaths, 0x595590, { .reversed = false });
     RH_ScopedInstall(ArePathsLoaded, 0x595380, { .reversed = false });
-    RH_ScopedInstall(Setup, 0x595320, { .reversed = false });
+    RH_ScopedInstall(Setup, 0x595320);
     RH_ScopedInstall(Exit, 0x595290, { .reversed = false });
     RH_ScopedInstall(ContainsInteriorType, 0x595250);
     RH_ScopedInstall(CalcIsVisible, 0x595200);
@@ -98,7 +98,14 @@ int8 InteriorGroup_c::ArePathsLoaded() {
 
 // 0x595320
 void InteriorGroup_c::Setup() {
-    plugin::CallMethod<0x595320, InteriorGroup_c*>(this);
+    if (ContainsInteriorType(2)) {
+        m_groupType = (uint8)eInteriorGroupType::HOUSE;
+    } else if (ContainsInteriorType(0) || ContainsInteriorType(6)) {
+        m_groupType = (uint8)eInteriorGroupType::SHOP;
+    } else {
+        m_groupType = ContainsInteriorType(1) ? (uint8)eInteriorGroupType::OFFICE : (uint8)-1;
+    }
+    ReferenceAnims();
 }
 
 // 0x595290
