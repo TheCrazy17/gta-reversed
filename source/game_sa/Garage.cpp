@@ -496,7 +496,43 @@ void CSaveGarage::CopyGarageOutOfSaveGarage(CGarage& g) const {
 // todo move
 // 0x449760
 void CStoredCar::StoreCar(CVehicle* vehicle) {
-    plugin::CallMethod<0x449760, CStoredCar*, CVehicle*>(this, vehicle);
+    m_wModelIndex = static_cast<uint16>(vehicle->GetModelIndex());
+    m_vPosn = vehicle->GetPosition();
+
+    const auto& up = vehicle->GetUp();
+    m_nPackedForwardX = static_cast<uint8>(std::lround(up.x * 100.0f));
+    m_nPackedForwardY = static_cast<uint8>(std::lround(up.y * 100.0f));
+    m_nPackedForwardZ = static_cast<uint8>(std::lround(up.z * 100.0f));
+
+    m_nPrimaryColor    = vehicle->m_nPrimaryColor;
+    m_nSecondaryColor  = vehicle->m_nSecondaryColor;
+    m_nTertiaryColor   = vehicle->m_nTertiaryColor;
+    m_nQuaternaryColor = vehicle->m_nQuaternaryColor;
+    m_nRadioStation     = *reinterpret_cast<uint8*>(reinterpret_cast<char*>(vehicle) + 0x1D2); // NOTSA: CVehicle's radio station field isn't mapped yet
+    m_nHandlingFlags    = *reinterpret_cast<uint32*>(reinterpret_cast<char*>(vehicle) + 0x38C); // NOTSA: opaque handling-flags bag, isn't mapped yet
+    m_anCompsToUse[0]   = vehicle->m_anExtras[0];
+    m_anCompsToUse[1]   = vehicle->m_anExtras[1];
+
+    m_nStoredCarFlags = 0;
+    if (vehicle->physicalFlags.bBulletProof)    m_nStoredCarFlags |= 1;
+    if (vehicle->physicalFlags.bFireProof)      m_nStoredCarFlags |= 2;
+    if (vehicle->physicalFlags.bExplosionProof) m_nStoredCarFlags |= 4;
+    if (vehicle->physicalFlags.bCollisionProof) m_nStoredCarFlags |= 8;
+    if (vehicle->physicalFlags.bMeleeProof)     m_nStoredCarFlags |= 0x10;
+    if (vehicle->vehicleFlags.bFireGun)         m_nStoredCarFlags |= 0x20;
+    if (m_nHandlingFlags & 0x20000)             m_nStoredCarFlags |= 0x40;
+    if (m_nHandlingFlags & 0x80000)             m_nStoredCarFlags |= 0x80;
+
+    if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        m_nBombType = vehicle->m_nBombOnBoard & 7;
+    }
+
+    for (auto i = 0u; i < std::size(m_awCarMods); i++) {
+        m_awCarMods[i] = vehicle->m_anUpgrades[i];
+    }
+
+    m_nPaintJob    = static_cast<uint8>(vehicle->GetRemapIndex());
+    m_nNitroBoosts = vehicle->m_nNitroBoosts;
 }
 
 // 0x447E40
