@@ -27,7 +27,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(ActivateGarage, 0x447CD0);
     RH_ScopedInstall(DeActivateGarage, 0x447CB0);
     RH_ScopedInstall(SetTargetCarForMissionGarage, 0x447C40);
-    // RH_ScopedInstall(StoreCarInNearestImpoundingGarage, 0x44A3C0);
+    RH_ScopedInstall(StoreCarInNearestImpoundingGarage, 0x44A3C0);
     RH_ScopedInstall(TriggerMessage, 0x447B80);
     RH_ScopedInstall(PrintMessages, 0x447790);
     RH_ScopedInstall(ChangeGarageType, 0x4476D0);
@@ -535,7 +535,42 @@ bool CGarages::Save() {
 
 // 0x44A3C0
 void CGarages::StoreCarInNearestImpoundingGarage(CVehicle* vehicle) {
-    plugin::Call<0x44A3C0, CVehicle*>(vehicle);
+    auto bestIndex = -1;
+    auto bestDist  = 99999.9f;
+
+    for (auto i = 0; i < NumGarages; i++) {
+        auto& garage = GetGarage(i);
+        if (garage.m_nType < IMPOUND_LS || garage.m_nType > IMPOUND_LV) {
+            continue;
+        }
+
+        const auto& vehiclePos = vehicle->GetPosition();
+        const auto dx = vehiclePos.x - garage.m_vPosn.x;
+        const auto dy = vehiclePos.y - garage.m_vPosn.y;
+        if (const auto dist = std::sqrt(dx * dx + dy * dy); dist < bestDist) {
+            bestDist  = dist;
+            bestIndex = i;
+        }
+    }
+
+    if (bestIndex < 0) {
+        return;
+    }
+
+    auto* const cars = GetStoredCarsInSafehouse(FindSafeHouseIndexForGarageType(GetGarage(bestIndex).m_nType));
+
+    auto targetSlot = 0;
+    if (cars[0].HasCar()) targetSlot++;
+    if (cars[1].HasCar()) targetSlot++;
+    if (cars[2].HasCar()) targetSlot++;
+
+    if (targetSlot == 3) {
+        cars[0] = cars[1];
+        cars[1] = cars[2];
+        targetSlot = 2;
+    }
+
+    cars[targetSlot].StoreCar(vehicle);
 }
 
 // unused
