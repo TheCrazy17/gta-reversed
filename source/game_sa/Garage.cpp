@@ -535,7 +535,103 @@ void CStoredCar::StoreCar(CVehicle* vehicle) {
     m_nNitroBoosts = vehicle->m_nNitroBoosts;
 }
 
+// NOTSA: per-model "is this model (and its LOD/twin variant) streamed in" gate; stride 0x14 bytes, not otherwise mapped
+static bool IsVehicleModelReady(int32 modelIndex) {
+    return *reinterpret_cast<int8*>(0x8E4CD0 + modelIndex * 0x14) == 1;
+}
+
 // 0x447E40
 CVehicle* CStoredCar::RestoreCar() {
-    return plugin::CallMethodAndReturn<CVehicle*, 0x447E40, CStoredCar*>(this);
+    CStreaming::RequestModel(m_wModelIndex, 8);
+    for (const auto modId : m_awCarMods) {
+        if (modId != -1) {
+            plugin::Call<0x408C70, int32, int32>(modId, 0); // NOTSA: requests the mod model + its LOD/twin variant (thunk_FUN_0156c970)
+        }
+    }
+
+    if (!IsVehicleModelReady(m_wModelIndex)) {
+        return nullptr;
+    }
+
+    for (const auto modId : m_awCarMods) {
+        if (modId != -1 && !plugin::CallAndReturn<bool, 0x407820, int32>(modId)) { // NOTSA: verifies mod model + LOD/twin are loaded (thunk_FUN_0156a100)
+            return nullptr;
+        }
+    }
+
+    // NOTSA: staged globals the vehicle constructor reads for its initial extra-comps setup
+    *reinterpret_cast<uint8*>(0x8A6459) = m_anCompsToUse[1];
+    *reinterpret_cast<uint8*>(0x8A6458) = m_anCompsToUse[0];
+
+    auto* const modelInfo = CModelInfo::GetVehicleModelInfo(m_wModelIndex);
+
+    CVehicle* vehicle;
+    switch (modelInfo->m_nVehicleType) {
+    case VEHICLE_TYPE_MTRUCK: vehicle = new CMonsterTruck(m_wModelIndex, RANDOM_VEHICLE); break;
+    case VEHICLE_TYPE_QUAD:   vehicle = new CQuadBike(m_wModelIndex, RANDOM_VEHICLE); break;
+    case VEHICLE_TYPE_HELI:   vehicle = new CHeli(m_wModelIndex, RANDOM_VEHICLE); break;
+    case VEHICLE_TYPE_PLANE:  vehicle = new CPlane(m_wModelIndex, RANDOM_VEHICLE); break;
+    case VEHICLE_TYPE_BOAT:   vehicle = new CBoat(m_wModelIndex, RANDOM_VEHICLE); break;
+    case VEHICLE_TYPE_BIKE:
+        vehicle = new CBike(m_wModelIndex, RANDOM_VEHICLE);
+        *reinterpret_cast<uint8*>(reinterpret_cast<char*>(vehicle) + 0x614) |= 0x10; // NOTSA: unmapped CBike field
+        break;
+    case VEHICLE_TYPE_BMX:
+        vehicle = new CBmx(m_wModelIndex, RANDOM_VEHICLE);
+        *reinterpret_cast<uint8*>(reinterpret_cast<char*>(vehicle) + 0x614) |= 0x10; // NOTSA: unmapped CBmx field
+        break;
+    case VEHICLE_TYPE_TRAILER: vehicle = new CTrailer(m_wModelIndex, RANDOM_VEHICLE); break;
+    default:                   vehicle = new CAutomobile(m_wModelIndex, RANDOM_VEHICLE, true); break;
+    }
+
+    vehicle->GetPosition() = m_vPosn;
+
+    const CVector up{
+        static_cast<int8>(m_nPackedForwardX) * 0.01f,
+        static_cast<int8>(m_nPackedForwardY) * 0.01f,
+        static_cast<int8>(m_nPackedForwardZ) * 0.01f
+    };
+    auto& matrix = vehicle->GetMatrix();
+    matrix.GetUp()      = up;
+    matrix.GetRight()   = CVector(up.y, -up.x, 0.0f);
+    matrix.GetForward() = CVector(0.0f, 0.0f, 1.0f);
+
+    vehicle->SetStatus(STATUS_ABANDONED);
+
+    vehicle->vehicleFlags.bFreebies             = false;
+    vehicle->vehicleFlags.bHasBeenOwnedByPlayer = true;
+    *reinterpret_cast<uint8*>(reinterpret_cast<char*>(vehicle) + 0x1D2)  = m_nRadioStation;  // NOTSA: CVehicle radio station field not mapped
+    auto& handlingFlagsOpaque = *reinterpret_cast<uint32*>(reinterpret_cast<char*>(vehicle) + 0x38C); // NOTSA: opaque handling-flags bag not mapped
+    handlingFlagsOpaque = m_nHandlingFlags;
+
+    if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        vehicle->m_nBombOnBoard = m_nBombType & 7;
+    }
+
+    vehicle->m_nDoorLock = CARLOCK_UNLOCKED;
+
+    if (m_nStoredCarFlags & 1)    vehicle->physicalFlags.bBulletProof    = true;
+    if (m_nStoredCarFlags & 2)    vehicle->physicalFlags.bFireProof      = true;
+    if (m_nStoredCarFlags & 4)    vehicle->physicalFlags.bExplosionProof = true;
+    if (m_nStoredCarFlags & 8)    vehicle->physicalFlags.bCollisionProof = true;
+    if (m_nStoredCarFlags & 0x10) vehicle->physicalFlags.bMeleeProof     = true;
+    if (m_nStoredCarFlags & 0x20) vehicle->vehicleFlags.bUpgradedStereo  = true;
+    if (m_nStoredCarFlags & 0x40) handlingFlagsOpaque |= 0x20000;
+    if (m_nStoredCarFlags & 0x80) handlingFlagsOpaque |= 0x80000;
+
+    for (auto i = 0u; i < std::size(m_awCarMods); i++) {
+        vehicle->m_anUpgrades[i] = m_awCarMods[i];
+    }
+    vehicle->SetupUpgradesAfterLoad();
+    vehicle->SetRemap(static_cast<int8>(m_nPaintJob)); // sign-extend: -1 (0xFF) means "no remap"
+
+    vehicle->vehicleFlags.bEngineOn = false;
+    vehicle->m_nNitroBoosts         = m_nNitroBoosts;
+    vehicle->m_nPrimaryColor        = m_nPrimaryColor;
+    vehicle->m_nSecondaryColor      = m_nSecondaryColor;
+    vehicle->m_nTertiaryColor       = m_nTertiaryColor;
+    vehicle->m_nQuaternaryColor     = m_nQuaternaryColor;
+    vehicle->vehicleFlags.bDontSetColourWhenRemapping = true;
+
+    return vehicle;
 }
