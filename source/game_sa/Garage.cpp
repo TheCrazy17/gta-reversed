@@ -12,7 +12,7 @@ void CGarage::InjectHooks() {
     // RH_ScopedInstall(TidyUpGarage, 0x449C50);
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
     RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
-    RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690, { .reversed = false });
+    RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
     RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
     RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30);
     RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830, { .reversed = false });
@@ -95,7 +95,19 @@ bool CGarage::EntityHasASphereWayOutsideGarage(CEntity* entity, float fRadius) {
 
 // 0x449690
 void CGarage::RemoveCarsBlockingDoorNotInside() {
-    plugin::CallMethod<0x449690, CGarage*>(this);
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const vehicle = pool->GetAt(i - 1);
+        if (!vehicle || !IsEntityTouching3D(vehicle) || IsPointInsideGarage(vehicle->GetPosition())) {
+            continue;
+        }
+        if (vehicle->vehicleFlags.bIsLocked || !vehicle->CanBeDeleted()) {
+            continue;
+        }
+        CWorld::Remove(vehicle);
+        delete vehicle;
+        return;
+    }
 }
 
 // 0x448EE0
