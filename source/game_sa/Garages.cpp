@@ -17,7 +17,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(AllRespraysCloseOrOpen, 0x448B30);
     RH_ScopedInstall(IsModelIndexADoor, 0x448AF0);
     // RH_ScopedInstall(FindSafeHouseIndexForGarageType, 0x4489F0);
-    // RH_ScopedInstall(FindGarageForObject, 0x44A240);
+    RH_ScopedInstall(FindGarageForObject, 0x44A240);
     RH_ScopedInstall(IsPointWithinHideOutGarage, 0x448900);
     RH_ScopedInstall(IsGarageOpen, 0x447D00);
     RH_ScopedInstall(IsGarageClosed, 0x447D30);
@@ -226,7 +226,28 @@ int32 CGarages::FindSafeHouseIndexForGarageType(eGarageType type) {
 
 // 0x44A240
 int16 CGarages::FindGarageForObject(CObject* obj) {
-    return plugin::CallAndReturn<int16, 0x44A240, CObject*>(obj);
+    auto bestIndex = -1;
+    auto bestDist  = 99999.9f;
+
+    for (auto i = 0; i < NumGarages; i++) {
+        auto& garage = GetGarage(i);
+        const auto& objPos = obj->GetPosition();
+        if (!garage.IsPointInsideGarage(objPos, 7.0f)) {
+            continue;
+        }
+
+        const CVector corner{
+            garage.m_vPosn.x + (garage.m_vDirectionA.x * garage.m_fWidth + garage.m_vDirectionB.x * garage.m_fHeight) * 0.5f,
+            garage.m_vPosn.y + (garage.m_vDirectionA.y * garage.m_fWidth + garage.m_vDirectionB.y * garage.m_fHeight) * 0.5f,
+            garage.m_vPosn.z
+        };
+
+        if (const auto dist = CVector::Dist(objPos, corner); dist < bestDist) {
+            bestDist  = dist;
+            bestIndex = i;
+        }
+    }
+    return static_cast<int16>(bestIndex);
 }
 
 // 0x447680
