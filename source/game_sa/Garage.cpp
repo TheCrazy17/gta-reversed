@@ -519,7 +519,7 @@ void CStoredCar::StoreCar(CVehicle* vehicle) {
     if (vehicle->physicalFlags.bExplosionProof) m_nStoredCarFlags |= 4;
     if (vehicle->physicalFlags.bCollisionProof) m_nStoredCarFlags |= 8;
     if (vehicle->physicalFlags.bMeleeProof)     m_nStoredCarFlags |= 0x10;
-    if (vehicle->vehicleFlags.bFireGun)         m_nStoredCarFlags |= 0x20;
+    if (vehicle->vehicleFlags.bUpgradedStereo)  m_nStoredCarFlags |= 0x20;
     if (m_nHandlingFlags & 0x20000)             m_nStoredCarFlags |= 0x40;
     if (m_nHandlingFlags & 0x80000)             m_nStoredCarFlags |= 0x80;
 
