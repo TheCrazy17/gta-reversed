@@ -32,7 +32,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(PrintMessages, 0x447790);
     RH_ScopedInstall(ChangeGarageType, 0x4476D0);
     RH_ScopedInstall(GetGarageNumberByName, 0x447680);
-    // RH_ScopedInstall(CountCarsInHideoutGarage, 0x44A210);
+    RH_ScopedInstall(CountCarsInHideoutGarage, 0x44A210);
     RH_ScopedInstall(Load, 0x5D3270);
     RH_ScopedInstall(Save, 0x5D3160);
 }
@@ -599,7 +599,15 @@ bool CGarages::HasResprayHappened(int16 garageId) {
     return resprayed;
 }
 
-// 0x44A210
+// 0x44A210 (thunk_FUN_01567330 - a genuine benign function, not SecuROM)
 int32 CGarages::CountCarsInHideoutGarage(eGarageType type) {
-    return plugin::CallAndReturn<int32, 0x44A210, eGarageType>(type);
+    auto* const cars = GetStoredCarsInSafehouse(FindSafeHouseIndexForGarageType(type));
+
+    auto count = 0;
+    for (auto i = 0; i < MAX_CARS_IN_SAFEHOUSE; i++) {
+        if (cars[i].HasCar()) {
+            count++;
+        }
+    }
+    return count;
 }
