@@ -11,6 +11,7 @@ void CGarage::InjectHooks() {
     // RH_ScopedInstall(TidyUpGarageClose, 0x449D10);
     // RH_ScopedInstall(TidyUpGarage, 0x449C50);
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
+    RH_ScopedInstall(StoreAndRemoveCarsForThisImpoundingGarage, 0x449A50);
     RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
     RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
     RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
@@ -67,6 +68,34 @@ void CGarage::StoreAndRemoveCarsForThisHideOut(CStoredCar* storedCars, int32 max
         if (auto vehicle = pool->GetAt(i - 1)) {
             if (IsPointInsideGarage(vehicle->GetPosition()) && vehicle->GetCreatedBy() != MISSION_VEHICLE) {
                 if (storedCarIdx < static_cast<uint32>(maxSlot) && !EntityHasASphereWayOutsideGarage(vehicle, 1.0f)) {
+                    storedCars[storedCarIdx++].StoreCar(vehicle);
+                }
+
+                FindPlayerInfo().CancelPlayerEnteringCars(vehicle);
+                CWorld::Remove(vehicle);
+                delete vehicle;
+            }
+        }
+    }
+
+    // Clear slots with no vehicles in it
+    for (auto i = storedCarIdx; i < NUM_GARAGE_STORED_CARS; i++)
+        storedCars[i].Clear();
+}
+
+// 0x449A50
+void CGarage::StoreAndRemoveCarsForThisImpoundingGarage(CStoredCar* storedCars, int32 iMaxSlot) {
+    iMaxSlot = std::min<int32>(iMaxSlot, NUM_GARAGE_STORED_CARS);
+
+    for (auto i = 0; i < NUM_GARAGE_STORED_CARS; i++)
+        storedCars[i].Clear();
+
+    auto pool = GetVehiclePool();
+    auto storedCarIdx{0u};
+    for (auto i = pool->GetSize(); i; i--) {
+        if (auto vehicle = pool->GetAt(i - 1)) {
+            if (IsPointInsideGarage(vehicle->GetPosition()) && vehicle->GetCreatedBy() != MISSION_VEHICLE) {
+                if (storedCarIdx < static_cast<uint32>(iMaxSlot) && !EntityHasASphereWayOutsideGarage(vehicle, 1.0f)) {
                     storedCars[storedCarIdx++].StoreCar(vehicle);
                 }
 
