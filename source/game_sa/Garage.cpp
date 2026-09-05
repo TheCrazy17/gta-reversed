@@ -56,7 +56,7 @@ void CGarage::TidyUpGarageClose() {
         if (vehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE && vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
             continue;
         }
-        if (vehicle->GetStatus() != STATUS_ABANDONED || !IsEntityTouching3D(vehicle)) {
+        if (vehicle->GetStatus() != STATUS_WRECKED || !IsEntityTouching3D(vehicle)) {
             continue;
         }
 
@@ -92,7 +92,7 @@ void CGarage::TidyUpGarage() {
         if (!IsPointInsideGarage(vehicle->GetPosition())) {
             continue;
         }
-        if (vehicle->GetStatus() != STATUS_ABANDONED && vehicle->GetForward().z < 0.5f) {
+        if (vehicle->GetStatus() != STATUS_WRECKED && vehicle->GetForward().z < 0.5f) {
             continue;
         }
 
