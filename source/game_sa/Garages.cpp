@@ -11,7 +11,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(Init, 0x447120);
     RH_ScopedInstall(Init_AfterRestart, 0x448B60);
     RH_ScopedInstall(Shutdown, 0x4471B0);
-    // RH_ScopedInstall(AddOne, 0x4471E0);
+    RH_ScopedInstall(AddOne, 0x4471E0);
     RH_ScopedInstall(CloseHideOutGaragesBeforeSave, 0x44A170);
     RH_ScopedInstall(PlayerArrestedOrDied, 0x449E60);
     RH_ScopedInstall(AllRespraysCloseOrOpen, 0x448B30);
@@ -142,9 +142,39 @@ void CGarages::GivePlayerDetonator() {
 // 0x1	door opens up and rotate
 // 0x2	door goes in
 // 0x4	camera follow players
-// TODO...
+// NOTSA: `a10` is unused by the original function - kept for ABI/call-site compatibility.
 void CGarages::AddOne(float x1, float y1, float z1, float frontX, float frontY, float x2, float y2, float z2, uint8 type, uint32 a10, char* name, uint32 argFlags) {
-    return plugin::Call<0x4471E0, float, float, float, float, float, float, float, float, uint8, uint32, char*, uint32>(x1, y1, z1, frontX, frontY, x2, y2, z2, type, a10, name, argFlags);
+    auto& garage = GetGarage(NumGarages);
+
+    // Bounding box of the garage's 4 corners (pos, front-point, second corner, and the implied 4th
+    // corner of the parallelogram they form).
+    const auto x4 = frontX + x2 - x1;
+    const auto y4 = frontY + y2 - y1;
+    garage.m_fLeftCoord  = std::min({x1, frontX, x2, x4});
+    garage.m_fRightCoord = std::max({x1, frontX, x2, x4});
+    garage.m_fFrontCoord = std::min({y1, frontY, y2, y4});
+    garage.m_fBackCoord  = std::max({y1, frontY, y2, y4});
+
+    garage.m_vPosn        = CVector{ x1, y1, z1 };
+    garage.m_vDirectionA  = CVector2D{ frontX - x1, frontY - y1 };
+    garage.m_vDirectionB  = CVector2D{ x2 - x1, y2 - y1 };
+    garage.m_fTopZ        = z2;
+
+    garage.m_fWidth = garage.m_vDirectionA.Magnitude();
+    garage.m_vDirectionA /= garage.m_fWidth;
+
+    garage.m_fHeight = garage.m_vDirectionB.Magnitude();
+    garage.m_vDirectionB /= garage.m_fHeight;
+
+    garage.m_nType         = static_cast<eGarageType>(type);
+    garage.m_nOriginalType = static_cast<eGarageType>(type);
+    strncpy(garage.m_anName, name, 7);
+
+    garage.m_bDoorOpensUp          = (argFlags & 1) != 0;
+    garage.m_bDoorGoesIn           = (argFlags & 2) != 0;
+    garage.m_bCameraFollowsPlayer  = (argFlags & 4) != 0;
+
+    NumGarages++;
 }
 
 // 0x44A170
