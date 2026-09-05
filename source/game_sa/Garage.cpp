@@ -11,12 +11,12 @@ void CGarage::InjectHooks() {
     // RH_ScopedInstall(TidyUpGarageClose, 0x449D10);
     // RH_ScopedInstall(TidyUpGarage, 0x449C50);
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
-    // RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
-    // RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
-    // RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
-    // RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30);
-    // RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830);
-    // RH_ScopedInstall(IsEntityEntirelyInside3D, 0x448BE0);
+    RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050, { .reversed = false });
+    RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690, { .reversed = false });
+    RH_ScopedInstall(IsEntityTouching3D, 0x448EE0, { .reversed = false });
+    RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30, { .reversed = false });
+    RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830, { .reversed = false });
+    RH_ScopedInstall(IsEntityEntirelyInside3D, 0x448BE0, { .reversed = false });
     // RH_ScopedInstall(IsPointInsideGarage, 0x448740);
     // RH_ScopedInstall(PlayerArrestedOrDied, 0x4486C0);
     RH_ScopedInstall(OpenThisGarage, 0x447D50);
@@ -27,6 +27,8 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(SlideDoorOpen, 0x44A660);
     RH_ScopedInstall(SlideDoorClosed, 0x44A750);
     RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0, { .reversed = false });
+    RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330, { .reversed = false });
+    RH_ScopedInstall(CenterCarInGarage, 0x449220, { .reversed = false });
     // RH_ScopedInstall(Update, 0x44AA50);
 }
 
@@ -195,6 +197,16 @@ bool CGarage::SlideDoorClosed() {
 // 0x449FF0
 void CGarage::FindDoorsWithGarage(CObject** ppFirstDoor, CObject** ppSecondDoor) {
     plugin::CallMethod<0x449FF0, CGarage*, CObject**, CObject**>(this, ppFirstDoor, ppSecondDoor);
+}
+
+// 0x448330
+void CGarage::NeatlyLineUpStoredCars(CStoredCar* car) {
+    plugin::CallMethod<0x448330, CGarage*, CStoredCar*>(this, car);
+}
+
+// 0x449220
+void CGarage::CenterCarInGarage(CVehicle* vehicle) {
+    plugin::CallMethod<0x449220, CGarage*, CVehicle*>(this, vehicle);
 }
 
 // 0x447D80
