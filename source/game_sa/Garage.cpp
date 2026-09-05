@@ -32,6 +32,7 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0, { .reversed = false });
     RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
     RH_ScopedInstall(CenterCarInGarage, 0x449220, { .reversed = false });
+    RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
     // RH_ScopedInstall(Update, 0x44AA50);
 }
 
