@@ -32,7 +32,7 @@ public:
     int8 SetDefaultTaskWanderDir(CPed* ped);
     uint32 ComputeFleeDir(CPed*);
     CTask* CreateSubTask(eTaskType taskType, CPed* ped);
-    int8 SetFleePosition(CVector const& a2, float a3, bool a4);
+    void SetFleePosition(CVector const& fleePos, float safeDist, bool scream);
 
     CTask*    Clone() const override { return new CTaskComplexSmartFleePoint(m_fleePoint, m_doScream, m_safeDist, m_fleeTimeMs); } // 0x65CED0
     eTaskType GetTaskType() const override { return Type; }
