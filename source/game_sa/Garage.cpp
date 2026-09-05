@@ -8,8 +8,8 @@ void CGarage::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(BuildRotatedDoorMatrix, 0x4479F0);
-    // RH_ScopedInstall(TidyUpGarageClose, 0x449D10);
-    // RH_ScopedInstall(TidyUpGarage, 0x449C50);
+    RH_ScopedInstall(TidyUpGarageClose, 0x449D10);
+    RH_ScopedInstall(TidyUpGarage, 0x449C50);
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
     RH_ScopedInstall(StoreAndRemoveCarsForThisImpoundingGarage, 0x449A50);
     RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
@@ -47,12 +47,58 @@ void CGarage::BuildRotatedDoorMatrix(CEntity* entity, float fDoorPosition) {
 
 // 0x449D10
 void CGarage::TidyUpGarageClose() {
-    plugin::CallMethod<0x449D10, CGarage*>(this);
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const vehicle = pool->GetAt(i - 1);
+        if (!vehicle) {
+            continue;
+        }
+        if (vehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE && vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
+            continue;
+        }
+        if (vehicle->GetStatus() != STATUS_ABANDONED || !IsEntityTouching3D(vehicle)) {
+            continue;
+        }
+
+        if (m_nDoorState != GARAGE_DOOR_CLOSED) {
+            auto notEntirelyInside = false;
+            for (const auto& sphere : vehicle->GetColModel()->GetData()->GetSpheres()) {
+                const auto worldCenter = vehicle->GetMatrix().TransformPoint(sphere.m_vecCenter);
+                if (!IsPointInsideGarage(worldCenter, sphere.m_fRadius)) {
+                    notEntirelyInside = true;
+                }
+            }
+            if (!notEntirelyInside) {
+                continue;
+            }
+        }
+
+        CWorld::Remove(vehicle);
+        delete vehicle;
+    }
 }
 
 // 0x449C50
 void CGarage::TidyUpGarage() {
-    plugin::CallMethod<0x449C50, CGarage*>(this);
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const vehicle = pool->GetAt(i - 1);
+        if (!vehicle) {
+            continue;
+        }
+        if (vehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE && vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
+            continue;
+        }
+        if (!IsPointInsideGarage(vehicle->GetPosition())) {
+            continue;
+        }
+        if (vehicle->GetStatus() != STATUS_ABANDONED && vehicle->GetForward().z < 0.5f) {
+            continue;
+        }
+
+        CWorld::Remove(vehicle);
+        delete vehicle;
+    }
 }
 
 // 0x449900
