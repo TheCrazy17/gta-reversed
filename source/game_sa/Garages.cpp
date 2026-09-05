@@ -22,6 +22,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(IsGarageOpen, 0x447D00);
     RH_ScopedInstall(IsGarageClosed, 0x447D30);
     RH_ScopedInstall(IsCarSprayable, 0x4479A0);
+    RH_ScopedInstall(IsPointInAGarageCameraZone, 0x449BA0);
     RH_ScopedInstall(Update, 0x44C8C0);
     RH_ScopedInstall(ActivateGarage, 0x447CD0);
     RH_ScopedInstall(DeActivateGarage, 0x447CB0);
@@ -294,7 +295,7 @@ bool CGarages::IsThisCarWithinGarageArea(int16 garageId, CEntity* entity) {
 // 0x448990
 bool CGarages::IsPointWithinAnyGarage(CVector& point) {
     for (auto& garage : aGarages) {
-        if (garage.m_nType != eGarageType::INVALID || garage.IsPointInsideGarage(point)) {
+        if (garage.m_nType != eGarageType::INVALID && garage.IsPointInsideGarage(point)) {
             return true;
         }
     }
@@ -304,7 +305,7 @@ bool CGarages::IsPointWithinAnyGarage(CVector& point) {
 // 0x449BA0
 bool CGarages::IsPointInAGarageCameraZone(CVector point) {
     for (auto& garage : aGarages) {
-        if (garage.m_nType && garage.IsPointInsideGarage(point, 0.5f)) // todo: m_nType == ONLY_TARGET_VEH or != INVALID
+        if (garage.m_nType != eGarageType::INVALID && garage.IsPointInsideGarage(point, 0.5f))
             return true;
     }
     return false;
