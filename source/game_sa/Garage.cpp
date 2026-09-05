@@ -12,6 +12,8 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(TidyUpGarage, 0x449C50);
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
     RH_ScopedInstall(StoreAndRemoveCarsForThisImpoundingGarage, 0x449A50);
+    RH_ScopedInstall(RestoreCarsForThisHideOut, 0x156D8D0);
+    RH_ScopedInstall(RestoreCarsForThisImpoundingGarage, 0x1561490);
     RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
     RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
     RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
@@ -155,6 +157,65 @@ void CGarage::StoreAndRemoveCarsForThisImpoundingGarage(CStoredCar* storedCars, 
     // Clear slots with no vehicles in it
     for (auto i = storedCarIdx; i < NUM_GARAGE_STORED_CARS; i++)
         storedCars[i].Clear();
+}
+
+// 0x156D8D0 (thunk_FUN_0156d8d0 - a genuine benign function, not SecuROM)
+bool CGarage::RestoreCarsForThisHideOut(CStoredCar* car) {
+    for (auto i = 0; i < 4; i++) {
+        if (!car[i].HasCar()) {
+            continue;
+        }
+        if (auto* const vehicle = car[i].RestoreCar()) {
+            vehicle->vehicleFlags.bImpounded = false;
+            CWorld::Add(vehicle);
+
+            // NOTSA: `vehicle+0x594` gates this too - exact field/meaning not identified this
+            // session (also unresolved in Bike.cpp), kept as a raw offset check + raw forward.
+            if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 0) {
+                plugin::Call<0x401C57>();
+            } else if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 9) {
+                plugin::Call<0x6BEEB0, CVehicle*>(vehicle);
+            }
+
+            car[i].Clear();
+        }
+    }
+
+    for (auto i = 0; i < 4; i++) {
+        if (car[i].HasCar()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 0x1561490 (thunk_FUN_01561490 - a genuine benign function, not SecuROM)
+bool CGarage::RestoreCarsForThisImpoundingGarage(CStoredCar* car) {
+    for (auto i = 0; i < 3; i++) {
+        if (!car[i].HasCar()) {
+            continue;
+        }
+        if (auto* const vehicle = car[i].RestoreCar()) {
+            vehicle->vehicleFlags.bImpounded = true;
+            CWorld::Add(vehicle);
+
+            // NOTSA: see the identical, still-unresolved `+0x594` check in RestoreCarsForThisHideOut above.
+            if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 0) {
+                plugin::Call<0x401C57>();
+            } else if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 9) {
+                plugin::Call<0x6BEEB0, CVehicle*>(vehicle);
+            }
+
+            car[i].Clear();
+        }
+    }
+
+    for (auto i = 0; i < 3; i++) {
+        if (car[i].HasCar()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // 0x449050
