@@ -28,7 +28,7 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(SlideDoorOpen, 0x44A660);
     RH_ScopedInstall(SlideDoorClosed, 0x44A750);
     RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0, { .reversed = false });
-    RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330, { .reversed = false });
+    RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
     RH_ScopedInstall(CenterCarInGarage, 0x449220, { .reversed = false });
     // RH_ScopedInstall(Update, 0x44AA50);
 }
@@ -369,7 +369,30 @@ void CGarage::FindDoorsWithGarage(CObject** ppFirstDoor, CObject** ppSecondDoor)
 
 // 0x448330
 void CGarage::NeatlyLineUpStoredCars(CStoredCar* car) {
-    plugin::CallMethod<0x448330, CGarage*, CStoredCar*>(this, car);
+    if (!car[0].HasCar()) {
+        return;
+    }
+
+    const CVector corner{
+        m_vPosn.x + (m_vDirectionA.x * m_fWidth + m_vDirectionB.x * m_fHeight) * 0.5f,
+        m_vPosn.y + (m_vDirectionA.y * m_fWidth + m_vDirectionB.y * m_fHeight) * 0.5f,
+        m_vPosn.z + 0.5f
+    };
+
+    const auto dir = Normalized(CVector{ m_vDirectionA.x, m_vDirectionA.y, 0.0f });
+    const auto step = dir * 4.0f;
+    const auto start = corner - step;
+
+    for (auto i = 0; i <= 2; i++) {
+        car[i].m_vPosn = start + step * static_cast<float>(i);
+        car[i].m_nPackedForwardX = static_cast<uint8>(std::lround(-dir.x * 100.0f));
+        car[i].m_nPackedForwardY = 0;
+        car[i].m_nPackedForwardZ = 0;
+
+        if (i == 2 || !car[i + 1].HasCar()) {
+            break;
+        }
+    }
 }
 
 // 0x449220
