@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "Garage.h"
+#include "Object.h"
 
 void CGarage::InjectHooks() {
     RH_ScopedClass(CGarage);
@@ -23,6 +24,9 @@ void CGarage::InjectHooks() {
     // RH_ScopedInstall(InitDoorsAtStart, 0x447600);
     // RH_ScopedInstall(IsPointInsideGarage, 0x4487D0);
     RH_ScopedInstall(CalcDistToGarageRectangleSquared, 0x447D80);
+    RH_ScopedInstall(SlideDoorOpen, 0x44A660);
+    RH_ScopedInstall(SlideDoorClosed, 0x44A750);
+    RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0, { .reversed = false });
     // RH_ScopedInstall(Update, 0x44AA50);
 }
 
@@ -140,6 +144,57 @@ void CGarage::InitDoorsAtStart() {
 // 0x4487D0
 bool CGarage::IsPointInsideGarage(CVector point, float radius) {
     return plugin::CallMethodAndReturn<bool, 0x4487D0, CGarage*, CVector, float>(this, point, radius);
+}
+
+// 0x44A660
+bool CGarage::SlideDoorOpen() {
+    const auto speed = CTimer::ms_fTimeStep * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0011f : 0.011f);
+    m_fDoorPosition += speed;
+
+    CObject* door1{};
+    CObject* door2{};
+    if (m_fDoorPosition >= 1.0f) {
+        m_fDoorPosition = 1.0f;
+        FindDoorsWithGarage(&door1, &door2);
+        if (door1) {
+            m_GarageAudio.AddAudioEvent(AE_GARAGE_DOOR_OPENED, door1->GetPosition(), 0.0f, 1.0f);
+        }
+        return true;
+    }
+
+    FindDoorsWithGarage(&door1, &door2);
+    if (door1) {
+        m_GarageAudio.AddAudioEvent(AE_GARAGE_DOOR_OPENING, door1->GetPosition(), 0.0f, 1.0f);
+    }
+    return false;
+}
+
+// 0x44A750
+bool CGarage::SlideDoorClosed() {
+    const auto speed = CTimer::ms_fTimeStep * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0013f : 0.013f);
+    m_fDoorPosition -= speed;
+
+    CObject* door1{};
+    CObject* door2{};
+    if (m_fDoorPosition <= 0.0f) {
+        m_fDoorPosition = 0.0f;
+        FindDoorsWithGarage(&door1, &door2);
+        if (door1) {
+            m_GarageAudio.AddAudioEvent(AE_GARAGE_DOOR_CLOSED, door1->GetPosition(), 0.0f, 1.0f);
+        }
+        return true;
+    }
+
+    FindDoorsWithGarage(&door1, &door2);
+    if (door1) {
+        m_GarageAudio.AddAudioEvent(AE_GARAGE_DOOR_CLOSING, door1->GetPosition(), 0.0f, 1.0f);
+    }
+    return false;
+}
+
+// 0x449FF0
+void CGarage::FindDoorsWithGarage(CObject** ppFirstDoor, CObject** ppSecondDoor) {
+    plugin::CallMethod<0x449FF0, CGarage*, CObject**, CObject**>(this, ppFirstDoor, ppSecondDoor);
 }
 
 // 0x447D80
