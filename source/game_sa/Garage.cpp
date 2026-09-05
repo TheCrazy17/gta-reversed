@@ -22,6 +22,7 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(CloseThisGarage, 0x447D70);
     // RH_ScopedInstall(InitDoorsAtStart, 0x447600);
     // RH_ScopedInstall(IsPointInsideGarage, 0x4487D0);
+    RH_ScopedInstall(CalcDistToGarageRectangleSquared, 0x447D80);
     // RH_ScopedInstall(Update, 0x44AA50);
 }
 
@@ -139,6 +140,29 @@ void CGarage::InitDoorsAtStart() {
 // 0x4487D0
 bool CGarage::IsPointInsideGarage(CVector point, float radius) {
     return plugin::CallMethodAndReturn<bool, 0x4487D0, CGarage*, CVector, float>(this, point, radius);
+}
+
+// 0x447D80
+float CGarage::CalcDistToGarageRectangleSquared(float x, float y) {
+    float dx;
+    if (x < m_fLeftCoord) {
+        dx = x - m_fLeftCoord;
+    } else if (x > m_fRightCoord) {
+        dx = x - m_fRightCoord;
+    } else {
+        dx = 0.0f;
+    }
+
+    float dy;
+    if (y < m_fFrontCoord) {
+        dy = y - m_fFrontCoord;
+    } else if (y > m_fBackCoord) {
+        dy = y - m_fBackCoord;
+    } else {
+        dy = 0.0f;
+    }
+
+    return dx * dx + dy * dy;
 }
 
 // 0x44AA50
