@@ -7,7 +7,7 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedInstall(Constructor, 0x65EAA0, { .reversed = false });
-    RH_ScopedInstall(Destructor, 0x65EBB0, { .reversed = false });
+    RH_ScopedInstall(Destructor, 0x65EBB0);
     //RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40, { .reversed = false }); // not hooked because i want to keep CVector return, but original function took a CVector&
     RH_ScopedInstall(Clone, 0x65ECB0);
     RH_ScopedInstall(MakeAbortable, 0x65EC30);
@@ -24,7 +24,12 @@ CTaskComplexGangFollower::CTaskComplexGangFollower(CPedGroup* pedGroup, CPed* pe
 
 // 0x65EBB0
 CTaskComplexGangFollower::~CTaskComplexGangFollower() {
-    plugin::CallMethod<0x65EBB0, CTaskComplexGangFollower*>(this);
+    CEntity::SafeCleanUpRef(m_Leader);
+
+    if (m_Flags & 1) {
+        CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex("gangs"));
+        m_Flags &= ~1;
+    }
 }
 
 // 0x65ED40
