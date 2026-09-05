@@ -12,7 +12,7 @@ void CTaskSimpleCarDrive::InjectHooks() {
 
     RH_ScopedInstall(TriggerIK, 0x63C500);
     RH_ScopedInstall(UpdateBopping, 0x63C900);
-    RH_ScopedInstall(StartBopping, 0x642760, { .reversed = false });
+    RH_ScopedInstall(StartBopping, 0x642760);
     RH_ScopedInstall(ProcessHeadBopping, 0x6428C0, { .reversed = false });
     RH_ScopedInstall(ProcessArmBopping, 0x642AE0, { .reversed = false });
     RH_ScopedInstall(ProcessBopping, 0x642E70);
@@ -114,7 +114,35 @@ void CTaskSimpleCarDrive::UpdateBopping() {
 
 // 0x642760
 void CTaskSimpleCarDrive::StartBopping(CPed* ped) {
-    plugin::CallMethod<0x642760, CTaskSimpleCarDrive*, CPed*>(this, ped);
+    CTaskSimpleCarDrive* found = nullptr;
+
+    const auto tryOccupant = [&](CPed* occupant) {
+        if (occupant && occupant != ped) {
+            if (auto* task = static_cast<CTaskSimpleCarDrive*>(occupant->GetTaskManager().FindActiveTaskByType(TASK_SIMPLE_CAR_DRIVE))) {
+                found = task;
+            }
+        }
+    };
+
+    tryOccupant(ped->m_pVehicle->m_pDriver);
+    for (auto i = 0; (!found || found->m_nBoppingStartTime == -1) && i < 3; i++) {
+        tryOccupant(ped->m_pVehicle->m_apPassengers[i]);
+    }
+
+    if (!found || found->m_nBoppingStartTime == -1) {
+        m_nBoppingStartTime = CTimer::m_snTimeInMilliseconds;
+
+        const auto r = static_cast<float>(CGeneral::GetRandomNumber()) * (1.0f / 32768.0f);
+        const auto y = 60 - std::lround(-60.0f * r);
+        m_nBoppingEndTime = std::lround(1000.0f / (static_cast<float>(y) * (1.0f / 60.0f)));
+
+        m_fBoppingProgress = 0.0f;
+        return;
+    }
+
+    m_nBoppingStartTime = found->m_nBoppingStartTime;
+    m_nBoppingEndTime   = found->m_nBoppingEndTime;
+    UpdateBopping();
 }
 
 // 0x6428C0
