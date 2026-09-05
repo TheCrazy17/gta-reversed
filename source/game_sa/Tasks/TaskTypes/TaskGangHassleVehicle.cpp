@@ -8,7 +8,7 @@ void CTaskGangHassleVehicle::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x65FAC0);
     RH_ScopedInstall(Destructor, 0x65FB60);
-    RH_ScopedInstall(GetTargetHeading, 0x65FDD0, { .reversed = false });
+    RH_ScopedInstall(GetTargetHeading, 0x65FDD0);
     RH_ScopedInstall(CalcTargetOffset, 0x6641A0, { .reversed = false });
     RH_ScopedInstall(Clone, 0x65FC00);
     RH_ScopedInstall(CreateNextSubTask, 0x65FC80, { .reversed = false });
@@ -51,7 +51,30 @@ CTaskGangHassleVehicle::~CTaskGangHassleVehicle() {
 
 // 0x65FDD0
 float CTaskGangHassleVehicle::GetTargetHeading(CPed* ped) {
-    return plugin::CallMethodAndReturn<float, 0x65FDD0, CTaskGangHassleVehicle*, CPed*>(this, ped);
+    const auto& matrix = m_Vehicle->GetMatrix();
+
+    float dx, dy;
+    switch (m_nHasslePosId) {
+    case 1:
+    case 3:
+        dx = -matrix.GetRight().x;
+        dy = -matrix.GetRight().y;
+        break;
+    case 4:
+        dx = matrix.GetUp().x;
+        dy = matrix.GetUp().y;
+        break;
+    case 5:
+        dx = -matrix.GetUp().x;
+        dy = -matrix.GetUp().y;
+        break;
+    default: // 0, 2
+        dx = matrix.GetRight().x;
+        dy = matrix.GetRight().y;
+        break;
+    }
+
+    return CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(dx, dy, 0.0f, 0.0f));
 }
 
 // 0x6641A0
