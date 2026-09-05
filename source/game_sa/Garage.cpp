@@ -16,6 +16,8 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(RestoreCarsForThisImpoundingGarage, 0x1561490);
     RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
     RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
+    RH_ScopedInstall(IsPlayerOutsideGarage, 0x1569180);
+    RH_ScopedInstall(CountCarsWithCenterPointWithinGarage, 0x1561400);
     RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
     RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30);
     RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830, { .reversed = false });
@@ -228,6 +230,25 @@ bool CGarage::EntityHasASphereWayOutsideGarage(CEntity* entity, float fRadius) {
         }
     }
     return false;
+}
+
+// 0x1569180 (thunk_FUN_01569180 - a genuine benign function, not SecuROM)
+bool CGarage::IsPlayerOutsideGarage(float fRadius) {
+    if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
+        return IsEntityEntirelyOutside(playerVehicle, fRadius);
+    }
+    return IsEntityEntirelyOutside(FindPlayerPed(-1), fRadius);
+}
+
+// 0x1561400 (thunk_FUN_01561400 - a genuine benign function, not SecuROM)
+int32 CGarage::CountCarsWithCenterPointWithinGarage(CVehicle* ignoredVehicle) {
+    int32 count = 0;
+    for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+        if (&vehicle != ignoredVehicle && IsPointInsideGarage(vehicle.GetPosition())) {
+            count++;
+        }
+    }
+    return count;
 }
 
 // 0x449690
