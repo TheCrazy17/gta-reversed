@@ -34,7 +34,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(CheckForTrackConcatenation, 0x4EA930, { .reversed = false });
     RH_ScopedInstall(QueueUpTracksForStation, 0x4EA670, { .reversed = false });
     RH_ScopedInstall(ChooseDJBanterIndex, 0x4EA2D0, { .reversed = false });
-    RH_ScopedInstall(ChooseDJBanterIndexFromList, 0x4E95E0, { .reversed = false });
+    RH_ScopedInstall(ChooseDJBanterIndexFromList, 0x4E95E0);
     RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570);
     RH_ScopedInstall(ChooseIdentIndex, 0x4E94C0);
     RH_ScopedInstall(ChooseMusicTrackIndex, 0x4EA270);
@@ -719,8 +719,36 @@ int32 CAERadioTrackManager::ChooseDJBanterIndex(eRadioID id) {
 }
 
 // 0x4E95E0
-int32 CAERadioTrackManager::ChooseDJBanterIndexFromList(eRadioID id, int32** list) {
-    return plugin::CallMethodAndReturn<int32, 0x4E95E0, CAERadioTrackManager*, eRadioID, int32**>(this, id, list);
+int32 CAERadioTrackManager::ChooseDJBanterIndexFromList(eRadioID id, const int32 (*list)[2]) {
+    if (list[id][0] == NOTRACK) {
+        return -1;
+    }
+
+    const auto rangeSize = list[id][1] - list[id][0] + 1;
+    if (rangeSize < 1) {
+        return -1;
+    }
+
+    const auto randomOffset = CAEAudioUtility::GetRandomNumberInRange(0, list[id][1] - list[id][0]);
+    // NOTSA: the history cap is computed from `gRadioDJBanterGN` specifically, regardless of which
+    // `list` was actually passed in - matches the original disassembly exactly (not a mistake).
+    const auto historyLimit = std::min<int32>(DJBANTER_INDEX_HISTORY_COUNT, (gRadioDJBanterGN[id][1] - gRadioDJBanterGN[id][0]) - 1);
+
+    for (auto counter = 0; counter < rangeSize; counter++) {
+        const auto candidate = (counter + randomOffset) % rangeSize + list[id][0];
+
+        bool alreadyPlayed = false;
+        for (auto i = 0; i < historyLimit; i++) {
+            if (candidate == m_nDJBanterIndexHistory[id].indices[i]) {
+                alreadyPlayed = true;
+                break;
+            }
+        }
+        if (!alreadyPlayed) {
+            return candidate;
+        }
+    }
+    return -1;
 }
 
 // 0x4EB180
