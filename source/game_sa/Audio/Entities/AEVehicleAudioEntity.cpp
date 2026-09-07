@@ -4377,7 +4377,53 @@ void CAEVehicleAudioEntity::ProcessDummyBicycle(tVehicleParams& params) {
 
 // 0x500040
 void CAEVehicleAudioEntity::ProcessPlayerBicycle(tVehicleParams& params) {
-    plugin::CallMethod<0x500040, CAEVehicleAudioEntity*, tVehicleParams&>(this, params);
+    if (!AEAudioHardware.IsSoundBankLoaded(m_DummyEngineBank, m_DummySlot)) {
+        return;
+    }
+
+    // NOTSA: clamped log10, avoids log10(0). Same math used in `ProcessDummyBicycle`/
+    // `AEAudioHardware::RescaleChannelVolumes` - re-inlined here (different translation unit).
+    const auto ClampedLog10 = [](float v) {
+        return v >= 1e-5f ? std::log10(v) : -5.0f;
+    };
+
+    auto* bmx = static_cast<CBmx*>(params.Vehicle);
+
+    // Every ~6s while actively pedaling hard and the crank passes through a reference angle,
+    // start (or keep decaying) a cooldown used to gate the sprint/pedal-stroke sound below.
+    static auto& s_fSprintCooldown = StaticRef<float>(0xB6BACC);
+    static auto& s_fLastCrankAngle = StaticRef<float>(0xB6BAD0);
+    static auto& s_bWasFreewheelingLastFrame = StaticRef<bool>(0xB6BAC9);
+
+    if (bmx->m_fControlPedaling > 5.0f && s_fLastCrankAngle * bmx->m_fCrankAngle < 0.0f && s_fSprintCooldown == 0.0f) {
+        s_fSprintCooldown = 6.0f;
+    }
+    s_fSprintCooldown = std::max(s_fSprintCooldown - 0.7f, 0.0f);
+
+    const auto sf = params.Speed / params.Transmission->m_MaxVelocity;
+    const auto ratio = std::min(std::abs(sf), 1.0f);
+    const auto contactWheels = static_cast<float>(bmx->m_nNoOfContactWheels);
+
+    const auto tyreVolume = ClampedLog10(contactWheels * 0.25f * ratio) * 20.0f + m_EventVolume - 8.0f;
+
+    const auto leanWobble = std::abs(std::sin(bmx->m_RideAnimData.LeanAngle)) * 0.2f + 1.0f;
+    const auto tyreSpeed = leanWobble * (StaticRef<float>(0xB6BA6C) * ratio + contactWheels * StaticRef<float>(0xB6BA6C) * 0.125f + 1.05f);
+    PlayBicycleSound(AE_SOUND_BICYCLE_TYRE, m_DummySlot, static_cast<eSoundID>(0), tyreVolume, tyreSpeed);
+
+    // The freewheel mechanism only clicks while coasting (not engaged), never while actively pedaling.
+    const auto isFreewheeling = bmx->m_bIsFreewheeling;
+    const auto sprocketRatio = isFreewheeling ? GetBaseVolumeForBicycleTyre(ratio) : 0.0f;
+    const auto sprocketVolume = ClampedLog10(sprocketRatio) * 20.0f + m_EventVolume - 15.0f;
+    const auto sprocketSpeed = StaticRef<float>(0xB6BA70) * ratio + 0.4f;
+    PlayBicycleSound(AE_SOUND_BICYCLE_SPROCKET_1, m_DummySlot, static_cast<eSoundID>(1), sprocketVolume, sprocketSpeed);
+
+    // The chain "clangs" back into engagement when pedaling resumes right after freewheeling.
+    if (!isFreewheeling && s_bWasFreewheelingLastFrame) {
+        PlayBicycleSound(AE_SOUND_BICYCLE_CHAIN_CLANG, m_DummySlot, static_cast<eSoundID>(1), tyreVolume, 1.0f);
+    }
+
+    s_bWasFreewheelingLastFrame = isFreewheeling;
+    s_fLastCrankAngle = bmx->m_fCrankAngle;
 }
 #pragma endregion
 
@@ -4894,7 +4940,7 @@ void CAEVehicleAudioEntity::InjectHooks() {
     RH_ScopedInstall(PlayBicycleSound, 0x4F9710);
     RH_ScopedInstall(GetBaseVolumeForBicycleTyre, 0x4F60B0);
     RH_ScopedInstall(ProcessDummyBicycle, 0x4FFDC0);
-    RH_ScopedInstall(ProcessPlayerBicycle, 0x500040, { .reversed = false });
+    RH_ScopedInstall(ProcessPlayerBicycle, 0x500040);
 
     RH_ScopedInstall(ProcessPlayerCombine, 0x500CE0);
     RH_ScopedInstall(ProcessDummyRCCar, 0x500DC0);
