@@ -1,5 +1,11 @@
 #include "StdInc.h"
 #include "TaskComplexSmartFleePoint.h"
+#include "TaskComplexLeaveAnyCar.h"
+#include "TaskSimpleStandStill.h"
+#include "TaskComplexSequence.h"
+#include "TaskSimpleRunAnim.h"
+#include "TaskSimpleTired.h"
+#include "TaskComplexWanderFlee.h"
 
 void CTaskComplexSmartFleePoint::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexSmartFleePoint, 0x86f744, 11);
@@ -10,7 +16,7 @@ void CTaskComplexSmartFleePoint::InjectHooks() {
 
     RH_ScopedInstall(SetDefaultTaskWanderDir, 0x65BE00, {.reversed = false});
     RH_ScopedInstall(ComputeFleeDir, 0x65BE40);
-    RH_ScopedInstall(CreateSubTask, 0x65BE80, {.reversed = false});
+    RH_ScopedInstall(CreateSubTask, 0x65BE80);
     RH_ScopedInstall(SetFleePosition, 0x65C3C0);
 
     RH_ScopedVMTInstall(Clone, 0x65CED0);
@@ -49,7 +55,25 @@ uint32 CTaskComplexSmartFleePoint::ComputeFleeDir(CPed* ped) {
 
 // 0x65BE80
 CTask* CTaskComplexSmartFleePoint::CreateSubTask(eTaskType taskType, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x65BE80, CTaskComplexSmartFleePoint*, eTaskType, CPed*>(this, taskType, ped);
+    switch (taskType) {
+    case TASK_COMPLEX_LEAVE_ANY_CAR:
+        return new CTaskComplexLeaveAnyCar(0, false, true);
+    case TASK_SIMPLE_STAND_STILL:
+        SetDefaultTaskWanderDir(ped);
+        return new CTaskSimpleStandStill(0, false, false, 8.0f);
+    case TASK_COMPLEX_SEQUENCE:
+        if (m_moveState == PEDMOVE_RUN) {
+            return new CTaskComplexSequence{
+                new CTaskSimpleRunAnim(ANIM_GROUP_DEFAULT, ANIM_ID_FLEE_LKAROUND_01, 4.0f, false),
+                new CTaskSimpleTired(2000),
+            };
+        }
+        return nullptr;
+    case TASK_COMPLEX_WANDER:
+        return new CTaskComplexWanderFlee(m_moveState, m_fleeDir);
+    default:
+        return nullptr;
+    }
 }
 
 // 0x65C3C0
