@@ -35,9 +35,9 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(QueueUpTracksForStation, 0x4EA670, { .reversed = false });
     RH_ScopedInstall(ChooseDJBanterIndex, 0x4EA2D0, { .reversed = false });
     RH_ScopedInstall(ChooseDJBanterIndexFromList, 0x4E95E0, { .reversed = false });
-    RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570, { .reversed = false });
-    RH_ScopedInstall(ChooseIdentIndex, 0x4E94C0, { .reversed = false });
-    RH_ScopedInstall(ChooseMusicTrackIndex, 0x4EA270, { .reversed = false });
+    RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570);
+    RH_ScopedInstall(ChooseIdentIndex, 0x4E94C0);
+    RH_ScopedInstall(ChooseMusicTrackIndex, 0x4EA270);
     RH_ScopedInstall(ChooseTalkRadioShow, 0x4E8E40, { .reversed = false });
     RH_ScopedInstall(CheckForMissionStatsChanges, 0x4E8410);
     RH_ScopedInstall(StartTrackPlayback, 0x4EA640);
@@ -632,17 +632,85 @@ void CAERadioTrackManager::StopRadio(tVehicleAudioSettings* settings, bool durin
 
 // 0x4E94C0
 int32 CAERadioTrackManager::ChooseIdentIndex(eRadioID id) {
-    return plugin::CallAndReturn<int32, 0x4E94C0, CAERadioTrackManager*, int8>(this, id);
+    if (gRadioIdents[id][0] == NOTRACK) {
+        return -1;
+    }
+
+    for (;;) {
+        const auto identId = CAEAudioUtility::GetRandomNumberInRange(gRadioIdents[id][0], gRadioIdents[id][1]);
+
+        // NOTSA: the first Radio Los Santos ident references the "Are You Going To San Fierro?"
+        // mission - don't play it until that mission's been completed.
+        if (id == RADIO_MODERN_HIP_HOP && identId == gRadioIdents[RADIO_MODERN_HIP_HOP][0]) {
+            if (CStats::GetStatValue(STAT_ARE_YOU_GOING_TO_SAN_FIERRO_MISSION_ACCOMPLISHED) == 0.0f) {
+                continue;
+            }
+        }
+
+        const auto historyLimit = std::min<int32>(IDENT_INDEX_HISTORY_COUNT, (gRadioIdents[id][1] - gRadioIdents[id][0]) - 1);
+        bool alreadyPlayed = false;
+        for (auto i = 0; i < historyLimit; i++) {
+            if (identId == m_nIdentIndexHistory[id].indices[i]) {
+                alreadyPlayed = true;
+                break;
+            }
+        }
+        if (!alreadyPlayed) {
+            return identId;
+        }
+    }
 }
 
 // 0x4E9570
 int32 CAERadioTrackManager::ChooseAdvertIndex(eRadioID id) {
-    return plugin::CallAndReturn<int32, 0x4E9570, CAERadioTrackManager*, int8>(this, id);
+    for (;;) {
+        const auto advertId = CAEAudioUtility::GetRandomNumberInRange(gRadioAdverts[0], gRadioAdverts[1]);
+
+        bool excluded = false;
+        for (const auto restricted : gnRadioStationRestrictedAdverts[id]) {
+            if (advertId == restricted) {
+                excluded = true;
+                break;
+            }
+        }
+        if (excluded) {
+            continue;
+        }
+
+        bool alreadyPlayed = false;
+        for (const auto historyId : m_nAdvertIndexHistory[id].indices) {
+            if (advertId == historyId) {
+                alreadyPlayed = true;
+                break;
+            }
+        }
+        if (!alreadyPlayed) {
+            return advertId;
+        }
+    }
 }
 
 // 0x4EA270
 int8 CAERadioTrackManager::ChooseMusicTrackIndex(eRadioID id) {
-    return plugin::CallAndReturn<int8, 0x4EA270, CAERadioTrackManager*, int8>(this, id);
+    if (id == RADIO_TALK) {
+        return ChooseTalkRadioShow();
+    }
+
+    for (;;) {
+        const auto trackIdx = CAEAudioUtility::GetRandomNumberInRange<int32>(0, gRadioNumMusicTracksPerStation[id] - 1);
+
+        const auto historyLimit = std::min<int32>(MUSIC_TRACK_HISTORY_COUNT, gRadioNumMusicTracksPerStation[id] - 2);
+        bool alreadyPlayed = false;
+        for (auto i = 0; i < historyLimit; i++) {
+            if (trackIdx == m_nMusicTrackIndexHistory[id].indices[i]) {
+                alreadyPlayed = true;
+                break;
+            }
+        }
+        if (!alreadyPlayed) {
+            return static_cast<int8>(trackIdx);
+        }
+    }
 }
 
 // 0x4EA2D0
