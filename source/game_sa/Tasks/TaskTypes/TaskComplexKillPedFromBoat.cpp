@@ -11,7 +11,7 @@ void CTaskComplexKillPedFromBoat::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x6238A0);
     RH_ScopedVMTInstall(GetTaskType, 0x622820);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x622890);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x622900, { .reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x622900);
     RH_ScopedVMTInstall(ControlSubTask, 0x622980, { .reversed = false });
 
 }
@@ -39,7 +39,8 @@ CTask* CTaskComplexKillPedFromBoat::CreateNextSubTask(CPed* ped) {
 
 // 0x622900
 CTask* CTaskComplexKillPedFromBoat::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x622900, CTaskComplexKillPedFromBoat*, CPed*>(this, ped);
+    ped->bStayInSamePlace = true;
+    return new CTaskSimpleStandStill(0, true, false, 8.0f);
 }
 
 // 0x622980
