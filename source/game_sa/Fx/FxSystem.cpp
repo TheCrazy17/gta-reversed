@@ -32,7 +32,7 @@ void FxSystem_c::InjectHooks() {
     RH_ScopedInstall(GetCompositeMatrix, 0x4AA8C0);
     RH_ScopedInstall(GetPlayStatus, 0x4AA900);
     RH_ScopedInstall(ForAllParticles, 0x4AA930);
-    RH_ScopedInstall(UpdateBoundingBoxCB, 0x4AA9A0, {.reversed=false});
+    RH_ScopedInstall(UpdateBoundingBoxCB, 0x4AA9A0);
     RH_ScopedInstall(GetBoundingSphereWld, 0x4AAAD0);
     RH_ScopedInstall(GetBoundingSphereLcl, 0x4AAB50);
     RH_ScopedInstall(SetBoundingSphere, 0x4AAB80);
@@ -304,7 +304,17 @@ uint32 FxSystem_c::ForAllParticles(void(*callback)(Particle_c*, int32, FxBox_c**
 
 // 0x4AA9A0
 void FxSystem_c::UpdateBoundingBoxCB(Particle_c* particle, int32 a2, FxBox_c** data) {
-    ((void(__cdecl *)(Particle_c*, int32, FxBox_c**))0x4AA9A0)(particle, a2, data);
+    if (a2 != 0) {
+        return;
+    }
+
+    auto* const box = *data;
+    if (particle->m_Pos.x < box->minX) box->minX = particle->m_Pos.x;
+    if (box->maxX < particle->m_Pos.x) box->maxX = particle->m_Pos.x;
+    if (particle->m_Pos.y < box->minY) box->minY = particle->m_Pos.y;
+    if (box->maxY < particle->m_Pos.y) box->maxY = particle->m_Pos.y;
+    if (particle->m_Pos.z < box->minZ) box->minZ = particle->m_Pos.z;
+    if (box->maxZ < particle->m_Pos.z) box->maxZ = particle->m_Pos.z;
 }
 
 // 0x4AAA40
