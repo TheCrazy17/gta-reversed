@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "ScriptsForBrains.h"
+#include "Entity/Object/Object.h"
 
 void CScriptsForBrains::InjectHooks() {
     RH_ScopedClass(CScriptsForBrains);
@@ -16,7 +17,7 @@ void CScriptsForBrains::InjectHooks() {
     RH_ScopedInstall(StartAttractorScriptBrainWithThisName, 0x46B390);
     RH_ScopedInstall(StartOrRequestNewStreamedScriptBrain, 0x46CD80, {.reversed = false});
     //RH_ScopedInstall(StartOrRequestNewStreamedScriptBrainWithThisName, 0x46CED0, {.reversed = false});
-    RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0, {.reversed=false});
+    RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0);
 }
 
 
@@ -55,7 +56,11 @@ bool CScriptsForBrains::HasAttractorScriptBrainWithThisNameLoaded(const char* na
 }
 
 bool CScriptsForBrains::IsObjectWithinBrainActivationRange(CObject* entity, const CVector& point) {
-    NOTSA_UNREACHABLE();
+    const auto& script = m_aScriptForBrains[entity->m_nStreamedScriptBrainToLoad];
+    if (script.m_TypeOfBrain != 1) {
+        return false;
+    }
+    return CVector::Dist(point, entity->GetPosition()) < script.m_ObjectBrainActivationRadius;
 }
 
 int16 CScriptsForBrains::GetIndexOfScriptBrainWithThisName(const char* name, int8 type) {
