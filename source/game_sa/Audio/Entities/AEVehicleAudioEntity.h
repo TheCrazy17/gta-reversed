@@ -277,6 +277,18 @@ protected: // Config:
         } Combine;
 
         struct {
+            struct TheJet {
+                float VolBase;    //!< Additive dB offset for the FRONT/REAR channels
+                float CruiseVol;  //!< `m_CurrentDummyEngineVolume` target while accelerating
+                float DistantVol; //!< Fixed volume for the JET_DISTANT channel
+            };
+            TheJet Shamal{ .VolBase = 8.f,  .CruiseVol = 0.f, .DistantVol = -100.f }; // 0x8CBE68, 0xB6B9F4, 0x8CBE78
+            TheJet Hydra { .VolBase = 8.f,  .CruiseVol = 0.f, .DistantVol = -100.f }; // 0x8CBE7C, 0xB6B9F8, 0x8CBE8C
+            TheJet AT400 { .VolBase = 20.f, .CruiseVol = 6.f, .DistantVol = -8.f   }; // 0x8CBE90, 0x8CBE98, 0x8CBEA4
+            TheJet Androm{ .VolBase = 8.f,  .CruiseVol = 0.f, .DistantVol = -12.f  }; // 0x8CBEA8, 0xB6B9FC, 0x8CBEB8
+        } Jet{};
+
+        struct {
             struct TheProps {
                 float EngineSoundRollOff;
                 float TrackSoundRollOff;

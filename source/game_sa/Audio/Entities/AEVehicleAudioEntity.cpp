@@ -3762,7 +3762,57 @@ void CAEVehicleAudioEntity::ProcessDummySeaPlane(tVehicleParams& vp) {
 
 // 0x4FF900
 void CAEVehicleAudioEntity::ProcessGenericJet(bool bEngineOn, tVehicleParams& params, float fEngineSpeed, float fAccelRatio, float fBrakeRatio, float fStalledVolume, float fStalledFrequency) {
-    plugin::CallMethod<0x4FF900, CAEVehicleAudioEntity*, uint8, tVehicleParams&, float, float, float, float, float>(this, bEngineOn, params, fEngineSpeed, fAccelRatio, fBrakeRatio, fStalledVolume, fStalledFrequency);
+    if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_VEHICLE_GEN, SND_BANK_SLOT_VEHICLE_GEN)) {
+        return;
+    }
+
+    auto* vehicle = params.Vehicle;
+    const auto* cfg = [&]() -> const decltype(s_Config.Jet.Shamal)* {
+        switch (vehicle->GetModelIndex()) {
+        case MODEL_SHAMAL: return &s_Config.Jet.Shamal;
+        case MODEL_HYDRA:  return &s_Config.Jet.Hydra;
+        case MODEL_AT400:  return &s_Config.Jet.AT400;
+        case MODEL_ANDROM: return &s_Config.Jet.Androm;
+        default:           return nullptr;
+        }
+    }();
+
+    if (!cfg || !bEngineOn) {
+        CancelAllVehicleEngineSounds();
+        return;
+    }
+
+    // 0x4FFA35 - Accel/brake-driven pitch nudge, same shape as `GetAircraftAcceleration`
+    const auto accelBrakeAdjust = (fAccelRatio > 0.f ? 0.1f : 0.f) - (fBrakeRatio > 0.f ? 0.05f : 0.f);
+    UpdateRotorFreq(CalculatePlanePropFreq(params, accelBrakeAdjust) * fStalledFrequency, 1.f / 187.5f, 1.f / 187.5f);
+
+    const auto camPoVFactor = GetAircraftCameraPoVFactor(vehicle);
+
+    PlayAircraftSound(
+        AE_SOUND_AIRCRAFT_FRONT,
+        SND_BANK_SLOT_VEHICLE_GEN,
+        10,
+        CAEAudioUtility::AudioLog10((1.f - s_Config.RotorVolTiltFactor * camPoVFactor) * fEngineSpeed) * 20.f + cfg->VolBase,
+        m_CurrentRotorFrequency
+    );
+    PlayAircraftSound(
+        AE_SOUND_AIRCRAFT_REAR,
+        SND_BANK_SLOT_VEHICLE_GEN,
+        11,
+        CAEAudioUtility::AudioLog10((camPoVFactor * 0.5f + 0.5f) * fEngineSpeed) * 20.f + cfg->VolBase,
+        m_CurrentRotorFrequency
+    );
+
+    // 0x4FFBF4 - Engine whines down while off-throttle, snaps to the model's cruise volume while accelerating
+    m_CurrentDummyEngineVolume = fAccelRatio > 0.f ? cfg->CruiseVol : (m_CurrentDummyEngineVolume - 1.f);
+    PlayAircraftSound(
+        AE_SOUND_AIRCRAFT_THRUST,
+        SND_BANK_SLOT_VEHICLE_GEN,
+        26,
+        CAEAudioUtility::AudioLog10(fEngineSpeed) * 20.f + m_CurrentDummyEngineVolume + fStalledVolume,
+        1.f
+    );
+    PlayAircraftSound(AE_SOUND_AIRCRAFT_JET_DISTANT, SND_BANK_SLOT_VEHICLE_GEN, 14, cfg->DistantVol, 1.f);
 }
 
 // 0x501960
@@ -4991,7 +5041,7 @@ void CAEVehicleAudioEntity::InjectHooks() {
     // Jet
     RH_ScopedInstall(ProcessPlayerJet, 0x501650);
     RH_ScopedInstall(ProcessDummyJet, 0x501960);
-    RH_ScopedInstall(ProcessGenericJet, 0x4FF900, { .reversed = false });
+    RH_ScopedInstall(ProcessGenericJet, 0x4FF900);
 
     // Bicycle
     RH_ScopedInstall(PlayBicycleSound, 0x4F9710);
