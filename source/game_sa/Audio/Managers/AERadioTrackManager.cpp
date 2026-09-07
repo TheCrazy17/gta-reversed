@@ -10,6 +10,10 @@
 
 auto& AERadioTrackManager = StaticRef<CAERadioTrackManager>(0x8CB6F8);
 
+// Per-talk-show segment duration (ms), indexed by `tRadioSettings::TrackIndices[0]`. Only used for
+// `RADIO_TALK` (WCTR, 31 shows) - not yet extracted into `RadioStreamsPC.h`, so referenced directly.
+static auto& gRadioTalkShowDurationsMs = StaticRef<std::array<int32, 31>>(0x8CAD50);
+
 void CAERadioTrackManager::InjectHooks() {
     RH_ScopedClass(CAERadioTrackManager);
     RH_ScopedCategory("Audio/Managers");
@@ -48,7 +52,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(GetRadioStationName, 0x4E9E10);
     RH_ScopedInstall(GetRadioStationNameKey, 0x4E8380);
     RH_ScopedInstall(HasRadioRetuneJustStarted, 0x4E8370);
-    RH_ScopedInstall(StopRadio, 0x4E9820, { .reversed = false });
+    RH_ScopedInstall(StopRadio, 0x4E9820);
     RH_ScopedInstall(IsRadioOn, 0x4E8350, { .reversed = true });
     RH_ScopedInstall(InitialiseRadioStationID, 0x4E8330);
     RH_ScopedInstall(SetBassEnhanceOnOff, 0x4E9DB0);
@@ -769,7 +773,128 @@ bool CAERadioTrackManager::QueueUpTracksForStation(eRadioID id, int8* iTrackCoun
 
 // 0x4E9820
 void CAERadioTrackManager::StopRadio(tVehicleAudioSettings* settings, bool duringPause) {
-    return plugin::CallMethod<0x4E9820, CAERadioTrackManager*, tVehicleAudioSettings*, bool>(this, settings, duringPause);
+    switch (m_nMode) {
+    case eRadioTrackMode::RADIO_STARTING:
+    case eRadioTrackMode::RADIO_WAITING_TO_PLAY:
+    case eRadioTrackMode::RADIO_PLAYING: {
+        if (!CTimer::GetIsPaused() || duringPause) {
+            m_nMode = eRadioTrackMode::RADIO_STOPPING;
+        }
+
+        const auto id = m_ActiveSettings.StationID;
+        auto& state = m_aRadioState[id];
+
+        rng::fill(state.m_aElapsed, 0);
+        state.m_iTrackPlayTime = -1;
+        rng::fill(state.m_aTrackQueue, -1);
+        rng::fill(state.m_aTrackTypes, TYPE_NONE);
+        state.m_iTimeInMs = CTimer::GetTimeInMS();
+        state.m_nGameClockDays = CClock::ms_nGameClockDays;
+        state.m_nGameClockHours = CClock::ms_nGameClockHours;
+
+        if (state.m_iTimeInPauseModeInMs >= 0 && id != RADIO_EMERGENCY_AA && id != RADIO_OFF) {
+            m_aListenTimes[id] += CTimer::GetTimeInMSPauseMode() - state.m_iTimeInPauseModeInMs;
+        }
+
+        if (id == RADIO_OFF) {
+            m_aRadioState[RADIO_OFF].m_aElapsed[0] = 0;
+            break;
+        }
+
+        state.m_aElapsed[0] = (m_ActiveSettings.TrackLengthMs - m_ActiveSettings.PlayTime) - 100;
+
+        switch (m_ActiveSettings.CurrTrackType) {
+        case TYPE_INDENT:
+        case TYPE_ADVERT:
+        case TYPE_DJ_BANTER:
+        case TYPE_OUTRO:
+            state.m_iTrackPlayTime = m_ActiveSettings.PlayTime;
+            state.m_aTrackQueue[0] = m_ActiveSettings.CurrTrackID;
+            state.m_aTrackTypes[0] = m_ActiveSettings.CurrTrackType;
+            break;
+        case TYPE_INTRO:
+            state.m_aElapsed[1] = id == RADIO_TALK ? gRadioTalkShowDurationsMs[m_ActiveSettings.TrackIndices[0]] : 150'000;
+            state.m_aElapsed[2] = 5000;
+            state.m_iTrackPlayTime = m_ActiveSettings.PlayTime;
+            if (m_ActiveSettings.TrackQueue[0] == m_ActiveSettings.CurrTrackID) {
+                state.m_aTrackQueue[0] = m_ActiveSettings.TrackQueue[0];
+                state.m_aTrackTypes[0] = m_ActiveSettings.TrackTypes[0];
+                state.m_aTrackQueue[1] = m_ActiveSettings.TrackQueue[1];
+                state.m_aTrackTypes[1] = m_ActiveSettings.TrackTypes[1];
+                state.m_aTrackQueue[2] = m_ActiveSettings.TrackQueue[2];
+                state.m_aTrackTypes[2] = m_ActiveSettings.TrackTypes[2];
+            } else {
+                state.m_aTrackQueue[0] = m_ActiveSettings.CurrTrackID;
+                state.m_aTrackTypes[0] = m_ActiveSettings.CurrTrackType;
+                state.m_aTrackQueue[1] = m_ActiveSettings.TrackQueue[0];
+                state.m_aTrackTypes[1] = m_ActiveSettings.TrackTypes[0];
+                state.m_aTrackQueue[2] = m_ActiveSettings.TrackQueue[1];
+                state.m_aTrackTypes[2] = m_ActiveSettings.TrackTypes[1];
+            }
+            break;
+        case TYPE_TRACK:
+        case TYPE_USER_TRACK:
+            state.m_aElapsed[1] = 5000;
+            state.m_iTrackPlayTime = m_ActiveSettings.PlayTime;
+            if (m_ActiveSettings.TrackQueue[0] == m_ActiveSettings.CurrTrackID) {
+                state.m_aTrackQueue[0] = m_ActiveSettings.TrackQueue[0];
+                state.m_aTrackTypes[0] = m_ActiveSettings.TrackTypes[0];
+                state.m_aTrackQueue[1] = m_ActiveSettings.TrackQueue[1];
+                state.m_aTrackTypes[1] = m_ActiveSettings.TrackTypes[1];
+            } else {
+                state.m_aTrackQueue[0] = m_ActiveSettings.CurrTrackID;
+                state.m_aTrackTypes[0] = m_ActiveSettings.CurrTrackType;
+                state.m_aTrackQueue[1] = m_ActiveSettings.TrackQueue[0];
+                state.m_aTrackTypes[1] = m_ActiveSettings.TrackTypes[0];
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    m_bInitialised = false;
+    m_bEnabledInPauseMode = false;
+
+    if (CTimer::GetIsPaused() && !duringPause) {
+        m_iRadioStationMenuRequest = -1;
+        m_nRetuneStartedTime = 0;
+    }
+
+    if (settings) {
+        m_nStationsListed = 0;
+        m_nStationsListDown = 0;
+        m_iRadioStationScriptRequest = -1;
+        m_bDisplayStationName = false;
+        m_bRetuneJustStarted = false;
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_RADIO_RETUNE_STOP);
+
+        if (m_ActiveSettings.StationID == RADIO_INVALID) {
+            m_ActiveSettings.StationID = RADIO_OFF;
+        }
+
+        settings->RadioStation = m_ActiveSettings.StationID;
+        settings->BassSetting = m_ActiveSettings.BassSetting;
+
+        if (m_nMode != eRadioTrackMode::RADIO_STOPPED) {
+            m_nSavedTimeMs = CTimer::GetTimeInMS();
+            m_nSavedGameClockDays = CClock::ms_nGameClockDays;
+            m_nSavedGameClockHours = CClock::ms_nGameClockHours;
+            m_nSavedRadioStationId = m_ActiveSettings.StationID;
+        }
+
+        if (m_ActiveSettings.StationID == RADIO_EMERGENCY_AA) {
+            m_ActiveSettings.StationID = static_cast<eRadioID>(CAEAudioUtility::GetRandomNumberInRange(1, 13));
+        }
+    } else if (duringPause) {
+        m_nStationsListed = 0;
+        m_nStationsListDown = 0;
+        m_bRetuneJustStarted = false;
+    }
 }
 
 // 0x4E94C0
