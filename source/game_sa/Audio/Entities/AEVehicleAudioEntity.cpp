@@ -3815,7 +3815,64 @@ void CAEVehicleAudioEntity::ProcessPlayerJet(tVehicleParams& vp) {
 #pragma region Hovercraft (Vortex)
 // 0x500F50
 void CAEVehicleAudioEntity::ProcessDummyHovercraft(tVehicleParams& params) {
-    plugin::CallMethod<0x500F50, CAEVehicleAudioEntity*, tVehicleParams&>(this, params);
+    auto* pad = CPad::GetPad();
+
+    if (!EnsureHasDummySlot() || !EnsureSoundBankIsLoaded(true)) {
+        return;
+    }
+
+    auto* vehicle = params.Vehicle;
+    if (!vehicle->vehicleFlags.bEngineOn || m_IsWreckedVehicle) {
+        for (auto st = 0; st < AE_SOUND_ENGINE_MAX; st++) {
+            CancelVehicleEngineSound(static_cast<eVehicleEngineSoundType>(st));
+        }
+        return;
+    }
+
+    auto* plane = static_cast<CPlane*>(vehicle); // Vortex-type hovercraft are `CPlane`s
+    const auto ratio = std::min(std::abs(plane->m_fLeftRightSkid * 0.6666667f), 1.0f);
+
+    // Only the player's own vehicle checks pad input directly; for AI-controlled ones the
+    // accel/brake-based pitch nudge below never triggers (both would truncate `ratio` to 0).
+    int16 accelerate, brake;
+    if (vehicle->GetStatus() == STATUS_PLAYER) {
+        if (m_AuSettings.EngineVolumeOffset >= 0.001f) {
+            brake = pad->GetBrake();
+            accelerate = pad->GetAccelerate();
+        } else {
+            accelerate = pad->GetAccelerate();
+            brake = pad->GetBrake();
+            accelerate -= brake;
+            brake = 0;
+        }
+    } else {
+        accelerate = brake = static_cast<int16>(ratio);
+    }
+
+    auto pitchNudge = ratio;
+    if (accelerate > 0) {
+        pitchNudge = 0.1f;
+    }
+    if (brake > 0) {
+        pitchNudge = -0.05f;
+    }
+
+    const auto propRatio = std::clamp(plane->m_fPropSpeed * 2.9411764f, 0.0f, 1.0f);
+    auto freq = 0.15f * ratio + StaticRef<float>(0xB6BA94) * propRatio + 0.8f + pitchNudge;
+    const auto volume = StaticRef<float>(0xB6BA90) * propRatio - 12.0f;
+
+    // Rate-limit how fast the pitch can change, to avoid abrupt jumps between frames.
+    if (m_CurrentRotorFrequency < 0.0f) {
+        m_CurrentRotorFrequency = freq;
+    }
+    if (freq < m_CurrentRotorFrequency) {
+        freq = std::max(freq, m_CurrentRotorFrequency - 0.0053333323f);
+    } else {
+        freq = std::min(freq, m_CurrentRotorFrequency + 0.0053333323f);
+    }
+    m_CurrentRotorFrequency = freq;
+
+    UpdateGenericVehicleSound(AE_DUMMY_ID, m_DummySlot, m_DummyEngineBank, (eSoundID)0, freq, volume, 3.5f);
 }
 
 // Android
@@ -4944,7 +5001,7 @@ void CAEVehicleAudioEntity::InjectHooks() {
 
     RH_ScopedInstall(ProcessPlayerCombine, 0x500CE0);
     RH_ScopedInstall(ProcessDummyRCCar, 0x500DC0);
-    RH_ScopedInstall(ProcessDummyHovercraft, 0x500F50, { .reversed = false });
+    RH_ScopedInstall(ProcessDummyHovercraft, 0x500F50);
     RH_ScopedInstall(ProcessDummyGolfCart, 0x501270);
     RH_ScopedInstall(ProcessDummyVehicleEngine, 0x501480);
     RH_ScopedInstall(ProcessSpecialVehicle, 0x501AB0);
