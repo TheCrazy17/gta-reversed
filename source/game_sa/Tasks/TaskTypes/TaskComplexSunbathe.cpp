@@ -15,7 +15,7 @@ void CTaskComplexSunbathe::InjectHooks() {
 
     RH_ScopedVMTInstall(Clone, 0x6366A0);
     RH_ScopedVMTInstall(GetTaskType, 0x632040);
-    RH_ScopedVMTInstall(MakeAbortable, 0x6320F0, { .reversed = false });
+    RH_ScopedVMTInstall(MakeAbortable, 0x6320F0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x6399F0, { .reversed = false });
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x639CB0, { .reversed = false });
     RH_ScopedVMTInstall(ControlSubTask, 0x6381A0, { .reversed = false });
@@ -66,7 +66,14 @@ CTaskComplexSunbathe::~CTaskComplexSunbathe() {
 
 // 0x6320F0
 bool CTaskComplexSunbathe::MakeAbortable(CPed* ped, eAbortPriority priority, CEvent const* event) {
-    return plugin::CallMethodAndReturn<bool, 0x6320F0, CTaskComplexSunbathe*, CPed*, eAbortPriority, CEvent const*>(this, ped, priority, event);
+    if (event && (event->GetEventType() == EVENT_PED_COLLISION_WITH_PED || event->GetEventType() == EVENT_PED_COLLISION_WITH_PLAYER)) {
+        return false;
+    }
+    if (!CTaskComplex::MakeAbortable(ped, priority, event)) {
+        return false;
+    }
+    m_bAborted = true;
+    return true;
 }
 
 // 0x6399F0
