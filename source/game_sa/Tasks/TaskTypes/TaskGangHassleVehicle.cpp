@@ -3,6 +3,7 @@
 #include "TaskGangHassleVehicle.h"
 #include "TaskComplexTrackEntity.h"
 #include "TaskComplexSmartFleeEntity.h"
+#include "TaskComplexLeaveCar.h"
 
 void CTaskGangHassleVehicle::InjectHooks() {
     RH_ScopedVirtualClass(CTaskGangHassleVehicle, 0x86F9D4, 11);
@@ -14,7 +15,7 @@ void CTaskGangHassleVehicle::InjectHooks() {
     RH_ScopedInstall(CalcTargetOffset, 0x6641A0);
     RH_ScopedInstall(Clone, 0x65FC00);
     RH_ScopedInstall(CreateNextSubTask, 0x65FC80);
-    RH_ScopedInstall(CreateFirstSubTask, 0x664BA0, { .reversed = false });
+    RH_ScopedInstall(CreateFirstSubTask, 0x664BA0);
     RH_ScopedInstall(ControlSubTask, 0x6637C0, { .reversed = false });
 }
 
@@ -139,7 +140,36 @@ CTask* CTaskGangHassleVehicle::CreateNextSubTask(CPed* ped) {
 
 // 0x664BA0
 CTask* CTaskGangHassleVehicle::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x664BA0, CTaskGangHassleVehicle*, CPed*>(this, ped);
+    if (!m_Vehicle) {
+        return nullptr;
+    }
+
+    m_pEntity = m_Vehicle->GetDriver();
+    CEntity::SafeRegisterRef(m_pEntity);
+
+    const auto& box = m_Vehicle->GetModelInfo()->GetColModel()->GetBoundingBox();
+    if (box.m_vecMax.x - box.m_vecMin.x > 4.0f || box.m_vecMax.y - box.m_vecMin.y > 8.0f) {
+        return nullptr;
+    }
+
+    m_nHasslePosId = m_Vehicle->GetSpareHasslePosId();
+    if (m_nHasslePosId == -1) {
+        return nullptr;
+    }
+
+    m_Vehicle->SetHasslePosId(m_nHasslePosId, true);
+    CalcTargetOffset();
+    m_b31 = false;
+    ped->DropEntityThatThisPedIsHolding(true);
+
+    m_nTime = CTimer::GetTimeInMS();
+    dword3C = CGeneral::GetRandomNumberInRange(150000, 250000);
+    byte40 = true;
+
+    if (ped->IsInVehicle()) {
+        return new CTaskComplexLeaveCar(ped->m_pVehicle, 0, 0, true, false);
+    }
+    return CreateNextSubTask(ped);
 }
 
 // 0x6637C0
