@@ -22,7 +22,7 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(CountCarsWithCenterPointWithinGarage, 0x1561400);
     RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
     RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30);
-    RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830, { .reversed = false });
+    RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830);
     RH_ScopedInstall(IsEntityEntirelyInside3D, 0x448BE0);
     RH_ScopedOverloadedInstall(IsPointInsideGarage, "0", 0x448740, bool (CGarage::*)(CVector));
     RH_ScopedInstall(PlayerArrestedOrDied, 0x4486C0);
@@ -303,7 +303,34 @@ bool CGarage::IsEntityEntirelyOutside(CEntity* entity, float radius) {
 
 // 0x44A830
 bool CGarage::IsStaticPlayerCarEntirelyInside() {
-    return plugin::CallMethodAndReturn<bool, 0x44A830, CGarage*>(this);
+    auto* const playerVehicle = FindPlayerVehicle(-1, false);
+    if (!playerVehicle) {
+        return false;
+    }
+    if (playerVehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE && playerVehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
+        return false;
+    }
+    if (FindPlayerPed(-1)->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR)) {
+        return false;
+    }
+
+    const auto& pos = playerVehicle->GetPosition();
+    if (pos.x < m_fLeftCoord || pos.x > m_fRightCoord) {
+        return false;
+    }
+    if (pos.y < m_fFrontCoord || pos.y > m_fBackCoord) {
+        return false;
+    }
+
+    const auto& vel = playerVehicle->GetMoveSpeed();
+    if (std::abs(vel.x) > 0.01f || std::abs(vel.y) > 0.01f || std::abs(vel.z) > 0.01f) {
+        return false;
+    }
+    if (vel.SquaredMagnitude() > 0.0001f) {
+        return false;
+    }
+
+    return IsEntityTouching3D(playerVehicle);
 }
 
 // 0x448BE0
