@@ -757,9 +757,6 @@ bool CAEFrontendAudioEntity::IsLoadingTuneActive() {
 
 // 0x4DEDA0
 void CAEFrontendAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
-    return plugin::CallMethod<0x4DEDA0, CAEFrontendAudioEntity*, CAESound*, int16>(this, sound, curPlayPos);
-
-    // untested
     if (!sound)
         return;
 
@@ -815,5 +812,5 @@ void CAEFrontendAudioEntity::InjectHooks() {
     RH_ScopedInstall(AddAudioEvent, 0x4DD4A0, { .reversed = false });
     RH_ScopedInstall(IsRadioTuneSoundActive, 0x4DD480);
     RH_ScopedInstall(IsLoadingTuneActive, 0x4DD470);
-    RH_ScopedVMTInstall(UpdateParameters, 0x4DEDA0, { .reversed = false });
+    RH_ScopedVMTInstall(UpdateParameters, 0x4DEDA0);
 }
