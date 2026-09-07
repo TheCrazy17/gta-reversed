@@ -2,6 +2,7 @@
 
 #include "Garage.h"
 #include "Object.h"
+#include "Wanted.h"
 
 void CGarage::InjectHooks() {
     RH_ScopedClass(CGarage);
@@ -494,7 +495,7 @@ void CGarage::CenterCarInGarage(CVehicle* vehicle) {
 // the doorway, not cleanly stored). CColModel's sphere-array layout isn't mapped in this codebase
 // yet, so forwarding raw for now rather than guessing at it - see garage_update_progress.md.
 bool CGarage::IsAnyCarBlockingDoor() {
-    return plugin::CallAndReturn<bool, 0x156D610>();
+    return plugin::CallMethodAndReturn<bool, 0x156D610, CGarage*>(this);
 }
 
 // 0x1566680
@@ -503,7 +504,7 @@ bool CGarage::IsAnyCarBlockingDoor() {
 // garage, not outside) and an extra STATUS_WRECKED exclusion - i.e. "is some other, non-wrecked
 // car already sitting inside this garage". Forwarding raw for the same reason as above.
 bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
-    return plugin::CallAndReturn<bool, 0x1566680, CVehicle*>(ignoredVehicle);
+    return plugin::CallMethodAndReturn<bool, 0x1566680, CGarage*, CVehicle*>(this, ignoredVehicle);
 }
 
 // 0x1565260
@@ -512,7 +513,7 @@ bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
 // bitmask (DAT_00a9b0c8/DAT_00c2baac, stride 0xE0) that isn't mapped anywhere else in this
 // codebase yet - a genuine new CVehicleModelInfo struct-mapping task, forwarding raw for now.
 bool CGarage::RightModTypeForThisGarage(CVehicle* vehicle) {
-    return plugin::CallAndReturn<bool, 0x1565260, CVehicle*>(vehicle);
+    return plugin::CallMethodAndReturn<bool, 0x1565260, CGarage*, CVehicle*>(this, vehicle);
 }
 
 // 0x447D80
