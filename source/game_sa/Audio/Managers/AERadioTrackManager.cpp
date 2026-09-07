@@ -32,7 +32,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(TrackRadioStation, 0x4EAC30, { .reversed = false });
     RH_ScopedInstall(ChooseTracksForStation, 0x4EB180);
     RH_ScopedInstall(CheckForTrackConcatenation, 0x4EA930, { .reversed = false });
-    RH_ScopedInstall(QueueUpTracksForStation, 0x4EA670, { .reversed = false });
+    RH_ScopedInstall(QueueUpTracksForStation, 0x4EA670);
     RH_ScopedInstall(ChooseDJBanterIndex, 0x4EA2D0, { .reversed = false });
     RH_ScopedInstall(ChooseDJBanterIndexFromList, 0x4E95E0);
     RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570);
@@ -622,7 +622,96 @@ bool CAERadioTrackManager::TrackRadioStation(eRadioID id, bool skipTrack) {
 
 // 0x4EA670
 bool CAERadioTrackManager::QueueUpTracksForStation(eRadioID id, int8* iTrackCount, int8 radioState, tRadioSettings& settings) {
-    return plugin::CallMethodAndReturn<bool, 0x4EA670, CAERadioTrackManager*, int8, int8*, int8, tRadioSettings&>(this, id, iTrackCount, radioState, settings);
+    auto& count = *iTrackCount;
+
+    switch (radioState) {
+    case TYPE_INDENT:
+        if (id != RADIO_USER_TRACKS) {
+            const auto identId = ChooseIdentIndex(id);
+            settings.TrackQueue[count] = identId;
+            if (identId != -1) {
+                settings.TrackTypes[count] = TYPE_INDENT;
+                count++;
+                return true;
+            }
+        }
+        break;
+    case TYPE_ADVERT: {
+        settings.TrackQueue[count] = ChooseAdvertIndex(id);
+        settings.TrackTypes[count] = TYPE_ADVERT;
+        count++;
+        return true;
+    }
+    case TYPE_DJ_BANTER: {
+        if (id != RADIO_USER_TRACKS) {
+            const auto banterId = ChooseDJBanterIndex(id);
+            settings.TrackQueue[count] = banterId;
+            if (banterId != -1) {
+                settings.TrackTypes[count] = TYPE_DJ_BANTER;
+                count++;
+                return true;
+            }
+        }
+        break;
+    }
+    case TYPE_INTRO: {
+        if (id != RADIO_USER_TRACKS) {
+            const auto trackIdx = ChooseMusicTrackIndex(id);
+            settings.TrackIndices[count] = trackIdx;
+            settings.TrackQueue[count] = CAEAudioUtility::GetRandomNumberInRange(gRadioMusicIntros[id][trackIdx][0], gRadioMusicIntros[id][trackIdx][1]);
+            settings.TrackTypes[count] = TYPE_INTRO;
+            count++;
+
+            settings.TrackIndices[count] = settings.TrackIndices[count - 1];
+            settings.TrackQueue[count] = gRadioMusicTracks[id][settings.TrackIndices[count]];
+            settings.TrackTypes[count] = TYPE_TRACK;
+            count++;
+
+            settings.TrackIndices[count] = settings.TrackIndices[count - 1];
+            settings.TrackQueue[count] = CAEAudioUtility::GetRandomNumberInRange(gRadioMusicOutros[id][settings.TrackIndices[count]][0], gRadioMusicOutros[id][settings.TrackIndices[count]][1]);
+            settings.TrackTypes[count] = TYPE_OUTRO;
+            count++;
+            return true;
+        }
+        break;
+    }
+    case TYPE_TRACK: {
+        if (id == RADIO_USER_TRACKS) {
+            const auto userTrackId = AEUserRadioTrackManager.SelectUserTrackIndex();
+            settings.TrackQueue[count] = userTrackId;
+            settings.TrackTypes[count] = TYPE_USER_TRACK;
+            settings.TrackIndices[count] = static_cast<int8>(userTrackId);
+            count++;
+            return true;
+        }
+
+        const auto trackIdx = ChooseMusicTrackIndex(id);
+        settings.TrackIndices[count] = trackIdx;
+        settings.TrackQueue[count] = gRadioMusicTracks[id][trackIdx];
+        settings.TrackTypes[count] = TYPE_TRACK;
+        count++;
+
+        settings.TrackIndices[count] = settings.TrackIndices[count - 1];
+        settings.TrackQueue[count] = CAEAudioUtility::GetRandomNumberInRange(gRadioMusicOutros[id][settings.TrackIndices[count]][0], gRadioMusicOutros[id][settings.TrackIndices[count]][1]);
+        settings.TrackTypes[count] = TYPE_OUTRO;
+        count++;
+        return true;
+    }
+    case TYPE_OUTRO: {
+        if (id != RADIO_USER_TRACKS) {
+            const auto trackIdx = ChooseMusicTrackIndex(id);
+            settings.TrackIndices[count] = trackIdx;
+            settings.TrackQueue[count] = CAEAudioUtility::GetRandomNumberInRange(gRadioMusicOutros[id][trackIdx][0], gRadioMusicOutros[id][trackIdx][1]);
+            settings.TrackTypes[count] = TYPE_OUTRO;
+            count++;
+            return true;
+        }
+        break;
+    }
+    default:
+        return true;
+    }
+    return false;
 }
 
 // 0x4E9820
