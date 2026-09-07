@@ -72,13 +72,13 @@ void CGenericGameStorage::InjectHooks() {
     RH_ScopedInstall(CheckSlotDataValid, 0x5D1380);
     RH_ScopedOverloadedInstall(LoadDataFromWorkBuffer, "org", 0x5D1300, bool(*)(void*, int32));
     RH_ScopedOverloadedInstall(SaveDataToWorkBuffer, "org", 0x5D1270, bool(*)(void*, int32));
-    RH_ScopedInstall(LoadWorkBuffer, 0x5D10B0, { .reversed = false });
+    RH_ScopedInstall(LoadWorkBuffer, 0x5D10B0);
     RH_ScopedInstall(SaveWorkBuffer, 0x5D0F80, { .reversed = false });
     RH_ScopedInstall(GetCurrentVersionNumber, 0x5D0F50);
     RH_ScopedInstall(MakeValidSaveName, 0x5D0E90, { .reversed = false });
     RH_ScopedInstall(CloseFile, 0x5D0E30, { .reversed = false });
-    RH_ScopedInstall(OpenFileForWriting, 0x5D0DD0, { .reversed = false });
-    RH_ScopedInstall(OpenFileForReading, 0x5D0D20, { .reversed = false });
+    RH_ScopedInstall(OpenFileForWriting, 0x5D0DD0);
+    RH_ScopedInstall(OpenFileForReading, 0x5D0D20);
     RH_ScopedInstall(CheckDataNotCorrupt, 0x5D1170, { .reversed = false });
     RH_ScopedInstall(RestoreForStartLoad, 0x619000);
 }
@@ -688,13 +688,12 @@ bool CGenericGameStorage::LoadWorkBuffer() {
     assert(ms_FileHandle);
     assert(ms_WorkBuffer);
 
-    if (!CFileMgr::GetErrorReadWrite(ms_FileHandle)) {
-        if (CFileMgr::Read(ms_FileHandle, ms_WorkBuffer, toReadSize) == toReadSize) {
-            ms_FilePos += toReadSize;
-            ms_WorkBufferSize = toReadSize;
-            ms_WorkBufferPos  = 0;
-            return true;
-        }
+    const auto bytesRead = CFileMgr::Read(ms_FileHandle, ms_WorkBuffer, toReadSize);
+    if (!CFileMgr::GetErrorReadWrite(ms_FileHandle) && bytesRead == toReadSize) {
+        ms_FilePos += toReadSize;
+        ms_WorkBufferSize = toReadSize;
+        ms_WorkBufferPos  = 0;
+        return true;
     }
 
     s_PcSaveHelper.error = C_PcSave::eErrorCode::FAILED_TO_READ;
