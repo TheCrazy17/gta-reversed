@@ -35,6 +35,9 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
     RH_ScopedInstall(CenterCarInGarage, 0x449220, { .reversed = false });
     RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
+    RH_ScopedInstall(IsAnyCarBlockingDoor, 0x156D610, { .reversed = false });
+    RH_ScopedInstall(IsAnyOtherCarTouchingGarage, 0x1566680, { .reversed = false });
+    RH_ScopedInstall(RightModTypeForThisGarage, 0x1565260, { .reversed = false });
     // RH_ScopedInstall(Update, 0x44AA50);
 }
 
@@ -481,6 +484,35 @@ void CGarage::NeatlyLineUpStoredCars(CStoredCar* car) {
 // 0x449220
 void CGarage::CenterCarInGarage(CVehicle* vehicle) {
     plugin::CallMethod<0x449220, CGarage*, CVehicle*>(this, vehicle);
+}
+
+// 0x156D610
+// NOTSA: real body walks the vehicle pool for anything touching this garage (via the already-
+// reversed IsEntityTouching3D), then transforms every sphere of that vehicle's CColModel into
+// world space (via the already-reversed CEntity::GetColModel/MultiplyMatrixWithVector) and tests
+// each against IsPointInsideGarage - true as soon as one sphere lands outside (car is straddling
+// the doorway, not cleanly stored). CColModel's sphere-array layout isn't mapped in this codebase
+// yet, so forwarding raw for now rather than guessing at it - see garage_update_progress.md.
+bool CGarage::IsAnyCarBlockingDoor() {
+    return plugin::CallAndReturn<bool, 0x156D610>();
+}
+
+// 0x1566680
+// NOTSA: same vehicle-pool-walk/CColModel-sphere shape as IsAnyCarBlockingDoor above (same
+// unmapped internals), but with inverted semantics (true as soon as a sphere lands INSIDE the
+// garage, not outside) and an extra STATUS_WRECKED exclusion - i.e. "is some other, non-wrecked
+// car already sitting inside this garage". Forwarding raw for the same reason as above.
+bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
+    return plugin::CallAndReturn<bool, 0x1566680, CVehicle*>(ignoredVehicle);
+}
+
+// 0x1565260
+// NOTSA: checks whether `vehicle`'s model supports this garage's specific tuning-shop category
+// (m_nType == TUNING_LOCO_LOW_CO/WHEEL_ARCH_ANGELS/TRANSFENDER), via a per-model mod-support
+// bitmask (DAT_00a9b0c8/DAT_00c2baac, stride 0xE0) that isn't mapped anywhere else in this
+// codebase yet - a genuine new CVehicleModelInfo struct-mapping task, forwarding raw for now.
+bool CGarage::RightModTypeForThisGarage(CVehicle* vehicle) {
+    return plugin::CallAndReturn<bool, 0x1565260, CVehicle*>(vehicle);
 }
 
 // 0x447D80
