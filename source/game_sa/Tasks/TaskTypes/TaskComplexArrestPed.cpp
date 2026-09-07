@@ -12,6 +12,7 @@
 #include "TaskComplexDragPedFromCar.h"
 #include "TaskComplexOpenDriverDoor.h"
 #include "TaskComplexOpenPassengerDoor.h"
+#include "SeekEntity/TaskComplexSeekEntityStandard.h"
 
 #include "eTargetDoor.h"
 
@@ -25,7 +26,7 @@ void CTaskComplexArrestPed::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x690220, { .reversed = false });
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6907A0);
     RH_ScopedVMTInstall(ControlSubTask, 0x68D350, { .reversed = false });
-    RH_ScopedInstall(CreateSubTask, 0x68CF80, { .reversed = false });
+    RH_ScopedInstall(CreateSubTask, 0x68CF80);
 }
 
 // 0x68B990
@@ -265,8 +266,6 @@ CTask* CTaskComplexArrestPed::ControlSubTask(CPed* ped) {
 
 // 0x68CF80
 CTask* CTaskComplexArrestPed::CreateSubTask(eTaskType taskType, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x68CF80, CTaskComplexArrestPed*, int32, CPed*>(this, taskType, ped);
-
     switch (taskType) {
     case TASK_SIMPLE_ARREST_PED:
         if (m_PedToArrest->m_pVehicle) {
@@ -285,8 +284,7 @@ CTask* CTaskComplexArrestPed::CreateSubTask(eTaskType taskType, CPed* ped) {
 
     case TASK_COMPLEX_SEEK_ENTITY: {
         float radius = m_PedToArrest->bIsBeingArrested ? 4.0f : 3.0f;
-        // return new CTaskComplexSeekEntity<CEntitySeekPosCalculatorStandard>(m_PedToArrest, 50'000, 1000, radius, 2.0f, 2.0f, 1, 1);
-        NOTSA_UNREACHABLE("Not implemented!");
+        return new CTaskComplexSeekEntityStandard(m_PedToArrest, 50'000, 1000, radius, 2.0f, 2.0f, true, true);
     }
     case TASK_COMPLEX_DRAG_PED_FROM_CAR:
         return new CTaskComplexDragPedFromCar(m_PedToArrest, 100'000);
