@@ -1,5 +1,6 @@
 #include "StdInc.h"
 #include "TaskComplexKillPedFromBoat.h"
+#include "TaskSimpleStandStill.h"
 
 void CTaskComplexKillPedFromBoat::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexKillPedFromBoat, 0x86da98, 11);
@@ -7,9 +8,9 @@ void CTaskComplexKillPedFromBoat::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x6227C0);
     RH_ScopedInstall(Destructor, 0x622830);
 
-    RH_ScopedVMTInstall(Clone, 0x6238A0, { .reversed = false });
+    RH_ScopedVMTInstall(Clone, 0x6238A0);
     RH_ScopedVMTInstall(GetTaskType, 0x622820);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x622890, { .reversed = false });
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x622890);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x622900, { .reversed = false });
     RH_ScopedVMTInstall(ControlSubTask, 0x622980, { .reversed = false });
 
@@ -28,12 +29,12 @@ CTaskComplexKillPedFromBoat::~CTaskComplexKillPedFromBoat() {
 
 // 0x6238A0
 CTask* CTaskComplexKillPedFromBoat::Clone() const {
-    return plugin::CallMethodAndReturn<CTask*, 0x6238A0, const CTaskComplexKillPedFromBoat*>(this);
+    return new CTaskComplexKillPedFromBoat(m_Ped);
 }
 
 // 0x622890
 CTask* CTaskComplexKillPedFromBoat::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x622890, CTaskComplexKillPedFromBoat*, CPed*>(this, ped);
+    return new CTaskSimpleStandStill(0, true, false, 8.0f);
 }
 
 // 0x622900
