@@ -3,6 +3,8 @@
 #include "PedGroup.h"
 #include <TaskSimpleCarSetPedOut.h>
 #include <TaskComplexFollowLeaderInFormation.h>
+#include <Formation.h>
+#include <TaskSimpleGoToPoint.h>
 
 //! @addr 0x5FB010
 //! @returns Distance of the furthers member from the leader
@@ -80,7 +82,25 @@ void CPedGroup::PlayerGaveCommand_Attack(CPed* playerPed, CPed* target) {
 
 // 0x5FAB60
 void CPedGroup::PlayerGaveCommand_Gather(CPed* ped) {
-    plugin::CallMethod<0x5FAB60, CPedGroup*, CPed*>(this, ped);
+    CPedList members{};
+    members.Empty();
+    members.BuildListFromGroup_NotInCar_NoLeader(&m_groupMembership);
+
+    if (ped->GetIntelligence()->IsInACarOrEnteringOne() && ped->m_pVehicle) {
+        CFormation::GenerateGatherDestinations_AroundCar(members, ped->m_pVehicle);
+    } else {
+        CFormation::GenerateGatherDestinations(members, ped);
+    }
+    CFormation::DistributeDestinations(members);
+
+    for (auto* const member : members.GetPeds()) {
+        CVector destination;
+        if (!CFormation::ReturnDestinationForPed(member, &destination)) {
+            continue;
+        }
+        const CTaskSimpleGoToPoint task{ PEDMOVE_SPRINT, destination, 2.0f, true, false };
+        m_groupIntelligence.SetTask(member, task, m_groupIntelligence.GetPedTaskPairs());
+    }
 }
 
 // 0x5FC7E0
@@ -148,7 +168,7 @@ void CPedGroup::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x5FC190);
 
     RH_ScopedInstall(Teleport, 0x5F7AD0);
-    RH_ScopedInstall(PlayerGaveCommand_Gather, 0x5FAB60, {.reversed = false});
+    RH_ScopedInstall(PlayerGaveCommand_Gather, 0x5FAB60);
     RH_ScopedInstall(PlayerGaveCommand_Attack, 0x5F7CC0);
     RH_ScopedInstall(IsAnyoneUsingCar, 0x5F7DB0);
     RH_ScopedInstall(GetClosestGroupPed, 0x5FACD0);
