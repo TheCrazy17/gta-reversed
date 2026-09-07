@@ -3,6 +3,8 @@
 #include "TaskComplexGoToPointAiming.h"
 #include "TaskComplexGoToPointAndStandStill.h"
 #include "TaskSimpleGunControl.h"
+#include "TaskSimpleUseGun.h"
+#include "WeaponInfo.h"
 
 void CTaskComplexGoToPointAiming::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGoToPointAiming, 0x86fe00, 11);
@@ -15,7 +17,7 @@ void CTaskComplexGoToPointAiming::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x66CD80);
     RH_ScopedVMTInstall(GetTaskType, 0x668860);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x66DD70);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x66DDB0, { .reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x66DDB0);
     RH_ScopedVMTInstall(ControlSubTask, 0x6689E0, { .reversed = false });
 }
 
@@ -84,7 +86,29 @@ CTask* CTaskComplexGoToPointAiming::CreateNextSubTask(CPed* ped) {
 
 // 0x66DDB0
 CTask* CTaskComplexGoToPointAiming::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x66DDB0, CTaskComplexGoToPointAiming*, CPed*>(this, ped);
+    m_newTargetSet = false;
+
+    const auto* const weaponInfo = CWeaponInfo::GetWeaponInfo(ped);
+    if (!weaponInfo->flags.bAimWithArm) {
+        if (weaponInfo->flags.bCanAim && (weaponInfo->m_nWeaponFire == WEAPON_FIRE_INSTANT_HIT || weaponInfo->m_nWeaponFire == WEAPON_FIRE_AREA_EFFECT)) {
+            return CreateSubTask(TASK_SIMPLE_GUN_CTRL);
+        }
+    } else if (auto* const secondaryTask = ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_ATTACK)) {
+        secondaryTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr);
+    } else {
+        eGunCommand firstCmd;
+        uint16      burstLength;
+        if (GetTaskType() == TASK_COMPLEX_GO_TO_POINT_SHOOTING) {
+            firstCmd    = eGunCommand::FIREBURST;
+            burstLength = 3;
+        } else {
+            firstCmd    = eGunCommand::AIM;
+            burstLength = 1;
+        }
+        ped->GetTaskManager().SetTaskSecondary(new CTaskSimpleUseGun(m_aimAtEntity, m_aimPos, firstCmd, burstLength, false), TASK_SECONDARY_ATTACK);
+    }
+
+    return new CTaskComplexGoToPointAndStandStill(m_moveState, m_movePos, m_moveTargetRadius, m_slowDownDistance, false, false);
 }
 
 // 0x6689E0
