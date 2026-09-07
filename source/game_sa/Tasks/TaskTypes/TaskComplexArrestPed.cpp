@@ -25,7 +25,7 @@ void CTaskComplexArrestPed::InjectHooks() {
     RH_ScopedVMTInstall(MakeAbortable, 0x68BA60);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x690220, { .reversed = false });
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6907A0);
-    RH_ScopedVMTInstall(ControlSubTask, 0x68D350, { .reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x68D350);
     RH_ScopedInstall(CreateSubTask, 0x68CF80);
 }
 
@@ -106,8 +106,6 @@ CTask* CTaskComplexArrestPed::CreateFirstSubTask(CPed* ped) {
 
 // 0x0
 CTask* CTaskComplexArrestPed::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x68D350, CTaskComplexArrestPed*, CPed*>(this, ped);
-
     // Automatically make ped say something on function return
     const notsa::ScopeGuard Have_A_Nice_Day_Sir{
         [this, ped] {
@@ -142,7 +140,7 @@ CTask* CTaskComplexArrestPed::ControlSubTask(CPed* ped) {
     // 0x68D39F
     if (m_bSubTaskNeedsToBeCreated) {
         if (m_pSubTask->MakeAbortable(ped)) {
-            m_pSubTask->AsComplex()->CreateFirstSubTask(ped);
+            return m_pSubTask->AsComplex()->CreateFirstSubTask(ped);
         }
         return m_pSubTask;
     }
@@ -168,16 +166,14 @@ CTask* CTaskComplexArrestPed::ControlSubTask(CPed* ped) {
     }
     case TASK_COMPLEX_KILL_PED_ON_FOOT: { // 0x68D626
         // See if ped is falling, and is close enough
-        if (const auto task = static_cast<CTaskComplexFallAndGetUp*>(m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_FALL_AND_GET_UP))) {
-            if (task->IsFalling()) {
-                const auto dir = ped->GetPosition() - m_PedToArrest->GetPosition();
-                if (std::abs(dir.z) <= 2.f && dir.SquaredMagnitude() <= sq(3.0f)) {
-                    task->SetDownTime(100'000);
-                    return TryReplaceSubTask(TASK_SIMPLE_ARREST_PED);
-                }
+        if (const auto task = static_cast<CTaskComplexFallAndGetUp*>(m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_FALL_AND_GET_UP)); task && task->IsFalling()) {
+            const auto dir = ped->GetPosition() - m_PedToArrest->GetPosition();
+            if (std::abs(dir.z) <= 2.f && dir.SquaredMagnitude() <= sq(3.0f)) {
+                task->SetDownTime(100'000);
+                return TryReplaceSubTask(TASK_SIMPLE_ARREST_PED);
             }
 
-            // Getting up already/not close enough
+            // Falling, but not close enough
             return TryReplaceSubTask(TASK_COMPLEX_SEEK_ENTITY);
         }
 
@@ -217,46 +213,48 @@ CTask* CTaskComplexArrestPed::ControlSubTask(CPed* ped) {
         break;
     }
     case TASK_COMPLEX_CAR_OPEN_DRIVER_DOOR: { // 0x68D424
-        if (m_PedToArrest->bInVehicle) {
-            // Maybe wait until ped gets out of the car..
-            if (const auto task = m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR)) {
-                if (ped->IsEntityInRange(m_PedToArrest, 5.f)) {
-                    return TryReplaceSubTask(TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR);
-                }
-            }
+        // Maybe wait until ped gets out of the car..
+        if (const auto task = m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR); task && m_PedToArrest->bInVehicle && ped->IsEntityInRange(m_PedToArrest, 5.f)) {
+            return TryReplaceSubTask(TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR);
+        }
 
-            // Ped can't open driver door, but we can open front right door?
-            if (!m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_DRIVER, nullptr)) {
-                if (m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_FRONT_RIGHT, nullptr)) {
-                    return TryReplaceSubTask(TASK_COMPLEX_CAR_OPEN_PASSENGER_DOOR);
-                }
+        if (!m_PedToArrest->bInVehicle) {
+            return TryReplaceSubTask(TASK_COMPLEX_KILL_PED_ON_FOOT);
+        }
+
+        // Ped can't open driver door, but we can open front right door?
+        if (!m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_DRIVER, nullptr)) {
+            if (m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_FRONT_RIGHT, nullptr)) {
+                return TryReplaceSubTask(TASK_COMPLEX_CAR_OPEN_PASSENGER_DOOR);
             }
         }
 
-        // Ped not in vehicle any more vehicle, just kill 'em
-        return TryReplaceSubTask(TASK_COMPLEX_KILL_PED_ON_FOOT);
+        // Neither door has room to open yet - keep waiting with the current sub-task
+        break;
     }
     case TASK_COMPLEX_CAR_OPEN_PASSENGER_DOOR: { // 0x68D510
         // Pretty much the copy of the above, with minor changes (See change 1,2)
 
-        if (m_PedToArrest->bInVehicle) {
-            // Maybe wait until ped gets out of the car..
-            if (const auto task = m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR)) {
-                if (ped->IsEntityInRange(m_PedToArrest, 5.f)) {
-                    return TryReplaceSubTask(TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR);
-                }
-            }
-
-            // Ped can't open passenger door, but driver door can be opened by us? - Change 1
-            if (!m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_FRONT_RIGHT, nullptr)) {
-                if (m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_DRIVER, nullptr)) {
-                    return TryReplaceSubTask(TASK_COMPLEX_CAR_OPEN_DRIVER_DOOR);
-                }
-            }
+        if (const auto task = m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR); task && m_PedToArrest->bInVehicle && ped->IsEntityInRange(m_PedToArrest, 5.f)) {
+            return TryReplaceSubTask(TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR);
         }
 
-        // Change 2
-        return DoDestroyCarTask();
+        if (!m_PedToArrest->bInVehicle) {
+            return TryReplaceSubTask(TASK_COMPLEX_KILL_PED_ON_FOOT);
+        }
+
+        // Ped can't open passenger door, but driver door can be opened by us? - Change 1
+        if (!m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_FRONT_RIGHT, nullptr)) {
+            if (m_PedToArrest->m_pVehicle->IsRoomForPedToLeaveCar(TARGET_DOOR_DRIVER, nullptr)) {
+                return TryReplaceSubTask(TASK_COMPLEX_CAR_OPEN_DRIVER_DOOR);
+            }
+
+            // Change 2
+            return DoDestroyCarTask();
+        }
+
+        // Front right still has room to open - keep waiting with the current sub-task
+        break;
     }
     }
 
