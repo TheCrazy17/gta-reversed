@@ -510,3 +510,247 @@ int32 gRadioDJBanterGN[][2] = {
        NOTRACK, NOTRACK,
    },
 };
+
+// NOTSA: played instead of `gRadioDJBanterBC`/`GN` when a "special" DJ banter is pending
+// (`CAERadioTrackManager::m_nSpecialDJBanterPending == 1`, entering a newly-unlocked city).
+int32 gRadioDJBanterSpecialCity[][2] = {
+   { // Emergency
+       NOTRACK, NOTRACK,
+   },
+   { // Playback FM
+       186,     187,
+   },
+   { // K Rose
+       316,     317,
+   },
+   { // K-DST
+       471,     472,
+   },
+   { // Bounce FM
+       768,     769,
+   },
+   { // SF-UR
+       947,     948,
+   },
+   { // Radio Los Santos
+       1062,    1063,
+   },
+   { // Radio X
+       1214,    1215,
+   },
+   { // CSR 103.9
+       1361,    1362,
+   },
+   { // K-Jah West
+       1491,    1492,
+   },
+   { // Master Sounds 98.3
+       1652,    1653,
+   },
+   { // WCTR
+       NOTRACK, NOTRACK,
+   },
+};
+
+// NOTSA: DJ banter for the 06:00-09:00 time slot (`ChooseDJBanterIndex`).
+int32 gRadioDJBanterMorning[][2] = {
+   { // Emergency
+       NOTRACK, NOTRACK,
+   },
+   { // Playback FM
+       208,     209,
+   },
+   { // K Rose
+       345,     346,
+   },
+   { // K-DST
+       490,     492,
+   },
+   { // Bounce FM
+       807,     809,
+   },
+   { // SF-UR
+       975,     977,
+   },
+   { // Radio Los Santos
+       1088,    1089,
+   },
+   { // Radio X
+       1237,    1238,
+   },
+   { // CSR 103.9
+       1381,    1382,
+   },
+   { // K-Jah West
+       1521,    1522,
+   },
+   { // Master Sounds 98.3
+       1688,    1689,
+   },
+   { // WCTR
+       NOTRACK, NOTRACK,
+   },
+};
+
+// NOTSA: DJ banter for the 18:00-21:00 time slot (`ChooseDJBanterIndex`).
+int32 gRadioDJBanterEvening[][2] = {
+   { // Emergency
+       NOTRACK, NOTRACK,
+   },
+   { // Playback FM
+       206,     207,
+   },
+   { // K Rose
+       NOTRACK, NOTRACK,
+   },
+   { // K-DST
+       488,     489,
+   },
+   { // Bounce FM
+       805,     806,
+   },
+   { // SF-UR
+       972,     974,
+   },
+   { // Radio Los Santos
+       1086,    1087,
+   },
+   { // Radio X
+       1235,    1236,
+   },
+   { // CSR 103.9
+       1380,    1380,
+   },
+   { // K-Jah West
+       1519,    1520,
+   },
+   { // Master Sounds 98.3
+       1686,    1687,
+   },
+   { // WCTR
+       NOTRACK, NOTRACK,
+   },
+};
+
+// NOTSA: DJ banter played when rain is forecast soon (`ChooseDJBanterIndex`).
+int32 gRadioDJBanterRainy[][2] = {
+   { // Emergency
+       NOTRACK, NOTRACK,
+   },
+   { // Playback FM
+       215,     217,
+   },
+   { // K Rose
+       351,     353,
+   },
+   { // K-DST
+       498,     499,
+   },
+   { // Bounce FM
+       815,     816,
+   },
+   { // SF-UR
+       NOTRACK, NOTRACK,
+   },
+   { // Radio Los Santos
+       1094,    1097,
+   },
+   { // Radio X
+       1243,    1245,
+   },
+   { // CSR 103.9
+       1387,    1388,
+   },
+   { // K-Jah West
+       1527,    1529,
+   },
+   { // Master Sounds 98.3
+       1695,    1696,
+   },
+   { // WCTR
+       NOTRACK, NOTRACK,
+   },
+};
+
+// NOTSA: DJ banter played when fog is forecast soon (`ChooseDJBanterIndex`).
+int32 gRadioDJBanterFoggy[][2] = {
+   { // Emergency
+       NOTRACK, NOTRACK,
+   },
+   { // Playback FM
+       212,     214,
+   },
+   { // K Rose
+       349,     350,
+   },
+   { // K-DST
+       496,     497,
+   },
+   { // Bounce FM
+       812,     814,
+   },
+   { // SF-UR
+       NOTRACK, NOTRACK,
+   },
+   { // Radio Los Santos
+       1092,    1093,
+   },
+   { // Radio X
+       1241,    1242,
+   },
+   { // CSR 103.9
+       1385,    1386,
+   },
+   { // K-Jah West
+       1525,    1526,
+   },
+   { // Master Sounds 98.3
+       1692,    1694,
+   },
+   { // WCTR
+       NOTRACK, NOTRACK,
+   },
+};
+
+// NOTSA: played instead of `gRadioDJBanterBC`/`GN` when a "special" DJ banter is pending
+// (`CAERadioTrackManager::m_nSpecialDJBanterPending == 2`), indexed by
+// `CAERadioTrackManager::m_nSpecialDJBanterIndex` (0-21), one column per mission/stat tracked by
+// `CheckForMissionStatsChanges` - `-1` means no special clip exists for that station+mission pair.
+int32 gRadioDJBanterSpecialMission[][22] = {
+   { // Emergency
+       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+   { // Playback FM
+       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+   { // K Rose
+       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 344, 341, 343, -1, 340, -1,
+   },
+   { // K-DST
+       -1, -1, -1, -1, -1, -1, -1, -1, 487, -1, -1, -1, -1, -1, 485, -1, -1, 486, -1, -1, -1, -1,
+   },
+   { // Bounce FM
+       -1, -1, -1, -1, -1, 803, -1, -1, -1, -1, -1, 804, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+   { // SF-UR
+       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+   { // Radio Los Santos
+       -1, -1, -1, 1082, -1, -1, -1, -1, -1, -1, 1084, -1, -1, 1085, -1, 1083, -1, -1, -1, -1, -1, -1,
+   },
+   { // Radio X
+       1232, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1234, -1, -1, -1, 1233, -1, 1231, -1, -1,
+   },
+   { // CSR 103.9
+       -1, -1, -1, -1, -1, -1, 1377, -1, -1, 1379, -1, -1, -1, -1, -1, -1, -1, 1378, -1, -1, -1, -1,
+   },
+   { // K-Jah West
+       -1, -1, -1, -1, -1, -1, -1, 1516, -1, -1, -1, 1518, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+   { // Master Sounds 98.3
+       -1, 1683, 1684, -1, 1681, -1, -1, -1, -1, -1, -1, -1, 1682, -1, -1, -1, -1, -1, -1, -1, -1, 1685,
+   },
+   { // WCTR
+       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+   },
+};

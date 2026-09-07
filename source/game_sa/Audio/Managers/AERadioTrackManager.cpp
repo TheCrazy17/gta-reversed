@@ -37,7 +37,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(ChooseTracksForStation, 0x4EB180);
     RH_ScopedInstall(CheckForTrackConcatenation, 0x4EA930);
     RH_ScopedInstall(QueueUpTracksForStation, 0x4EA670);
-    RH_ScopedInstall(ChooseDJBanterIndex, 0x4EA2D0, { .reversed = false });
+    RH_ScopedInstall(ChooseDJBanterIndex, 0x4EA2D0);
     RH_ScopedInstall(ChooseDJBanterIndexFromList, 0x4E95E0);
     RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570);
     RH_ScopedInstall(ChooseIdentIndex, 0x4E94C0);
@@ -1207,7 +1207,82 @@ int8 CAERadioTrackManager::ChooseMusicTrackIndex(eRadioID id) {
 
 // 0x4EA2D0
 int32 CAERadioTrackManager::ChooseDJBanterIndex(eRadioID id) {
-    return plugin::CallAndReturn<int32, 0x4EA2D0, CAERadioTrackManager*, int8>(this, id);
+    const auto TryCandidate = [&](int32 candidate) -> int32 {
+        if (candidate == NOTRACK) {
+            return -1;
+        }
+        if (candidate >= 0) {
+            for (const auto historyId : m_nDJBanterIndexHistory[id].indices) {
+                if (candidate == historyId) {
+                    return -1;
+                }
+            }
+        }
+        return candidate;
+    };
+
+    if (m_nSpecialDJBanterPending == 0) {
+        if (const auto result = TryCandidate(gRadioDJBanterBC[id][0]); result != -1) {
+            return result;
+        }
+    } else if (m_nSpecialDJBanterPending == 1) {
+        if (m_nSpecialDJBanterIndex == 0 ||
+            (m_nSpecialDJBanterIndex == 1 && gRadioDJBanterSpecialCity[id][0] != gRadioDJBanterSpecialCity[id][1]))
+        {
+            if (const auto result = TryCandidate(gRadioDJBanterSpecialCity[id][m_nSpecialDJBanterIndex]); result != -1) {
+                return result;
+            }
+        }
+    } else if (m_nSpecialDJBanterPending == 2) {
+        if (const auto result = TryCandidate(gRadioDJBanterSpecialMission[id][m_nSpecialDJBanterIndex]); result != -1) {
+            return result;
+        }
+    }
+
+    if (id == RADIO_EMERGENCY_AA) {
+        return CGameLogic::LaRiotsActiveHere()
+            ? ChooseDJBanterIndexFromList(RADIO_EMERGENCY_AA, gRadioDJBanterTN)
+            : ChooseDJBanterIndexFromList(RADIO_EMERGENCY_AA, gRadioDJBanterGN);
+    }
+
+    if (!CAEAudioUtility::ResolveProbability(0.6f) || CGame::currArea != AREA_CODE_NORMAL_WORLD) {
+        return -1;
+    }
+
+    const auto hour = CClock::GetGameClockHours();
+    if (!CWeather::ForecastWeather(WEATHER_RAINY_COUNTRYSIDE, 3) && !CWeather::ForecastWeather(WEATHER_RAINY_SF, 3)) {
+        if (CWeather::ForecastWeather(WEATHER_FOGGY_SF, 3) && CAEAudioUtility::ResolveProbability(0.5f)) {
+            if (const auto result = ChooseDJBanterIndexFromList(id, gRadioDJBanterFoggy); result != -1) {
+                return result;
+            }
+        }
+    } else if (CAEAudioUtility::ResolveProbability(0.5f)) {
+        if (const auto result = ChooseDJBanterIndexFromList(id, gRadioDJBanterRainy); result != -1) {
+            return result;
+        }
+    }
+
+    if (hour >= 6 && hour < 9) {
+        if (CAEAudioUtility::ResolveProbability(0.3f)) {
+            if (const auto result = ChooseDJBanterIndexFromList(id, gRadioDJBanterMorning); result != -1) {
+                return result;
+            }
+        }
+    } else if (hour >= 18 && hour < 21) {
+        if (CAEAudioUtility::ResolveProbability(0.3f)) {
+            if (const auto result = ChooseDJBanterIndexFromList(id, gRadioDJBanterEvening); result != -1) {
+                return result;
+            }
+        }
+    } else if (hour >= 22 || hour < 3) {
+        if (CAEAudioUtility::ResolveProbability(0.3f)) {
+            if (const auto result = ChooseDJBanterIndexFromList(id, gRadioDJBanterTN); result != -1) {
+                return result;
+            }
+        }
+    }
+
+    return ChooseDJBanterIndexFromList(id, gRadioDJBanterGN);
 }
 
 // 0x4E95E0
