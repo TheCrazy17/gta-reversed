@@ -17,12 +17,12 @@ void FxEmitterBP_c::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x4A18D0);
     RH_ScopedInstall(RenderHeatHaze, 0x4A1940, {.reversed = false});
     RH_ScopedInstall(UpdateParticle, 0x4A21D0, {.reversed = false});
-    RH_ScopedVMTInstall(CreateInstance, 0x4A2B40, {.reversed = false}); // bad
-    RH_ScopedVMTInstall(Update, 0x4A2BC0, {.reversed = false});
-    RH_ScopedVMTInstall(Load, 0x5C25F0, {.reversed = false});
+    RH_ScopedVMTInstall(CreateInstance, 0x4A2B40);
+    RH_ScopedVMTInstall(Update, 0x4A2BC0);
+    RH_ScopedVMTInstall(Load, 0x5C25F0);
     RH_ScopedVMTInstall(LoadTextures, 0x5C0A30, {.reversed = true});
     RH_ScopedVMTInstall(Render, 0x4A2C40, {.reversed = false});
-    RH_ScopedVMTInstall(FreePrtFromPrim, 0x4A2510, {.reversed = false});
+    RH_ScopedVMTInstall(FreePrtFromPrim, 0x4A2510);
 }
 
 // 0x4A18D0
@@ -51,16 +51,21 @@ FxPrim_c* FxEmitterBP_c::CreateInstance() {
 
 
 void FxEmitterBP_c::Update(float deltaTime) {
-    for (auto it = m_Particles.GetHead(); it; it = m_Particles.GetNext(it)) {
+    for (auto* it = m_Particles.GetHead(); it; ) {
+        // NB: Must grab `next` before a potential `ReturnParticle()` below, since that
+        // adds `it` to another list, overwriting `it`'s own `m_pNext`.
+        auto* const next = m_Particles.GetNext(it);
+
         if (it->m_System->m_nKillStatus == eFxSystemKillStatus::FX_3) {
             it->m_System->m_nKillStatus = eFxSystemKillStatus::FX_KILLED;
         }
 
-        // wrong casts or smth
         if (it->m_System->m_nPlayStatus != eFxSystemPlayStatus::T2 && UpdateParticle(deltaTime, reinterpret_cast<FxEmitterPrt_c*>(it))) {
             m_Particles.RemoveItem(it);
             g_fxMan.ReturnParticle(reinterpret_cast<FxEmitterPrt_c*>(it));
         }
+
+        it = next;
     }
 }
 
@@ -179,7 +184,14 @@ void FxEmitterBP_c::Render(RwCamera* camera, uint32 txdHashKey, float brightness
 
 // 0x0
 bool FxEmitterBP_c::FreePrtFromPrim(FxSystem_c* system) {
-    return plugin::CallMethodAndReturn<bool, 0x4A2510, FxEmitterBP_c*, FxSystem_c*>(this, system);
+    for (auto* it = m_Particles.GetHead(); it; it = m_Particles.GetNext(it)) {
+        if (it->m_System == system) {
+            m_Particles.RemoveItem(it);
+            g_fxMan.ReturnParticle(reinterpret_cast<FxEmitterPrt_c*>(it));
+            return true;
+        }
+    }
+    return false;
 }
 
 // todo: eFxInfo
