@@ -1,6 +1,8 @@
 #include "StdInc.h"
 
 #include "TaskGangHassleVehicle.h"
+#include "TaskComplexTrackEntity.h"
+#include "TaskComplexSmartFleeEntity.h"
 
 void CTaskGangHassleVehicle::InjectHooks() {
     RH_ScopedVirtualClass(CTaskGangHassleVehicle, 0x86F9D4, 11);
@@ -11,7 +13,7 @@ void CTaskGangHassleVehicle::InjectHooks() {
     RH_ScopedInstall(GetTargetHeading, 0x65FDD0);
     RH_ScopedInstall(CalcTargetOffset, 0x6641A0);
     RH_ScopedInstall(Clone, 0x65FC00);
-    RH_ScopedInstall(CreateNextSubTask, 0x65FC80, { .reversed = false });
+    RH_ScopedInstall(CreateNextSubTask, 0x65FC80);
     RH_ScopedInstall(CreateFirstSubTask, 0x664BA0, { .reversed = false });
     RH_ScopedInstall(ControlSubTask, 0x6637C0, { .reversed = false });
 }
@@ -108,9 +110,31 @@ void CTaskGangHassleVehicle::CalcTargetOffset() {
     }
 }
 
+namespace {
+auto& s_HassleVehFleeTime            = StaticRef<int32>(0x86F674);
+auto& s_HassleVehFleePosCheckPeriod  = StaticRef<int32>(0x86F678);
+auto& s_HassleVehFleePosChangeTolerance = StaticRef<float>(0xC18CF0);
+}; // namespace
+
 // 0x65FC80
 CTask* CTaskGangHassleVehicle::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x65FC80, CTaskGangHassleVehicle*, CPed*>(this, ped);
+    if (!m_Vehicle) {
+        return nullptr;
+    }
+
+    if (m_pSubTask && m_pSubTask->GetTaskType() == TASK_COMPLEX_SMART_FLEE_ENTITY) {
+        return nullptr;
+    }
+
+    if (m_Vehicle->GetHealth() < 250.0f) {
+        return new CTaskComplexSmartFleeEntity(m_Vehicle, false, 30.0f, s_HassleVehFleeTime, s_HassleVehFleePosCheckPeriod, s_HassleVehFleePosChangeTolerance);
+    }
+
+    if (m_pSubTask && (m_pSubTask->GetTaskType() == TASK_COMPLEX_GANG_HASSLE_PED || m_pSubTask->GetTaskType() == TASK_COMPLEX_TRACK_ENTITY)) {
+        return nullptr;
+    }
+
+    return new CTaskComplexTrackEntity(m_Vehicle, m_vecPosn, 1, -1, 10.0f, 40.0f, 1);
 }
 
 // 0x664BA0
