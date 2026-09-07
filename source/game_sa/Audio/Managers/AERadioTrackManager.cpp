@@ -23,7 +23,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(Initialise, 0x5B9390);
     RH_ScopedInstall(Service, 0x4EB9A0);
     RH_ScopedInstall(DisplayRadioStationName, 0x4E9E50);
-    RH_ScopedInstall(CheckForStationRetune, 0x4EB660, { .reversed = false });
+    RH_ScopedInstall(CheckForStationRetune, 0x4EB660);
     RH_ScopedInstall(CheckForPause, 0x4EA590);
     RH_ScopedInstall(IsVehicleRadioActive, 0x4E9800);
     RH_ScopedInstall(AddDJBanterIndexToHistory, 0x4E97B0);
@@ -465,7 +465,84 @@ void CAERadioTrackManager::CheckForTrackConcatenation() {
 
 // 0x4EB660
 void CAERadioTrackManager::CheckForStationRetune() {
-    plugin::CallMethod<0x4EB660, CAERadioTrackManager*>(this);
+    if (m_ActiveSettings.StationID == RADIO_EMERGENCY_AA) {
+        return;
+    }
+
+    m_bRetuneJustStarted = false;
+
+    if (m_nMode == eRadioTrackMode::RADIO_STARTING || m_nMode == eRadioTrackMode::RADIO_WAITING_TO_PLAY ||
+        m_nMode == eRadioTrackMode::RADIO_PLAYING || m_bInitialised || m_nStationsListed != 0 ||
+        m_nStationsListDown != 0 || m_ActiveSettings.StationID == RADIO_OFF)
+    {
+        if (!AudioEngine.GetCutsceneTrackStatus()) {
+            // Opaque, obfuscated pointer-decrypt helper (same one used in Service()); raw-called.
+            if (const auto ptr = plugin::CallAndReturn<int32, 0x4F4ED0>()) {
+                const auto b = *reinterpret_cast<int8*>(ptr + 0x1b);
+                if ((b == 0 || b == 3 || b == 2) && CReplay::Mode != MODE_PLAYBACK) {
+                    const auto ptr2 = plugin::CallAndReturn<int32, 0x4F4ED0>();
+                    if (*reinterpret_cast<int8*>(ptr2 + 0x1b) != 0) {
+                        return;
+                    }
+
+                    if (m_iRadioStationScriptRequest >= 0) {
+                        m_nStationsListDown = m_nStationsListed;
+                        m_nStationsListed = m_iRadioStationScriptRequest - m_RequestedSettings.StationID;
+                        m_iRadioStationScriptRequest = -1;
+                        m_nTimeRadioStationRetuned = CTimer::GetTimeInMS();
+                    } else if (CPad::GetPad()->NextStationJustUp()) {
+                        m_nStationsListDown = m_nStationsListed;
+                        m_nStationsListed++;
+                        m_nTimeRadioStationRetuned = CTimer::GetTimeInMS();
+                    } else if (CPad::GetPad()->LastStationJustUp()) {
+                        m_nStationsListDown = m_nStationsListed;
+                        m_nStationsListed--;
+                        m_nTimeRadioStationRetuned = CTimer::GetTimeInMS();
+                    }
+                    m_bDisplayStationName = true;
+                    m_bRetuneJustStarted = true;
+                }
+            }
+        }
+    }
+
+    if (m_nStationsListed == 0 && m_nStationsListDown == 0) {
+        return;
+    }
+
+    auto wrapped = static_cast<int8>(m_RequestedSettings.StationID + m_nStationsListed);
+    if (wrapped < 1) {
+        wrapped += 13;
+    } else if (wrapped > 13) {
+        wrapped -= 13;
+    }
+
+    if (wrapped == RADIO_OFF || (wrapped == RADIO_USER_TRACKS && AEUserRadioTrackManager.m_nUserTracksCount == 0)) {
+        StopRadio(nullptr, false);
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_RADIO_CLICK_OFF);
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_RADIO_RETUNE_STOP);
+    } else {
+        if (m_ActiveSettings.StationID == RADIO_OFF) {
+            AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_RADIO_CLICK_ON);
+            m_ActiveSettings.StationID = RADIO_INVALID;
+        } else {
+            StopRadio(nullptr, false);
+        }
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_RADIO_RETUNE_START);
+
+        // Unidentified global (no other xrefs in the binary) - some kind of quality/detail setting.
+        const auto timeoutMs = StaticRef<float>(0xB6F14C) <= 0.9f ? 2000u : 4000u;
+        if (CTimer::GetTimeInMS() <= m_nTimeRadioStationRetuned + 1500u) {
+            return;
+        }
+        if (CTimer::GetTimeInMS() <= field_60 + timeoutMs) {
+            return;
+        }
+    }
+
+    StartRadio(static_cast<eRadioID>(wrapped), m_ActiveSettings.BassSetting, m_ActiveSettings.BassGain, false);
+    m_nStationsListed = 0;
+    m_nStationsListDown = 0;
 }
 
 // 0x4EB890
