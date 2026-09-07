@@ -4321,7 +4321,58 @@ float CAEVehicleAudioEntity::GetBaseVolumeForBicycleTyre(float ratio) const noex
 
 // 0x4FFDC0
 void CAEVehicleAudioEntity::ProcessDummyBicycle(tVehicleParams& params) {
-    plugin::CallMethod<0x4FFDC0, CAEVehicleAudioEntity*, tVehicleParams&>(this, params);
+    // NOTSA: cache of which sound bank each of the 10 usable dummy-slots (7..16) currently holds -
+    // used to detect a stale slot assignment (reassigned to a different bank since last frame).
+    static auto& s_aSlotBankCache = StaticRef<std::array<int16, 20>>(0xB6B9A0); // stride 2 (int16 pairs)
+    static auto& s_bChainClangPlayedLastFrame = StaticRef<bool>(0xB6BAC8);
+
+    if (m_DummySlot == SND_BANK_SLOT_NONE) {
+        m_DummySlot = RequestBankSlot(m_DummyEngineBank);
+        if (m_DummySlot == SND_BANK_SLOT_NONE) {
+            return;
+        }
+    }
+
+    if (!AEAudioHardware.IsSoundBankLoaded(m_DummyEngineBank, m_DummySlot)) {
+        const auto idx = m_DummySlot - 7;
+        if (idx < 0 || idx > 9 || s_aSlotBankCache[idx * 2] != m_DummyEngineBank) {
+            m_DummySlot = RequestBankSlot(m_DummyEngineBank);
+            m_State = eAEState::CAR_OFF;
+        }
+        return;
+    }
+
+    auto* bike = static_cast<CBike*>(params.Vehicle);
+    const auto sf = params.Speed / params.Transmission->m_MaxVelocity;
+    const auto ratio = std::min(std::abs(sf), 1.0f);
+    const auto contactWheels = static_cast<float>(bike->m_nNoOfContactWheels);
+
+    // NOTSA: clamped log10, avoids log10(0). Same math as `AEAudioHardware::RescaleChannelVolumes`'s
+    // local helper - re-inlined here since it's used from a different translation unit.
+    const auto ClampedLog10 = [](float v) {
+        return v >= 1e-5f ? std::log10(v) : -5.0f;
+    };
+
+    const auto tyreVolume = ClampedLog10(contactWheels * 0.25f * ratio) * 20.0f + m_EventVolume - 8.0f;
+
+    const auto leanWobble = std::abs(std::sin(bike->m_RideAnimData.LeanAngle)) * 0.2f + 1.0f;
+    const auto tyreSpeed = leanWobble * (StaticRef<float>(0xB6BA6C) * ratio + contactWheels * StaticRef<float>(0xB6BA6C) * 0.125f + 1.05f);
+    PlayBicycleSound(AE_SOUND_BICYCLE_TYRE, m_DummySlot, static_cast<eSoundID>(0), tyreVolume, tyreSpeed);
+
+    // The freewheel mechanism only clicks while coasting (not engaged), never while actively pedaling.
+    const auto* const bmx = static_cast<CBmx*>(bike);
+    const auto isFreewheeling = bmx->m_bIsFreewheeling;
+    const auto sprocketRatio = isFreewheeling ? GetBaseVolumeForBicycleTyre(ratio) : 0.0f;
+    const auto sprocketVolume = ClampedLog10(sprocketRatio) * 20.0f + m_EventVolume - 15.0f;
+    const auto sprocketSpeed = StaticRef<float>(0xB6BA70) * ratio + 0.4f;
+    PlayBicycleSound(AE_SOUND_BICYCLE_SPROCKET_1, m_DummySlot, static_cast<eSoundID>(1), sprocketVolume, sprocketSpeed);
+
+    // The chain "clangs" back into engagement when pedaling resumes right after freewheeling.
+    if (!isFreewheeling && s_bChainClangPlayedLastFrame) {
+        PlayBicycleSound(AE_SOUND_BICYCLE_CHAIN_CLANG, m_DummySlot, static_cast<eSoundID>(1), tyreVolume, 1.0f);
+    }
+
+    s_bChainClangPlayedLastFrame = isFreewheeling;
 }
 
 // 0x500040
@@ -4842,7 +4893,7 @@ void CAEVehicleAudioEntity::InjectHooks() {
     // Bicycle
     RH_ScopedInstall(PlayBicycleSound, 0x4F9710);
     RH_ScopedInstall(GetBaseVolumeForBicycleTyre, 0x4F60B0);
-    RH_ScopedInstall(ProcessDummyBicycle, 0x4FFDC0, { .reversed = false });
+    RH_ScopedInstall(ProcessDummyBicycle, 0x4FFDC0);
     RH_ScopedInstall(ProcessPlayerBicycle, 0x500040, { .reversed = false });
 
     RH_ScopedInstall(ProcessPlayerCombine, 0x500CE0);
