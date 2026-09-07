@@ -42,7 +42,7 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(ChooseAdvertIndex, 0x4E9570);
     RH_ScopedInstall(ChooseIdentIndex, 0x4E94C0);
     RH_ScopedInstall(ChooseMusicTrackIndex, 0x4EA270);
-    RH_ScopedInstall(ChooseTalkRadioShow, 0x4E8E40, { .reversed = false });
+    RH_ScopedInstall(ChooseTalkRadioShow, 0x4E8E40);
     RH_ScopedInstall(CheckForMissionStatsChanges, 0x4E8410);
     RH_ScopedInstall(StartTrackPlayback, 0x4EA640);
     RH_ScopedInstall(UpdateRadioVolumes, 0x4EA010, { .reversed = false });
@@ -1394,7 +1394,112 @@ void CAERadioTrackManager::ChooseTracksForStation(eRadioID id) {
 
 // 0x4E8E40
 int8 CAERadioTrackManager::ChooseTalkRadioShow() {
-    return plugin::CallAndReturn<int8, 0x4E8E40>();
+    const auto Passed = [](eStats stat) { return CStats::GetStatValue(stat) != 0.0f; };
+
+    std::array<int8, 31> candidates;
+    rng::fill(candidates, -1);
+    int8 count = 0;
+
+    // Story-progress "most advanced heist" candidate.
+    if (Passed(STAT_RYDERS_MISSION_ROBBING_UNCLE_SAM_ACCOMPLISHED) && !Passed(STAT_MIKE_TORENO_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 14;
+    } else if (Passed(STAT_ARCHITECTURAL_ESPIONAGE_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 15;
+    }
+
+    if (!Passed(STAT_JIZZY_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 12;
+    } else if (!Passed(STAT_ARCHITECTURAL_ESPIONAGE_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 13;
+    }
+
+    if (Passed(STAT_SMALL_TOWN_BANK_MISSION_ACCOMPLISHED) && !Passed(STAT_PHOTO_OPPORTUNITY_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 6;
+    }
+
+    if (Passed(STAT_DRIVE_THRU_MISSION_ACCOMPLISHED) && Passed(STAT_REUNITING_THE_FAMILIES_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 3;
+    } else if (Passed(STAT_PHOTO_OPPORTUNITY_MISSION_ACCOMPLISHED) && !Passed(STAT_DON_PEYOTE_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 4;
+    } else if (Passed(STAT_DON_PEYOTE_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 5;
+    }
+
+    if (!Passed(STAT_LOCAL_LIQUOR_STORE_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 7;
+    } else {
+        candidates[count++] = 8;
+    }
+
+    if (!Passed(STAT_BADLANDS_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 9;
+    } else if (!Passed(STAT_555_WE_TIP_MISSION_ACCOMPLISHED) && !Passed(STAT_PLAYING_TIME)) {
+        candidates[count++] = 10;
+    } else if (Passed(STAT_PLAYING_TIME)) {
+        candidates[count++] = 11;
+    }
+
+    if (!Passed(STAT_HIDDEN_PACKAGES_FOUND)) {
+        candidates[count++] = 27;
+    } else {
+        candidates[count++] = 28;
+    }
+
+    if (!Passed(STAT_TAGS_SPRAYED)) {
+        candidates[count++] = 29;
+    } else {
+        candidates[count++] = 30;
+    }
+
+    if (!Passed(STAT_LEAST_FAVORITE_GANG)) {
+        candidates[count++] = 0;
+    } else if (Passed(STAT_GANG_MEMBERS_WASTED) && !Passed(STAT_CRIMINALS_WASTED)) {
+        candidates[count++] = 1;
+    } else if (Passed(STAT_MOST_FAVORITE_RADIO_STATION)) {
+        candidates[count++] = 2;
+    }
+
+    if (!Passed(STAT_DRIVE_THRU_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 16;
+    } else if (!Passed(STAT_MANAGEMENT_ISSUES_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 17;
+    } else if (!Passed(STAT_LEAST_FAVORITE_GANG)) {
+        candidates[count++] = 18;
+    } else if (!Passed(STAT_555_WE_TIP_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 19;
+    } else if (!Passed(STAT_YAY_KA_BOOM_BOOM_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 20;
+    } else if (!Passed(STAT_FISH_IN_A_BARREL_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 21;
+    } else if (!Passed(STAT_BREAKING_THE_BANK_AT_CALIGULAS_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 22;
+    } else if (!Passed(STAT_A_HOME_IN_THE_HILLS_MISSION_ACCOMPLISHED)) {
+        candidates[count++] = 23;
+    } else if (!Passed(STAT_MAYBE_SET_RIOT_MODE)) {
+        candidates[count++] = 24;
+    } else if (CStats::GetStatValue(STAT_CITY_UNLOCKED) != 4.0f) { // 4.0f = every area unlocked
+        candidates[count++] = 25;
+    } else {
+        candidates[count++] = 26;
+    }
+
+    const auto pick = candidates[CAEAudioUtility::GetRandomNumberInRange(0, count - 1)];
+    if (count <= 1) {
+        return pick;
+    }
+
+    // NOTSA: `StaticRef<int8>(0xB62C1C)` is a static, zero-initialized, otherwise-unreferenced byte
+    // in the original binary - reading it directly here reproduces the original comparison exactly
+    // without guessing at its intended meaning.
+    if (pick != StaticRef<int8>(0xB62C1C)) {
+        return pick;
+    }
+    for (;;) {
+        const auto candidate = candidates[CAEAudioUtility::GetRandomNumberInRange(0, count - 1)];
+        if (candidate != StaticRef<int8>(0xB62C1C)) {
+            return candidate;
+        }
+    }
 }
 
 // 0x4E96C0
