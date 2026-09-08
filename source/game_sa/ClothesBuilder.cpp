@@ -33,7 +33,7 @@ void CClothesBuilder::InjectHooks() {
     RH_ScopedOverloadedInstall(BlendGeometry, "3", 0x5A4940, RpGeometry * (*)(RpClump*, const char*, const char*, const char*, float, float, float), { .reversed = false });
     RH_ScopedOverloadedInstall(BlendGeometry, "2", 0x5A4F10, RpGeometry* (*)(RpClump*, const char*, const char*, float, float), {.reversed = false});
     RH_ScopedInstall(CopyGeometry, 0x5A5340, { .reversed = false });
-    RH_ScopedInstall(ConstructGeometryArray, 0x5A55A0, { .reversed = false }); // Makes the game crash - Probably a register is changed or smth
+    RH_ScopedInstall(ConstructGeometryArray, 0x5A55A0);
     RH_ScopedInstall(DestroySkinArrays, 0x5A56C0);
     RH_ScopedInstall(BuildBoneIndexConversionTable, 0x5A56E0);
     RH_ScopedInstall(CopyTexture, 0x5A5730);
@@ -266,7 +266,7 @@ RpGeometry* CClothesBuilder::CopyGeometry(RpClump* clump, const char* a2, const 
 void CClothesBuilder::ConstructGeometryArray(RpGeometry** out, uint32* modelNameKeys, float normal, float fatness, float strength) {
     for (auto i = 0; i < 10; i++) {
         if (modelNameKeys[i] == 0) {
-            *out = nullptr;
+            out[i] = nullptr;
             continue;
         }
         const auto modelIdx = (eModelID)((int)MODEL_CLOTHES01_ID384 + i);
@@ -281,7 +281,7 @@ void CClothesBuilder::ConstructGeometryArray(RpGeometry** out, uint32* modelName
             CStreaming::LoadRequestedModels();
         }
 
-        *out = BlendGeometry(mi->GetRpClump(), "normal", "fat", "ripped", normal, fatness, strength);
+        out[i] = BlendGeometry(mi->GetRpClump(), "normal", "fat", "ripped", normal, fatness, strength);
         StoreBoneArray(mi->GetRpClump(), i);
         CStreaming::RemoveModel(modelIdx);
     }
