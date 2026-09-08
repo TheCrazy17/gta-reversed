@@ -6,7 +6,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedClass(CPedGeometryAnalyser);
     RH_ScopedCategoryGlobal();
 
-    RH_ScopedOverloadedInstall(CanPedJumpObstacle, "", 0x5F1B00, bool(*)(const CPed&,const CEntity&), { .reversed = false });
+    RH_ScopedOverloadedInstall(CanPedJumpObstacle, "", 0x5F1B00, bool(*)(const CPed&,const CEntity&));
     RH_ScopedOverloadedInstall(CanPedJumpObstacle, "contacted", 0x5F32D0, bool(*)(const CPed&,const CEntity&,const CVector&,const CVector&), { .reversed = false });
     RH_ScopedInstall(CanPedTargetPed, 0x5F1C40);
     RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70);
@@ -48,7 +48,10 @@ void CPedGeometryAnalyser::InjectHooks() {
 
 // 0x5F1B00
 bool CPedGeometryAnalyser::CanPedJumpObstacle(const CPed& ped, const CEntity& entity) {
-    return plugin::CallAndReturn<bool, 0x5F1B00, CPed const&, CEntity const&>(ped, entity);
+    if (entity.m_bIsTempBuilding) {
+        return false;
+    }
+    return CWorld::GetIsLineOfSightClear(ped.GetPosition(), ped.GetPosition() + ped.GetForward(), true, false, false, true, false, false, false);
 }
 
 // 0x5F32D0
