@@ -11,7 +11,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(CanPedTargetPed, 0x5F1C40);
     RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70);
     RH_ScopedInstall(ComputeBuildingHitPoints, 0x5F1E30);
-    RH_ScopedInstall(ComputeClearTarget, 0x5F5D80, { .reversed = false });
+    RH_ScopedInstall(ComputeClearTarget, 0x5F5D80);
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "ped", 0x5F3B70, bool (*)(const CPed& ped, CEntity& entity, CVector& point));
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "posn", 0x5F36F0, bool(*)(const CVector&,CEntity&,CVector&));
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "rect", 0x5F2C10, bool(*)(const CVector&,const CVector*,CVector&));
@@ -139,8 +139,71 @@ int32 CPedGeometryAnalyser::ComputeBuildingHitPoints(const CVector& a1, const CV
 }
 
 // 0x5F5D80
-void CPedGeometryAnalyser::ComputeClearTarget(const CPed& ped, const CVector& a2, CVector& a3) {
-    return plugin::Call<0x5F5D80, const CPed&, const CVector&, CVector&>(ped, a2, a3);
+void CPedGeometryAnalyser::ComputeClearTarget(const CPed& ped, const CVector& targetPosn, CVector& outTarget) {
+    static constexpr auto MAX_RADIUS = 5.00f; // _DAT_0086c6a4
+    static constexpr auto STEP       = 0.35f; // DAT_008d22b0
+
+    outTarget = targetPosn;
+
+    const auto& pedPos = ped.GetPosition();
+
+    // Pull `outTarget` back towards the ped, away from any nearby vehicle/ped whose bounding box it
+    // lies inside of and which blocks a direct line of sight from the ped to it.
+    const auto PullBackFromBlockers = [&](CEntity* const* entities) {
+        for (const auto candidate : std::span{ entities, MAX_NUM_ENTITIES }) {
+            if (!candidate) {
+                continue;
+            }
+
+            if (DistanceBetweenPointsSquared(candidate->GetPosition(), outTarget) >= sq(MAX_RADIUS)) {
+                continue;
+            }
+
+            if (!LiesInsideBoundingBox(ped, outTarget, *candidate)) {
+                continue;
+            }
+
+            // NOTSA: `GetIsLineOfSightClear` (0x5F5A30) is itself still unreversed - `distToHit` is
+            // whatever it writes to its `float&` out-param on a blocked test.
+            float distToHit{};
+            if (GetIsLineOfSightClear(ped, outTarget, *candidate, distToHit)) {
+                continue; // LOS clear - nothing to avoid
+            }
+
+            outTarget -= Normalized(outTarget - pedPos) * (STEP + distToHit);
+        }
+    };
+
+    PullBackFromBlockers(ped.GetIntelligence()->GetVehicleEntities());
+    PullBackFromBlockers(ped.GetIntelligence()->GetPedEntities());
+
+    // Final pass: `outTarget` might still be embedded inside world geometry (e.g. a building) after
+    // the pulls above. Detect that via the parity of `ProcessLineOfSight`'s crossing count between
+    // the ped and `outTarget` (an odd crossing count means `outTarget` sits on the "inside" of an odd
+    // number of surfaces) and, if so, walk it back towards the ped in `STEP`-sized increments until it
+    // clears, leaves `MAX_RADIUS`, overshoots past the ped, or we run out of steps.
+    const auto stepVec  = Normalized(pedPos - outTarget) * STEP;
+    const auto maxSteps = static_cast<int32>(MAX_RADIUS / STEP); // (int32)(5.0f / 0.35f) == 14
+
+    for (auto step = 0; step <= maxSteps; step++) {
+        const auto toPed = pedPos - outTarget;
+        if (toPed.SquaredMagnitude() >= sq(MAX_RADIUS)) {
+            return;
+        }
+        if (DotProduct(toPed, stepVec) < 0.0f) {
+            return;
+        }
+
+        CColPoint colPoint{};
+        CEntity*  hitEntity{};
+        CWorld::ProcessLineOfSight(pedPos, outTarget, colPoint, hitEntity, true, false, false, false, true, false, false, false);
+
+        if (CWorld::ms_iProcessLineNumCrossings % 2 != 1) {
+            return;
+        }
+
+        outTarget += stepVec;
+    }
 }
 
 // 0x5F3B70

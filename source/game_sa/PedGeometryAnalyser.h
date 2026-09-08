@@ -33,7 +33,7 @@ public:
 
     static int32 ComputeBuildingHitPoints(const CVector& a1, const CVector& a2);
     
-    static void ComputeClearTarget(const CPed& ped, const CVector&, CVector&);
+    static void ComputeClearTarget(const CPed& ped, const CVector& targetPosn, CVector& outTarget);
 
     static bool ComputeClosestSurfacePoint(const CPed& ped, CEntity& entity, CVector& point);
     static bool ComputeClosestSurfacePoint(const CVector& posn, CEntity& entity, CVector& point);
