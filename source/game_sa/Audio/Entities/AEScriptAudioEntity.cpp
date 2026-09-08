@@ -52,12 +52,30 @@ void CAEScriptAudioEntity::ClearMissionAudio(uint8 sampleId) {
 
 // 0x4EBFE0
 bool CAEScriptAudioEntity::IsMissionAudioSampleFinished(uint8 sampleId) {
-    return plugin::CallMethodAndReturn<bool, 0x4EBFE0, CAEScriptAudioEntity*, uint8>(this, sampleId);
+    if (sampleId >= MISSION_AUDIO_COUNT) {
+        return true;
+    }
+    if (sampleId >= 2) {
+        return !AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_MISSION1 + sampleId);
+    }
+    return wavLinks[sampleId].m_Sound == nullptr;
 }
 
 // 0x4EBF60
 int8 CAEScriptAudioEntity::GetMissionAudioLoadingStatus(uint8 sampleId) {
-    return plugin::CallMethodAndReturn<int8, 0x4EBF60, CAEScriptAudioEntity*, uint8>(this, sampleId);
+    if (sampleId >= MISSION_AUDIO_COUNT) {
+        return true;
+    }
+
+    const auto& link = wavLinks[sampleId];
+    if (link.m_nBankId < 0) {
+        return true;
+    }
+
+    const auto slot = static_cast<eSoundBankSlot>(SND_BANK_SLOT_MISSION1 + sampleId);
+    return link.m_nBankSlotId < 0
+        ? AEAudioHardware.GetSoundBankLoadingStatus(static_cast<eSoundBank>(link.m_nBankId), slot)
+        : AEAudioHardware.GetSoundLoadingStatus(static_cast<eSoundBank>(link.m_nBankId), static_cast<eSoundID>(link.m_nBankSlotId), slot);
 }
 
 // 0x4EC020
@@ -798,8 +816,8 @@ void CAEScriptAudioEntity::InjectHooks() {
     RH_ScopedInstall(Initialise, 0x5B9B60);
     RH_ScopedInstall(Service, 0x4EC900);
     RH_ScopedInstall(Reset, 0x4EC150);
-    RH_ScopedInstall(GetMissionAudioLoadingStatus, 0x4EBF60, { .reversed = false });
-    RH_ScopedInstall(IsMissionAudioSampleFinished, 0x4EBFE0, { .reversed = false });
+    RH_ScopedInstall(GetMissionAudioLoadingStatus, 0x4EBF60);
+    RH_ScopedInstall(IsMissionAudioSampleFinished, 0x4EBFE0);
     RH_ScopedInstall(GetMissionAudioEvent, 0x4EC020);
     RH_ScopedInstall(ClearMissionAudio, 0x4EC040, { .reversed = false });
     RH_ScopedInstall(SetMissionAudioPosition, 0x4EC0C0);
