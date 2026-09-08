@@ -75,7 +75,7 @@ void CGenericGameStorage::InjectHooks() {
     RH_ScopedInstall(LoadWorkBuffer, 0x5D10B0);
     RH_ScopedInstall(SaveWorkBuffer, 0x5D0F80);
     RH_ScopedInstall(GetCurrentVersionNumber, 0x5D0F50);
-    RH_ScopedInstall(MakeValidSaveName, 0x5D0E90, { .reversed = false });
+    RH_ScopedInstall(MakeValidSaveName, 0x5D0E90);
     RH_ScopedInstall(CloseFile, 0x5D0E30);
     RH_ScopedInstall(OpenFileForWriting, 0x5D0DD0);
     RH_ScopedInstall(OpenFileForReading, 0x5D0D20);
@@ -757,7 +757,9 @@ void CGenericGameStorage::MakeValidSaveName(int32 slot) {
     char path[MAX_PATH]{};
     s_PcSaveHelper.GenerateGameFilename(slot, path);
 
-    path[257] = 0; // Make sure there's space for the file extension
+    if (strlen(path) >= 257) { // Make sure there's space for the file extension
+        path[257] = 0;
+    }
 
     strcat_s(path, ".b");
 
