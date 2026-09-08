@@ -43,7 +43,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970, { .reversed = false });
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
     RH_ScopedInstall(IsWanderPathClear, 0x5F2F70);
-    RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880, { .reversed = false });
+    RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880);
 }
 
 // 0x5F1B00
@@ -502,7 +502,29 @@ CPedGeometryAnalyser::WanderPathClearness CPedGeometryAnalyser::IsWanderPathClea
 
 // 0x5F3880
 bool CPedGeometryAnalyser::LiesInsideBoundingBox(const CPed& ped, const CVector& posn, CEntity& entity) {
-    return plugin::CallAndReturn<bool, 0x5F3880, const CPed&, const CVector&, CEntity&>(ped, posn, entity);
+    if (CVector::DistSqr(posn, entity.GetPosition()) >= sq(entity.GetModelInfo()->GetColModel()->GetBoundRadius())) {
+        return false;
+    }
+
+    const auto zPos = ped.GetPosition().z;
+
+    CVector corners[4];
+    ComputeEntityBoundingBoxCornersUncached(zPos, entity, corners);
+
+    CVector planes[4];
+    float   planesDot[4];
+    ComputeEntityBoundingBoxPlanesUncached(zPos, corners, &planes, planesDot);
+
+    // NOTSA: matches the original bit-for-bit, but this OR-on-any-negative-plane early exit is a
+    // near-no-op for a convex box (opposite side-pairs have anti-parallel normals, so almost any
+    // point that passes the sphere check above trips this) - flagging as a likely genuine original
+    // quirk rather than "fixing" it into a real polygon-containment test.
+    for (auto i = 0; i < 4; i++) {
+        if (DotProduct(planes[i], posn) + planesDot[i] < 0.0f) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x41B7C0
