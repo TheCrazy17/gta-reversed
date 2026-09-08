@@ -30,7 +30,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeEntityDirs, 0x5F1500);
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "1", 0x5F3BC0, int32 (*)(const CPed& ped, CEntity& entity), {.reversed = false});
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point1, const CVector* point2, const float* x), {.reversed = false});
-    RH_ScopedOverloadedInstall(ComputeEntityHitSide, "3", 0x5F3AC0, int32 (*)(const CVector& point, CEntity& entity), {.reversed = false});
+    RH_ScopedOverloadedInstall(ComputeEntityHitSide, "3", 0x5F3AC0, int32 (*)(const CVector& point, CEntity& entity));
     RH_ScopedOverloadedInstall(ComputePedHitSide, "physical", 0x5F3640, int32(*)(const CPed&,const CPhysical&), { .reversed = false });
     RH_ScopedOverloadedInstall(ComputePedHitSide, "posn", 0x5F1E70, int32(*)(const CPed&,const CVector&), { .reversed = false });
     RH_ScopedInstall(ComputePedShotSide, 0x5F13F0);
@@ -361,7 +361,17 @@ int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CVector& point1, const CV
 
 // 0x5F3AC0
 int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CVector& point, CEntity& entity) {
-    return plugin::CallAndReturn<int32, 0x5F3AC0, const CVector&, CEntity&>(point, entity);
+    CVector corners[4];
+    ComputeEntityBoundingBoxCornersUncached(point.z, entity, corners);
+
+    CVector center;
+    ComputeEntityBoundingBoxCentreUncached(point.z, corners, center);
+
+    CVector planes[4];
+    float   planesDot[4];
+    ComputeEntityBoundingBoxSegmentPlanesUncached(corners, center, planes, planesDot);
+
+    return ComputeEntityHitSide(point, planes, planesDot);
 }
 
 // 0x5F3640
