@@ -14,7 +14,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeClearTarget, 0x5F5D80, { .reversed = false });
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "ped", 0x5F3B70, bool (*)(const CPed& ped, CEntity& entity, CVector& point));
     RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "posn", 0x5F36F0, bool(*)(const CVector&,CEntity&,CVector&));
-    RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "rect", 0x5F2C10, bool(*)(const CVector&,const CVector*,CVector&), { .reversed = false });
+    RH_ScopedOverloadedInstall(ComputeClosestSurfacePoint, "rect", 0x5F2C10, bool(*)(const CVector&,const CVector*,CVector&));
     RH_ScopedInstall(ComputeEntityBoundingBoxCentreUncached, 0x5F1600);
     RH_ScopedInstall(ComputeEntityBoundingBoxCentreUncachedAll, 0x5F3B40);
     RH_ScopedInstall(ComputeEntityBoundingBoxCorners, 0x5F3650);
@@ -160,7 +160,39 @@ bool CPedGeometryAnalyser::ComputeClosestSurfacePoint(const CVector& posn, CEnti
 
 // 0x5F2C10
 bool CPedGeometryAnalyser::ComputeClosestSurfacePoint(const CVector& posn, const CVector* corners, CVector& point) {
-    return plugin::CallAndReturn<bool, 0x5F2C10, const CVector&, const CVector*, CVector&>(posn, corners, point);
+    auto bestDistSq = FLT_MAX;
+    auto found      = false;
+
+    for (auto i = 0; i < 4; i++) {
+        const auto& a = corners[i];
+        const auto& b = corners[(i + 1) % 4];
+
+        const auto edge    = b - a;
+        const auto edgeLen = edge.Magnitude();
+        const auto invLen  = 1.0f / edgeLen;
+        const auto t       = DotProduct(posn - a, edge) * invLen;
+
+        if (t >= 0.0f && t < edgeLen) {
+            const auto closest = a + edge * (t * invLen);
+            if (const auto distSq = DistanceBetweenPointsSquared(posn, closest); distSq < bestDistSq) {
+                point      = closest;
+                found      = true;
+                bestDistSq = distSq;
+            }
+        }
+    }
+
+    if (!found) {
+        for (auto i = 0; i < 4; i++) {
+            if (const auto distSq = DistanceBetweenPointsSquared(corners[i], posn); distSq < bestDistSq) {
+                point      = corners[i];
+                found      = true;
+                bestDistSq = distSq;
+            }
+        }
+    }
+
+    return found;
 }
 
 // inlined into CPedGeometryAnalyser::ComputeEntityBoundingSphere
