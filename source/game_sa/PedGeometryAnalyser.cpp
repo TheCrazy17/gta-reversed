@@ -26,7 +26,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncached, 0x5F1750);
     RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncachedAll, 0x5F2BC0);
     RH_ScopedInstall(ComputeEntityBoundingSphere, 0x5F3C20);
-    RH_ScopedInstall(ComputeMoveDirToAvoidEntity, 0x5F3730, { .reversed = false });
+    RH_ScopedInstall(ComputeMoveDirToAvoidEntity, 0x5F3730);
     RH_ScopedInstall(ComputeEntityDirs, 0x5F1500);
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "1", 0x5F3BC0, int32 (*)(const CPed& ped, CEntity& entity));
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point1, const CVector* point2, const float* x), {.reversed = false});
@@ -319,7 +319,33 @@ void CPedGeometryAnalyser::ComputeEntityBoundingSphere(const CPed& ped, CEntity&
 
 // 0x5F3730
 int32 CPedGeometryAnalyser::ComputeMoveDirToAvoidEntity(const CPed& ped, CEntity& entity, CVector& outDirToAvoidEntity) {
-    return plugin::CallAndReturn<int32, 0x5F3730, const CPed&, CEntity&, CVector&>(ped, entity, outDirToAvoidEntity);
+    const auto zPos = ped.GetPosition().z;
+
+    CVector corners[4];
+    ComputeEntityBoundingBoxCornersUncached(zPos, entity, corners);
+
+    CVector planes[4];
+    float   planesDot[4];
+    ComputeEntityBoundingBoxPlanesUncached(zPos, corners, &planes, planesDot);
+
+    const auto& pedPos = ped.GetPosition();
+    const auto  d0      = DotProduct(planes[1], pedPos) + planesDot[1];
+    const auto  d1      = DotProduct(planes[3], pedPos) + planesDot[3];
+
+    if (d0 > 0.0f) {
+        outDirToAvoidEntity = planes[1];
+    } else if (d1 > 0.0f) {
+        outDirToAvoidEntity = planes[3];
+    } else if (d0 > d1) {
+        outDirToAvoidEntity = planes[1];
+    } else {
+        outDirToAvoidEntity = planes[3];
+    }
+
+    // NOTSA: the original never deliberately sets a return value in any branch (EAX at RET is
+    // incidental register content, not a real result); the only caller
+    // (CEventHandler::ComputeVehiclePotentialCollisionResponse) discards it.
+    return 0;
 }
 
 //! @notsa
