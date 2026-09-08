@@ -63,12 +63,12 @@ public:
     int32 Init(const CVector& pos);
     void Exit();
 
-    CObject* Bedroom_AddTableItem(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6, int32 a7);
+    CObject* Bedroom_AddTableItem(int32 groupId, int32 subGroupId, int32 side, int32 x, int32 y, int32 angleIdx);
     void FurnishBedroom();
     CObject* Kitchen_FurnishEdges();
     void FurnishKitchen();
     CObject* Lounge_AddTV(int32 a2, int32 a3, int32 a4, int32 a5);
-    CObject* Lounge_AddHifi(int32 a2, int32 a3, int32 a4, int32 a5);
+    CObject* Lounge_AddHifi(int32 side, int32 x, int32 y, int32 angleIdx);
     void Lounge_AddChairInfo(int32 a2, int32 a3, CEntity* entityIgnoredCollision);
     void Lounge_AddSofaInfo(int32 sitType, int32 offsetX, CEntity* entityIgnoredCollision);
     void FurnishLounge();

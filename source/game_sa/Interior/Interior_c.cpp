@@ -14,7 +14,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Kitchen_FurnishEdges, 0x596930, { .reversed = false });
     RH_ScopedInstall(FurnishKitchen, 0x5970B0, { .reversed = false });
     RH_ScopedInstall(Lounge_AddTV, 0x597240, { .reversed = false });
-    RH_ScopedInstall(Lounge_AddHifi, 0x597430, { .reversed = false });
+    RH_ScopedInstall(Lounge_AddHifi, 0x597430);
     RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
     RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
     RH_ScopedInstall(FurnishLounge, 0x597740, { .reversed = false });
@@ -108,8 +108,17 @@ CObject* Interior_c::Lounge_AddTV(int32 a2, int32 a3, int32 a4, int32 a5) {
 }
 
 // 0x597430
-CObject* Interior_c::Lounge_AddHifi(int32 a2, int32 a3, int32 a4, int32 a5) {
-    return plugin::CallMethodAndReturn<CObject*, 0x597430, Interior_c*, int32, int32, int32, int32>(this, a2, a3, a4, a5);
+CObject* Interior_c::Lounge_AddHifi(int32 side, int32 x, int32 y, int32 angleIdx) {
+    auto fx = (float)x;
+    auto fy = (float)y;
+    if (side == 0 || side == 2) {
+        fx += TILE_SIZE;
+    } else if (side == 1 || side == 3) {
+        fy += TILE_SIZE;
+    }
+
+    const auto furniture = g_furnitureMan.GetFurniture(2, 8, -1, m_box->m_status);
+    return PlaceObject(true, furniture, fx + TILE_SIZE, fy + TILE_SIZE, TILE_SIZE, (float)angleIdx * 90.0f);
 }
 
 // 0x5974E0
