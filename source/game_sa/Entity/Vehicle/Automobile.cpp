@@ -1177,6 +1177,8 @@ bool CAutomobile::ProcessAI(uint32& extraHandlingFlags) {
         }
 
         if (handlingFlags.bNpcAntiRoll) {
+            // FIX_BUGS candidate: unscaled per-frame approach-toward-target blend (no
+            // CTimer::GetTimeStep() scaling), same shape as the other flagged spots in this campaign.
             m_pHandlingData->m_vecCentreOfMass.z += (colModel->m_boundBox.m_vecMin.z - m_pHandlingData->m_vecCentreOfMass.z) * 0.4f;
         }
     }
