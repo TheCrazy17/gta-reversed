@@ -36,13 +36,13 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputePedShotSide, 0x5F13F0);
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "1", 0x5F6110, int32(*)(const CPed&,CEntity&,const CVector&,CPointRoute&,int32), { .reversed = false });
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32), { .reversed = false });
-    RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890, { .reversed = false });
+    RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890);
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&), { .reversed = false });
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .reversed = false });
     RH_ScopedInstall(GetNearestPed, 0x5F3590, { .reversed = false });
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970, { .reversed = false });
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
-    RH_ScopedInstall(IsWanderPathClear, 0x5F2F70, { .reversed = false });
+    RH_ScopedInstall(IsWanderPathClear, 0x5F2F70);
     RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880, { .reversed = false });
 }
 
@@ -336,8 +336,51 @@ int32 CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(const CPed& ped, 
 }
 
 // 0x5F1890
-bool CPedGeometryAnalyser::ComputeRouteRoundSphere(const CPed& ped, const CColSphere& sphere, const CVector& a3, const CVector& a4, CVector& a5, CVector& a6) {
-    return plugin::CallAndReturn<bool, 0x5F1890, const CPed&, const CColSphere&, const CVector&, const CVector&, CVector&, CVector&>(ped, sphere, a3, a4, a5, a6);
+bool CPedGeometryAnalyser::ComputeRouteRoundSphere(const CPed& ped, const CColSphere& sphere, const CVector& start, const CVector& target, CVector& newTarget, CVector& detourPoint) {
+    const auto& pedPos = ped.GetPosition();
+
+    newTarget = target;
+
+    // If `target` itself is inside the sphere we're meant to avoid, pull it back to
+    // where the start->target line exits the far side of the sphere.
+    if (sphere.IntersectPoint(target)) {
+        const auto dir = Normalized(target - start);
+
+        CVector nearPt{}, farPt{};
+        if (sphere.IntersectRay(pedPos, dir, nearPt, farPt)) {
+            newTarget = farPt;
+        }
+    }
+
+    // Does the direct line from `newTarget` to the ped even come near the sphere?
+    const auto toNewTargetDir = Normalized(newTarget - pedPos);
+
+    CVector nearPt{}, farPt{};
+    if (!sphere.IntersectRay(newTarget, toNewTargetDir, nearPt, farPt)) {
+        detourPoint = newTarget;
+        return false;
+    }
+
+    // `newTarget` is already closer to the ped than the sphere's near surface point,
+    // so the direct path doesn't actually reach the obstacle - no detour needed.
+    if (DistanceBetweenPointsSquared(newTarget, pedPos) < DistanceBetweenPointsSquared(nearPt, pedPos)) {
+        detourPoint = newTarget;
+        return false;
+    }
+
+    // Otherwise steer around it: find the point on the sphere's surface closest to
+    // the ped->newTarget line, and route through there.
+    if (sphere.IntersectRay(pedPos, toNewTargetDir, nearPt, farPt)) {
+        const auto t                 = DotProduct(sphere.m_vecCenter - pedPos, toNewTargetDir);
+        const auto closestPointOnRay = pedPos + toNewTargetDir * t;
+        const auto offset            = Normalized(closestPointOnRay - sphere.m_vecCenter);
+        detourPoint = sphere.m_vecCenter + offset * sphere.m_fRadius;
+    }
+    // NOTSA: if this 3rd IntersectRay call somehow fails (shouldn't happen - we already
+    // know the ped->newTarget line intersects the sphere), `detourPoint` is left
+    // untouched here, matching the original binary's behaviour exactly.
+
+    return true;
 }
 
 // 0x5F5A30
@@ -395,7 +438,66 @@ bool CPedGeometryAnalyser::IsInAir(const CPed& ped) {
 
 // 0x5F2F70
 CPedGeometryAnalyser::WanderPathClearness CPedGeometryAnalyser::IsWanderPathClear(const CVector& from, const CVector& to, float maxHeightChange, int32 maxSamples) {
-    return plugin::CallAndReturn<WanderPathClearness, 0x5F2F70, const CVector&, const CVector&, float, int32>(from, to, maxHeightChange, maxSamples);
+    if (std::abs(from.z - to.z) > maxHeightChange) {
+        return WanderPathClearness::BLOCKED_HEIGHT;
+    }
+
+    // Line-of-sight check done at the lower of the two Z's (height diff already covered above).
+    const auto minZ = std::min(from.z, to.z);
+    if (!CWorld::GetIsLineOfSightClear({ from.x, from.y, minZ }, { to.x, to.y, minZ }, true, false, false, false, false, false, false)) {
+        return WanderPathClearness::BLOCKED_LOS;
+    }
+
+    auto       delta    = to - from;
+    const auto numSteps = std::min(maxSamples, (int32)delta.Magnitude());
+    if (numSteps == 0) {
+        return WanderPathClearness::CLEAR;
+    }
+
+    delta.Normalise();
+
+    const auto maxZ = std::max(from.z, to.z);
+
+    // Walk the path, and if any sample point is over water, make sure there's something
+    // (e.g. a bridge) above the water up to maxZ - otherwise it's open water, so blocked.
+    for (auto step = 1; step < numSteps; step++) {
+        const auto samplePos = from + delta * (float)step;
+
+        float waterLevel;
+        if (CWaterLevel::GetWaterLevel(samplePos.x, samplePos.y, samplePos.z, waterLevel, false, nullptr)) {
+            CColPoint colPoint{};
+            CEntity*  hitEntity{};
+            if (!CWorld::ProcessVerticalLine({ samplePos.x, samplePos.y, waterLevel }, maxZ, colPoint, hitEntity, true, false, false, false, false, false, nullptr)) {
+                return WanderPathClearness::BLOCKED_WATER;
+            }
+        }
+    }
+
+    // Make sure there's ground within 5 units below the start point.
+    CColPoint colPoint{};
+    CEntity*  hitEntity{};
+    if (!CWorld::ProcessVerticalLine(from, from.z - 5.0f, colPoint, hitEntity, true, false, false, false, false, false, nullptr)) {
+        return WanderPathClearness::BLOCKED_SHARP_DROP;
+    }
+    auto expectedGroundZ = colPoint.m_vecPoint.z + 0.5f;
+
+    // Walk the path again, tracking the running ground height and rejecting any sudden drop/rise.
+    for (auto step = 1; step < numSteps; step++) {
+        const auto sampleX = from.x + delta.x * (float)step;
+        const auto sampleY = from.y + delta.y * (float)step;
+
+        if (!CWorld::ProcessVerticalLine({ sampleX, sampleY, expectedGroundZ }, expectedGroundZ - 2.0f, colPoint, hitEntity, true, false, false, false, false, false, nullptr)) {
+            return WanderPathClearness::BLOCKED_SHARP_DROP;
+        }
+
+        if (std::abs(colPoint.m_vecPoint.z - expectedGroundZ) > 1.0f) {
+            return WanderPathClearness::BLOCKED_SHARP_DROP;
+        }
+
+        expectedGroundZ = colPoint.m_vecPoint.z + 0.5f;
+    }
+
+    return WanderPathClearness::CLEAR;
 }
 
 // 0x5F3880
