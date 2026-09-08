@@ -23,7 +23,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeEntityBoundingBoxPlanesUncached, 0x5F1670);
     RH_ScopedInstall(ComputeEntityBoundingBoxPlanesUncachedAll, 0x5F2B80);
     RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanes, 0x5F36A0);
-    RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncached, 0x5F1750, { .reversed = false });
+    RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncached, 0x5F1750);
     RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncachedAll, 0x5F2BC0);
     RH_ScopedInstall(ComputeEntityBoundingSphere, 0x5F3C20);
     RH_ScopedInstall(ComputeMoveDirToAvoidEntity, 0x5F3730, { .reversed = false });
@@ -278,7 +278,15 @@ void CPedGeometryAnalyser::ComputeEntityBoundingBoxSegmentPlanes(float zPos, CEn
 
 // 0x5F1750
 CVector* CPedGeometryAnalyser::ComputeEntityBoundingBoxSegmentPlanesUncached(const CVector* corners, CVector& center, CVector* a3, float* a4) {
-    return plugin::CallAndReturn<CVector*, 0x5F1750, const CVector*, CVector&, CVector*, float*>(corners, center, a3, a4);
+    for (auto i = 0; i < 4; i++) {
+        const auto& corner = corners[i];
+        auto&       plane  = a3[i];
+        plane.x = -(corner.y - center.y);
+        plane.y = corner.x - center.x;
+        plane.z = 0.0f;
+        a4[i]   = -DotProduct(plane, corner);
+    }
+    return a3;
 }
 
 // 0x5F2BC0
