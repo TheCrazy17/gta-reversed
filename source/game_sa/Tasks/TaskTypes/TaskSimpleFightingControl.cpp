@@ -9,6 +9,10 @@
 
 constexpr auto FIGHT_CTRL_MAX_ATTACK_ANGLE_RAD = DegreesToRadians(15);
 constexpr auto FIGHT_CTRL_FIGHT_IDLE_TIME = 60000.f;
+constexpr auto FIGHT_CTRL_NEXT_ATTACK_BASE_MS      = 2000;  // DAT_008D2E4C
+constexpr auto FIGHT_CTRL_UNARMED_WAIT_CHANCE_MULT = 2.0f;  // DAT_008D2E54
+constexpr auto FIGHT_CTRL_UNARMED_WAIT_MIN_MS      = 500;   // DAT_008D2E58
+constexpr auto FIGHT_CTRL_UNARMED_WAIT_MAX_MS      = 2000;  // DAT_008D2E5C
 
 void CTaskSimpleFightingControl::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleFightingControl, 0x86d700, 9);
@@ -22,7 +26,7 @@ void CTaskSimpleFightingControl::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x622EB0);
     RH_ScopedVMTInstall(GetTaskType, 0x61DC90);
     RH_ScopedVMTInstall(MakeAbortable, 0x61DD00);
-    RH_ScopedVMTInstall(ProcessPed, 0x62A0A0, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessPed, 0x62A0A0);
 }
 
 // 0x61DC10
@@ -174,42 +178,74 @@ bool CTaskSimpleFightingControl::MakeAbortable(CPed* ped, eAbortPriority priorit
 
 // 0x62A0A0
 bool CTaskSimpleFightingControl::ProcessPed(CPed* ped) {
-    return plugin::CallMethodAndReturn<bool, 0x62A0A0, CTaskSimpleFightingControl*, CPed*>(this, ped);
-
-    /*
-    * Code below should be good so far, I'm lazy to finish it
-    if (!m_target) {
-        return false;
-    }
-
-    if (m_bool) {
+    if (!m_target || m_bool) {
         return true;
     }
 
-    const auto pedShootingRange = [ped] {
-        const auto range = (int16)ped->m_nWeaponShootingRate;
-        if (!ped->IsCreatedByMission() && ped->m_nPedType != PED_TYPE_COP && range == 40) {
-            return ped->m_pStats->m_wShootingRate;
-        }
-        return range;
-    }();
+    // NOTSA: `m_unk3` is never written by any currently-reversed code path (default-constructed to
+    // 0.f), so `rateFactor` below always collapses to a constant 0.3f in practice today - likely a
+    // missing constructor parameter/setter elsewhere, out of scope for this function specifically.
+    auto shootingRate = static_cast<float>(ped->m_nWeaponShootingRate);
+    if (!ped->IsCreatedByMission() && ped->m_nPedType != PED_TYPE_COP && ped->m_nWeaponShootingRate == 40) {
+        shootingRate = static_cast<float>(ped->m_pStats->m_flags);
+    }
 
     ped->GiveWeaponAtStartOfFight();
 
-    // Create fight task for ped if not already
-    if (!ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_ATTACK)) {
-        ped->GetTaskManager().SetTaskSecondary(new CTaskSimpleFight{ m_target, false, (uint32)FIGHT_CTRL_FIGHT_IDLE_TIME }, TASK_SECONDARY_ATTACK);
+    auto& taskMgr = ped->GetTaskManager();
+
+    CTaskSimpleFight* fightTask{};
+    int16 fallbackCmd = 0;
+    if (const auto existing = taskMgr.GetTaskSecondary(TASK_SECONDARY_ATTACK)) {
+        if (existing->GetTaskType() != TASK_SIMPLE_FIGHT) {
+            existing->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr);
+            return false;
+        }
+        fightTask = static_cast<CTaskSimpleFight*>(existing);
+
+        if (CTimer::GetTimeInMS() < m_nextAttackTime) { // Still on cooldown
+            const auto giveUp = m_target->GetType() != ENTITY_TYPE_PED
+                              || m_someTime != 0
+                              || FIGHT_CTRL_UNARMED_WAIT_CHANCE_MULT * shootingRate * 0.025f <= CGeneral::GetRandomNumberInRange(0.f, 100.f);
+            if (giveUp) {
+                if (m_someTime != 0) {
+                    const auto elapsed = static_cast<uint32>(CTimer::GetTimeStepInMS());
+                    m_someTime = elapsed < m_someTime ? m_someTime - elapsed : 0;
+                    fallbackCmd = 2;
+                }
+                // else: m_someTime already 0 -> leave fallbackCmd at 0
+            } else {
+                m_someTime = static_cast<uint32>(CGeneral::GetRandomNumberInRange(FIGHT_CTRL_UNARMED_WAIT_MIN_MS, FIGHT_CTRL_UNARMED_WAIT_MAX_MS));
+                fallbackCmd = 2;
+            }
+        } else { // Cooldown expired
+            m_nextAttackTime = 0;
+            fallbackCmd = 0xb;
+            if (ped->m_nFightingStyle != STYLE_STANDARD && ped->IsCurrentlyUnarmed()) {
+                fallbackCmd = 0xc;
+            }
+        }
+    } else {
+        fightTask = new CTaskSimpleFight{ m_target, false, (uint32)FIGHT_CTRL_FIGHT_IDLE_TIME };
+        taskMgr.SetTaskSecondary(fightTask, TASK_SECONDARY_ATTACK);
         m_nextAttackTime = 0;
     }
 
-    const auto pedFightTask = ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_ATTACK);
-    if (pedFightTask->GetTaskType() != TASK_SIMPLE_FIGHT) {
-        pedFightTask->MakeAbortable(ped);
-        return false;
+    m_maxAttackRange = CTaskSimpleFight::m_aComboData[std::max(0, fightTask->m_nComboSet - 4)].m_fRanges;
+
+    if (m_nextAttackTime == 0) {
+        const auto randomFactor = static_cast<float>(rand()) * (1.f / 32768.f) + 0.25f;
+        const auto rateFactor   = shootingRate * m_unk3 * 0.025f * 0.7f + 0.3f;
+        m_nextAttackTime = static_cast<uint32>((randomFactor / rateFactor) * static_cast<float>(FIGHT_CTRL_NEXT_ATTACK_BASE_MS)) + CTimer::GetTimeInMS();
     }
 
-    if (m_nextAttackTime <= CTimer::GetTimeInMS()) {
-        m_nextAttackTime = 0;
+    auto cmd = fallbackCmd;
+    if (fightTask->m_nComboSet <= 1) {
+        if (const auto calculated = CalcMoveCommand(ped); calculated != -1) {
+            cmd = calculated;
+        }
     }
-    */
+    fightTask->ControlFight(m_target, static_cast<uint8>(cmd));
+
+    return false;
 }
