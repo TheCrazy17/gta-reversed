@@ -606,9 +606,6 @@ void CGarages::StoreCarInNearestImpoundingGarage(CVehicle* vehicle) {
 // unused
 // 0x448890
 void CGarages::StopCarFromBlowingUp(CAutomobile* vehicle) {
-    return plugin::Call<0x448890, CVehicle*>(vehicle);
-
-    // untested
     vehicle->m_fBurnTimer = 0.0f;
     vehicle->m_fHealth = vehicle->m_fHealth <= 300.0f ? 300.0f : vehicle->m_fHealth;
 
