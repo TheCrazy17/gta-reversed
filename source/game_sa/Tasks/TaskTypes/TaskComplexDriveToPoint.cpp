@@ -37,44 +37,40 @@ void CTaskComplexDriveToPoint::SetUpCar() {
 
 // 0x645420
 CTask* CTaskComplexDriveToPoint::Drive(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x645420, CTaskComplexDriveToPoint*, CPed*>(this, ped); // untested
-
-    auto dist = DistanceBetweenPoints(m_Veh->GetPosition(), m_Point);
+    const auto dist = DistanceBetweenPoints(m_Veh->GetPosition(), m_Point);
     if (dist < m_Radius) {
-        m_Veh->m_autoPilot.SetCarMission(MISSION_NONE);
+        m_Veh->m_autoPilot.ClearCarMission();
         field_38 = true;
         return CTaskComplexCarDrive::CreateSubTask(TASK_FINISHED, ped);
     }
 
-    if (dist >= 3.0f || m_Veh->m_autoPilot.m_nCarMission) {
-        if (!m_Veh->m_autoPilot.m_nCruiseSpeed) {
-            assert(m_CruiseSpeed < 255.0f);
-            m_Veh->m_autoPilot.SetCruiseSpeed((uint8)m_CruiseSpeed);
-        }
-
-        if (IsTargetBlocked(ped)) {
-            field_38 = true;
-            return CTaskComplexCarDrive::CreateSubTask(TASK_FINISHED, ped);
-        }
-
-        switch (field_30) {
-        case field_30_enum::DEFAULT:       CCarAI::GetCarToGoToCoors(m_Veh, m_Point, m_CarDrivingStyle, false); break;
-        case field_30_enum::ACCURATE:      CCarAI::GetCarToGoToCoorsAccurate(m_Veh, m_Point, m_CarDrivingStyle, false); break;
-        case field_30_enum::STRAIGHT_LINE: CCarAI::GetCarToGoToCoorsStraightLine(m_Veh, m_Point, m_CarDrivingStyle, false); break;
-        case field_30_enum::RACING:        CCarAI::GetCarToGoToCoorsRacing(m_Veh, m_Point, m_CarDrivingStyle, false); break;
-        default:                           NOTSA_UNREACHABLE();
-        }
-        return m_pSubTask;
+    if (dist < 3.0f && m_Veh->m_autoPilot.m_nCarMission == MISSION_NONE) {
+        field_38 = true;
+        return CTaskComplexCarDrive::CreateSubTask(TASK_FINISHED, ped);
     }
 
-    field_38 = true;
-    return CTaskComplexCarDrive::CreateSubTask(TASK_FINISHED, ped);
+    if (!m_Veh->m_autoPilot.m_nCruiseSpeed) {
+        assert(m_CruiseSpeed < 255.0f);
+        m_Veh->m_autoPilot.SetCruiseSpeed((uint8)m_CruiseSpeed);
+    }
+
+    if (IsTargetBlocked(ped)) {
+        field_38 = true;
+        return CTaskComplexCarDrive::CreateSubTask(TASK_FINISHED, ped);
+    }
+
+    switch (field_30) {
+    case field_30_enum::DEFAULT:       CCarAI::GetCarToGoToCoors(m_Veh, m_Point, m_CarDrivingStyle, false); break;
+    case field_30_enum::ACCURATE:      CCarAI::GetCarToGoToCoorsAccurate(m_Veh, m_Point, m_CarDrivingStyle, false); break;
+    case field_30_enum::STRAIGHT_LINE: CCarAI::GetCarToGoToCoorsStraightLine(m_Veh, m_Point, m_CarDrivingStyle, false); break;
+    case field_30_enum::RACING:        CCarAI::GetCarToGoToCoorsRacing(m_Veh, m_Point, m_CarDrivingStyle, false); break;
+    default:                           NOTSA_UNREACHABLE();
+    }
+    return m_pSubTask;
 }
 
 // 0x6452C0
 bool CTaskComplexDriveToPoint::IsTargetBlocked(CPed* ped) const {
-    return plugin::CallMethodAndReturn<bool, 0x6452C0, const CTaskComplexDriveToPoint*, CPed*>(this, ped); // untested
-
     if (DistanceBetweenPointsSquared(ped->GetPosition(), m_Point) > sq(6.0f)) {
         return false;
     }
@@ -85,13 +81,13 @@ bool CTaskComplexDriveToPoint::IsTargetBlocked(CPed* ped) const {
 
 // 0x6432A0
 bool CTaskComplexDriveToPoint::IsTargetBlocked(CPed* ped, CEntity** entities, int32 numEntities) const {
-    return plugin::CallMethodAndReturn<bool, 0x6432A0, const CTaskComplexDriveToPoint*, CPed*, CEntity**, int32>(this, ped, entities, numEntities); // untested
-
-    if (!ped->m_pVehicle)
+    if (!ped->m_pVehicle) {
         return false;
+    }
 
     const auto& vehPos = ped->m_pVehicle->GetPosition();
-    auto dist = vehPos - m_Point;
+    const auto  vehToPointDistSq = DistanceBetweenPointsSquared(vehPos, m_Point);
+    const auto  vehicleRadius = ped->m_pVehicle->GetModelInfo()->GetColModel()->GetBoundRadius();
 
     for (auto i = 0; i < numEntities; ++i) {
         CEntity* entity = entities[i];
@@ -99,13 +95,12 @@ bool CTaskComplexDriveToPoint::IsTargetBlocked(CPed* ped, CEntity** entities, in
             continue;
         }
 
-        const auto& vehicleRadius = ped->m_pVehicle->GetModelInfo()->GetColModel()->GetBoundRadius();
-        if (DistanceBetweenPointsSquared(vehPos, entity->GetPosition()) > sq(vehicleRadius)) {
-            continue;
+        const auto entityRadius = entity->GetModelInfo()->GetColModel()->GetBoundRadius();
+        if (sq(entityRadius) <= DistanceBetweenPointsSquared(entity->GetPosition(), m_Point)) {
+            continue; // Entity's bounding sphere doesn't reach the target point
         }
 
-        const auto& entityRadius = entity->GetModelInfo()->GetColModel()->GetBoundRadius();
-        if ((entityRadius + vehicleRadius) * (entityRadius + vehicleRadius) * 1.5f > dist.SquaredMagnitude()) {
+        if (sq(entityRadius + vehicleRadius) * 1.5 > vehToPointDistSq) {
             return true;
         }
     }
