@@ -40,7 +40,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&), { .reversed = false });
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .reversed = false });
     RH_ScopedInstall(GetNearestPed, 0x5F3590, { .reversed = false });
-    RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970, { .reversed = false });
+    RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970);
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
     RH_ScopedInstall(IsWanderPathClear, 0x5F2F70);
     RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880);
@@ -554,7 +554,37 @@ CPed* CPedGeometryAnalyser::GetNearestPed(const CVector& point) {
 
 // 0x5F3970
 bool CPedGeometryAnalyser::IsEntityBlockingTarget(CEntity* entity, const CVector& point, float distance) {
-    return plugin::CallAndReturn<bool, 0x5F3970, CEntity*, const CVector&, float>(entity, point, distance);
+    const auto& entityPos = entity->GetPosition();
+
+    if (std::abs(entityPos.z - point.z) > 3.0f) {
+        return false;
+    }
+
+    const auto entityRadius = entity->GetModelInfo()->GetColModel()->GetBoundRadius();
+    const auto horizDist    = std::sqrt(sq(entityPos.x - point.x) + sq(entityPos.y - point.y));
+
+    // NOTSA: matches the original bit-for-bit, but comparing a squared sum (distance^2+radius^2)
+    // against an UNsquared horizontal distance is dimensionally odd - verified via raw disasm,
+    // not a decompiler artifact. Likely a cheap/approximate original-game pre-filter; translated
+    // literally rather than "fixed".
+    if (sq(distance) + sq(entityRadius) < horizDist) {
+        return false;
+    }
+
+    CVector corners[4];
+    ComputeEntityBoundingBoxCornersUncached(entityPos.z, *entity, corners);
+
+    CVector planes[4];
+    float   planesDot[4];
+    ComputeEntityBoundingBoxPlanesUncached(entityPos.z, corners, &planes, planesDot);
+
+    const auto distanceBias = distance * 0.5f;
+    for (auto i = 0; i < 4; i++) {
+        if (DotProduct(planes[i], point) + planesDot[i] + distanceBias > 0.0f) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // 0x5F1CB0
