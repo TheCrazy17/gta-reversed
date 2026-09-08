@@ -79,7 +79,7 @@ void CGenericGameStorage::InjectHooks() {
     RH_ScopedInstall(CloseFile, 0x5D0E30);
     RH_ScopedInstall(OpenFileForWriting, 0x5D0DD0);
     RH_ScopedInstall(OpenFileForReading, 0x5D0D20);
-    RH_ScopedInstall(CheckDataNotCorrupt, 0x5D1170, { .reversed = false });
+    RH_ScopedInstall(CheckDataNotCorrupt, 0x5D1170);
     RH_ScopedInstall(RestoreForStartLoad, 0x619000);
 }
 
