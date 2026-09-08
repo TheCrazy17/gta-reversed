@@ -29,7 +29,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeMoveDirToAvoidEntity, 0x5F3730);
     RH_ScopedInstall(ComputeEntityDirs, 0x5F1500);
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "1", 0x5F3BC0, int32 (*)(const CPed& ped, CEntity& entity));
-    RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point1, const CVector* point2, const float* x), {.reversed = false});
+    RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point, const CVector* planes, const float* planesDot));
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "3", 0x5F3AC0, int32 (*)(const CVector& point, CEntity& entity));
     RH_ScopedOverloadedInstall(ComputePedHitSide, "physical", 0x5F3640, int32(*)(const CPed&,const CPhysical&));
     RH_ScopedOverloadedInstall(ComputePedHitSide, "posn", 0x5F1E70, int32(*)(const CPed&,const CVector&), { .reversed = false });
@@ -444,8 +444,21 @@ int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CPed& ped, CEntity& entit
 }
 
 // 0x5F1450
-int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CVector& point1, const CVector* point2, const float* x) {
-    return plugin::CallAndReturn<int32, 0x5F1450, const CVector&, const CVector*, const float*>(point1, point2, x);
+int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CVector& point, const CVector* planes, const float* planesDot) {
+    // Find which of the 4 planes' "wedge" (shared with its predecessor in the cyclic order) `point`
+    // falls into - i.e. the first `i` for which `point` is on the outward side of BOTH planes[i] and
+    // its predecessor planes[(i-1)%4]. Scans the 4-plane cycle twice (8 iterations) so the search is
+    // independent of where in the cycle it starts.
+    for (auto i = 0; i < 8; i++) {
+        const auto prevIdx = (i + 3) % 4;
+        const auto curIdx  = i % 4;
+
+        if (DotProduct(planes[prevIdx], point) + planesDot[prevIdx] >= 0.0f &&
+            DotProduct(planes[curIdx], point) + planesDot[curIdx] >= 0.0f) {
+            return curIdx; // eDirection
+        }
+    }
+    return 0; // eDirection::FORWARD
 }
 
 // 0x5F3AC0

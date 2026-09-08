@@ -57,7 +57,7 @@ public:
     static CVector ComputeEntityDir(const CEntity& entity, eDirection dir);
     static CVector* ComputeEntityDirs(const CEntity& entity, CVector* posn);
     static int32 ComputeEntityHitSide(const CPed& ped, CEntity& entity); // Returns `eDirection`
-    static int32 ComputeEntityHitSide(const CVector& point1, const CVector* point2, const float* x); // Returns `eDirection`
+    static int32 ComputeEntityHitSide(const CVector& point, const CVector* planes, const float* planesDot); // Returns `eDirection`
     static int32 ComputeEntityHitSide(const CVector& point, CEntity& entity); // Returns `eDirection`
     static int32 ComputePedHitSide(const CPed& ped, const CPhysical& physical);
     static int32 ComputePedHitSide(const CPed& ped, const CVector& posn);
