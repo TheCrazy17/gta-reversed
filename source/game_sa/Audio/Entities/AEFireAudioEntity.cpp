@@ -131,6 +131,8 @@ void CAEFireAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
         if (sound->m_Volume >= sound->m_ClientVariable) {
             sound->m_Event = AE_FRONTEND_BACK;
         } else {
+            // FIX_BUGS candidate: unscaled per-frame volume ramp (no CTimer::GetTimeStep()) - at
+            // high framerates this fade-in reaches m_ClientVariable much faster than intended.
             sound->m_Volume = std::min(sound->m_Volume + 2.0f, sound->m_ClientVariable);
         }
         break;
@@ -138,6 +140,7 @@ void CAEFireAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
         if (sound->m_Volume <= -30.0f)
             sound->StopSoundAndForget();
         else
+            // FIX_BUGS candidate: same unscaled per-frame volume ramp as above, fading out instead.
             sound->m_Volume -= 0.75f;
         break;
     case AE_FRONTEND_ERROR:
