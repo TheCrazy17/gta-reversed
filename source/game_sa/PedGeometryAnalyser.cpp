@@ -32,7 +32,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point, const CVector* planes, const float* planesDot));
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "3", 0x5F3AC0, int32 (*)(const CVector& point, CEntity& entity));
     RH_ScopedOverloadedInstall(ComputePedHitSide, "physical", 0x5F3640, int32(*)(const CPed&,const CPhysical&));
-    RH_ScopedOverloadedInstall(ComputePedHitSide, "posn", 0x5F1E70, int32(*)(const CPed&,const CVector&), { .reversed = false });
+    RH_ScopedOverloadedInstall(ComputePedHitSide, "posn", 0x5F1E70, int32(*)(const CPed&,const CVector&));
     RH_ScopedInstall(ComputePedShotSide, 0x5F13F0);
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "1", 0x5F6110, int32(*)(const CPed&,CEntity&,const CVector&,CPointRoute&,int32));
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32), { .reversed = false });
@@ -483,7 +483,20 @@ int32 CPedGeometryAnalyser::ComputePedHitSide(const CPed& ped, const CPhysical& 
 
 // 0x5F1E70
 int32 CPedGeometryAnalyser::ComputePedHitSide(const CPed& ped, const CVector& posn) {
-    return plugin::CallAndReturn<int32, 0x5F1E70, const CPed&, const CVector&>(ped, posn);
+    const auto negPosn = Normalized(-posn);
+
+    CVector dirs[4];
+    ComputeEntityDirs(ped, dirs);
+
+    auto bestIdx = 0;
+    auto bestDot = -1.0f;
+    for (auto i = 0; i < 4; i++) {
+        if (const auto dot = DotProduct(dirs[i], negPosn); dot >= bestDot) {
+            bestDot = dot;
+            bestIdx = i;
+        }
+    }
+    return bestIdx; // eDirection
 }
 
 // 0x5F13F0
