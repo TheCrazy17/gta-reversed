@@ -43,7 +43,9 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedOverloadedInstall(GetWaterLevel, "", 0x6EB690, bool(*)(float, float, float, float&, uint8, CVector*));
     RH_ScopedGlobalInstall(SetUpWaterFog, 0x6EA9F0);
     RH_ScopedGlobalInstall(FindNearestWaterAndItsFlow, 0x6E9D70, { .reversed = false });
-    RH_ScopedGlobalInstall(GetWaterLevelNoWaves, 0x6E8580, { .reversed = false });
+    RH_ScopedGlobalInstall(GetWaterLevelNoWaves, 0x6E8580);
+    RH_ScopedGlobalInstall(TestQuadToGetWaterLevel, 0x6E5BB0);
+    RH_ScopedGlobalInstall(TestTriangleToGetWaterLevel, 0x6E5E90);
     RH_ScopedGlobalInstall(RenderWaterFog, 0x6E7760, { .reversed = false });
     RH_ScopedGlobalInstall(CalculateWavesOnlyForCoordinate, 0x6E6EF0);
     RH_ScopedGlobalInstall(RenderWater, 0x6EF650, { .reversed = false });
@@ -642,9 +644,150 @@ void CWaterLevel::FindNearestWaterAndItsFlow() {
     plugin::Call<0x6E9D70>();
 }
 
+// 0x6E5BB0
+bool CWaterLevel::TestQuadToGetWaterLevel(CWaterQuad* quad, float x, float y, float z, float* pOutWaterLevel, float* pOutBigWaves, float* pOutSmallWaves) {
+    const auto v0 = quad->GetVertex(0);
+    if (x < v0.x) {
+        return false;
+    }
+
+    const auto v1 = quad->GetVertex(1);
+    if (v1.x < x) {
+        return false;
+    }
+
+    if (y < v0.y) {
+        return false;
+    }
+
+    const auto v2 = quad->GetVertex(2);
+    if (v2.y < y) {
+        return false;
+    }
+
+    const auto tX = (x - v0.x) / (float)(v1.x - v0.x);
+    const auto tY = (y - v0.y) / (float)(v2.y - v0.y);
+
+    if (tX + tY <= 1.0f) {
+        const auto v3 = quad->GetVertex(3);
+        const auto fX = 1.0f - tX;
+        const auto fY = 1.0f - tY;
+        *pOutWaterLevel = (v1.rp.z - v3.rp.z) * fY + (v2.rp.z - v3.rp.z) * fX + v3.rp.z;
+        if (!pOutBigWaves) {
+            return true;
+        }
+        *pOutBigWaves   = (v2.rp.bigWaves   - v3.rp.bigWaves)   * fX + (v1.rp.bigWaves   - v3.rp.bigWaves)   * fY + v3.rp.bigWaves;
+        *pOutSmallWaves = (v2.rp.smallWaves - v3.rp.smallWaves) * fX + (v1.rp.smallWaves - v3.rp.smallWaves) * fY + v3.rp.smallWaves;
+    } else {
+        *pOutWaterLevel = (v1.rp.z - v0.rp.z) * tX + (v2.rp.z - v0.rp.z) * tY + v0.rp.z;
+        if (!pOutBigWaves) {
+            return true;
+        }
+        *pOutBigWaves   = (v1.rp.bigWaves   - v0.rp.bigWaves)   * tX + (v2.rp.bigWaves   - v0.rp.bigWaves)   * tY + v0.rp.bigWaves;
+        *pOutSmallWaves = (v1.rp.smallWaves - v0.rp.smallWaves) * tX + (v2.rp.smallWaves - v0.rp.smallWaves) * tY + v0.rp.smallWaves;
+    }
+
+    if (z >= *pOutWaterLevel - 6.0f || !quad->bLimitedDepth) {
+        return z <= *pOutWaterLevel + 20.0f;
+    }
+    return false;
+}
+
+// 0x6E5E90
+bool CWaterLevel::TestTriangleToGetWaterLevel(CWaterTriangle* tri, float x, float y, float z, float* pOutWaterLevel, float* pOutBigWaves, float* pOutSmallWaves) {
+    const auto v0 = tri->GetVertex(0);
+    if (x < v0.x) {
+        return false;
+    }
+
+    const auto v1 = tri->GetVertex(1);
+    if (v1.x < x) {
+        return false;
+    }
+
+    const auto v2 = tri->GetVertex(2);
+    if (y < std::min(v0.y, v2.y) || y > std::max(v0.y, v2.y)) {
+        return false;
+    }
+
+    const auto tX = (x - v0.x) / (float)(v1.x - v0.x);
+    const auto tY = (y - v0.y) / (float)(v2.y - v0.y);
+
+    if (v0.x == v2.x) {
+        if (tX + tY > 1.0f) {
+            return false;
+        }
+        *pOutWaterLevel = (v1.rp.z - v0.rp.z) * tX + (v2.rp.z - v0.rp.z) * tY + v0.rp.z;
+        // NOTSA: unlike `TestQuadToGetWaterLevel`, the original always runs the depth check below even
+        // when `pOutBigWaves` is null - it just skips computing bigWaves/smallWaves, not the whole rest.
+        if (pOutBigWaves) {
+            *pOutBigWaves   = (v1.rp.bigWaves   - v0.rp.bigWaves)   * tX + (v2.rp.bigWaves   - v0.rp.bigWaves)   * tY + v0.rp.bigWaves;
+            *pOutSmallWaves = (v1.rp.smallWaves - v0.rp.smallWaves) * tX + (v2.rp.smallWaves - v0.rp.smallWaves) * tY + v0.rp.smallWaves;
+        }
+    } else {
+        if (tX < tY) {
+            return false;
+        }
+        const auto fX = 1.0f - tX;
+        *pOutWaterLevel = (v0.rp.z - v1.rp.z) * fX + (v2.rp.z - v1.rp.z) * tY + v1.rp.z;
+        if (pOutBigWaves) {
+            *pOutBigWaves   = (v0.rp.bigWaves   - v1.rp.bigWaves)   * fX + (v2.rp.bigWaves   - v1.rp.bigWaves)   * tY + v1.rp.bigWaves;
+            *pOutSmallWaves = (v0.rp.smallWaves - v1.rp.smallWaves) * fX + (v2.rp.smallWaves - v1.rp.smallWaves) * tY + v1.rp.smallWaves;
+        }
+    }
+
+    if (z >= *pOutWaterLevel - 6.0f || !tri->bLimitedDepth) {
+        return z <= *pOutWaterLevel + 20.0f;
+    }
+    return false;
+}
+
 // 0x6E8580
-bool CWaterLevel::GetWaterLevelNoWaves(CVector pos, float * pOutWaterLevel, float * pOutBigWaves, float * pOutSmallWaves) {
-    return plugin::CallAndReturn<bool, 0x6E8580, CVector, float *, float *, float *>(pos, pOutWaterLevel, pOutBigWaves, pOutSmallWaves);
+bool CWaterLevel::GetWaterLevelNoWaves(CVector pos, float* pOutWaterLevel, float* pOutBigWaves, float* pOutSmallWaves) {
+    const auto cellX = (int32)(pos.x * 0.002f + 6.0f);
+    const auto cellY = (int32)(pos.y * 0.002f + 6.0f);
+    if (cellX < 0 || cellX >= NUM_WATER_BLOCKS_ROWCOL || cellY < 0 || cellY >= NUM_WATER_BLOCKS_ROWCOL) {
+        if (pOutWaterLevel) {
+            *pOutWaterLevel = 0.0f;
+        }
+        if (pOutBigWaves) {
+            *pOutBigWaves = 1.0f;
+        }
+        if (pOutSmallWaves) {
+            *pOutSmallWaves = 0.0f;
+        }
+        return true;
+    }
+
+    const auto& info = m_BlockPolyInfo[cellX][cellY];
+    switch (info.Type()) {
+    case PolyInfo::PType::NONE:
+        return false;
+    case PolyInfo::PType::SINGLE_QUAD:
+        return TestQuadToGetWaterLevel(&WaterQuads[info.Id()], pos.x, pos.y, pos.z, pOutWaterLevel, pOutBigWaves, pOutSmallWaves);
+    case PolyInfo::PType::SINGLE_TRI:
+        return TestTriangleToGetWaterLevel(&WaterTriangles[info.Id()], pos.x, pos.y, pos.z, pOutWaterLevel, pOutBigWaves, pOutSmallWaves);
+    case PolyInfo::PType::COMBO:
+        if (m_PolyCombos[info.Id()].Type() == PolyInfo::PType::NONE) {
+            return false;
+        }
+        for (auto idx = info.Id();; idx++) {
+            const auto& p = m_PolyCombos[idx];
+            if (p.Type() == PolyInfo::PType::SINGLE_QUAD) {
+                if (TestQuadToGetWaterLevel(&WaterQuads[p.Id()], pos.x, pos.y, pos.z, pOutWaterLevel, pOutBigWaves, pOutSmallWaves)) {
+                    return true;
+                }
+            } else if (p.Type() == PolyInfo::PType::SINGLE_TRI) {
+                if (TestTriangleToGetWaterLevel(&WaterTriangles[p.Id()], pos.x, pos.y, pos.z, pOutWaterLevel, pOutBigWaves, pOutSmallWaves)) {
+                    return true;
+                }
+            }
+            if (m_PolyCombos[idx + 1].Type() == PolyInfo::PType::NONE) {
+                return false;
+            }
+        }
+    }
+    return false;
 }
 
 bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, float* pOutWaterLevel, float* pOutGroundLevel)

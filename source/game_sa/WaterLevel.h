@@ -265,7 +265,9 @@ public:
     static void SetUpWaterFog(int32 a1, int32 a2, int32 a3, int32 a4);
     static void RenderWakeSegment(const CVector2D& a1, const CVector2D& a2, const CVector2D& a3, const CVector2D& a4, const float& widthA, const float& widthB, const float& alphaA, const float& alphaB, const float& wakeZ);
     static void FindNearestWaterAndItsFlow();
-    static bool GetWaterLevelNoWaves(CVector pos, float * pOutWaterLevel, float * fUnkn1 = nullptr, float * fUnkn2 = nullptr);
+    static bool GetWaterLevelNoWaves(CVector pos, float* pOutWaterLevel, float* pOutBigWaves = nullptr, float* pOutSmallWaves = nullptr);
+    static bool TestQuadToGetWaterLevel(CWaterQuad* quad, float x, float y, float z, float* pOutWaterLevel, float* pOutBigWaves, float* pOutSmallWaves);
+    static bool TestTriangleToGetWaterLevel(CWaterTriangle* tri, float x, float y, float z, float* pOutWaterLevel, float* pOutBigWaves, float* pOutSmallWaves);
     static void RenderWaterFog();
     static void CalculateWavesOnlyForCoordinate(int32 x, int32 y, float bigWavesAmplitude, float smallWavesAmplitude, float& outWave, float& colorMult, float& glare, CVector& vecNormal);
     static void MarkQuadsAndPolysToBeRendered(int32 blockX, int32 blockY, bool isInInterior);
@@ -353,7 +355,5 @@ public:
     SplitWaterRectangleAlongXLine(int32, int32, int32, int32, int32, CRenPar, CRenPar, CRenPar, CRenPar)
     SplitWaterRectangleAlongYLine(int32, int32, int32, int32, int32, CRenPar, CRenPar, CRenPar, CRenPar)
     TestLineAgainstWater(CVector, CVector, CVector*)
-    TestQuadToGetWaterLevel(CWaterQuad*, float, float, float, float*, float*, float*)
-    TestTriangleToGetWaterLevel(CWaterTriangle*, float, float, float, float*, float*, float*)
     */
 };
