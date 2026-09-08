@@ -39,7 +39,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890);
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&), { .reversed = false });
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .reversed = false });
-    RH_ScopedInstall(GetNearestPed, 0x5F3590, { .reversed = false });
+    RH_ScopedInstall(GetNearestPed, 0x5F3590);
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970);
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
     RH_ScopedInstall(IsWanderPathClear, 0x5F2F70);
@@ -549,7 +549,22 @@ bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CVector& a1, const CVecto
 
 // 0x5F3590
 CPed* CPedGeometryAnalyser::GetNearestPed(const CVector& point) {
-    return plugin::CallAndReturn<CPed*, 0x5F3590, const CVector&>(point);
+    CPed* nearest    = nullptr;
+    auto  bestDistSq = FLT_MAX;
+
+    for (int32 i = GetPedPool()->GetSize() - 1; i >= 0; i--) {
+        const auto ped = GetPedPool()->GetAt(i);
+        if (!ped) {
+            continue;
+        }
+
+        if (const auto distSq = DistanceBetweenPointsSquared(point, ped->GetPosition()); distSq < bestDistSq) {
+            bestDistSq = distSq;
+            nearest    = ped;
+        }
+    }
+
+    return nearest;
 }
 
 // 0x5F3970
