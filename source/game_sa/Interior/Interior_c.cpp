@@ -13,7 +13,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(FurnishBedroom, 0x593FC0, { .reversed = false });
     RH_ScopedInstall(Kitchen_FurnishEdges, 0x596930, { .reversed = false });
     RH_ScopedInstall(FurnishKitchen, 0x5970B0, { .reversed = false });
-    RH_ScopedInstall(Lounge_AddTV, 0x597240, { .reversed = false });
+    RH_ScopedInstall(Lounge_AddTV, 0x597240);
     RH_ScopedInstall(Lounge_AddHifi, 0x597430);
     RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
     RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
@@ -103,8 +103,51 @@ void Interior_c::FurnishKitchen() {
 }
 
 // 0x597240
-CObject* Interior_c::Lounge_AddTV(int32 a2, int32 a3, int32 a4, int32 a5) {
-    return plugin::CallMethodAndReturn<CObject*, 0x597240, Interior_c*, int32, int32, int32, int32>(this, a2, a3, a4, a5);
+CObject* Interior_c::Lounge_AddTV(int32 side, int32, int32, int32) {
+    // NOTSA: `a3`/`a4`/`a5` are genuinely unused by the original (confirmed via raw disasm - only `side`
+    // is ever read from the stack), kept only so this matches the other `Lounge_AddX`-family signatures.
+    float pos1X, pos1Y, pos2X, pos2Y, blockX, blockY;
+    switch (side) {
+    case 0:
+        pos1X = TILE_SIZE;
+        pos2X = 1.5f;
+        pos1Y = pos2Y = (float)m_box->m_depth - TILE_SIZE;
+        blockX = 1.0f;
+        blockY = (float)m_box->m_depth - 2.0f;
+        break;
+    case 2:
+        pos1Y = pos2Y = TILE_SIZE;
+        pos1X = (float)m_box->m_width - TILE_SIZE;
+        pos2X = pos1X - 1.0f;
+        blockX = (float)m_box->m_width - 2.0f;
+        blockY = 1.0f;
+        break;
+    case 1:
+        pos1X = pos1Y = TILE_SIZE;
+        pos2X = TILE_SIZE;
+        pos2Y = 1.5f;
+        blockX = 1.0f;
+        blockY = 1.0f;
+        break;
+    default: // 3 (and, per the original's raw disasm, any other value too - but that reads uninitialised locals in the original, so this NOTSA default only covers the intended `side==3` case)
+        pos1X = pos2X = (float)m_box->m_width - TILE_SIZE;
+        pos1Y = (float)m_box->m_depth - TILE_SIZE;
+        pos2Y = pos1Y - 1.0f;
+        blockX = (float)m_box->m_width - 2.0f;
+        blockY = (float)m_box->m_depth - 2.0f;
+        break;
+    }
+
+    AddInteriorInfo(0, blockX, blockY, -1, nullptr);
+
+    const auto angle = (float)(side & 3) * 90.0f;
+
+    const auto tv = g_furnitureMan.GetFurniture(2, 3, -1, m_box->m_status);
+    PlaceObject(true, tv, pos1X, pos1Y, TILE_SIZE, angle + 45.0f);
+
+    const auto accessorySubGroup = (rand() < 0x3FFF) ? 7 : 9;
+    const auto accessory = g_furnitureMan.GetFurniture(2, accessorySubGroup, -1, m_box->m_status);
+    return PlaceObject(true, accessory, pos2X, pos2Y, TILE_SIZE, angle);
 }
 
 // 0x597430

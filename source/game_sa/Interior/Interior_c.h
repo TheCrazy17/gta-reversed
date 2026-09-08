@@ -67,7 +67,7 @@ public:
     void FurnishBedroom();
     CObject* Kitchen_FurnishEdges();
     void FurnishKitchen();
-    CObject* Lounge_AddTV(int32 a2, int32 a3, int32 a4, int32 a5);
+    CObject* Lounge_AddTV(int32 side, int32 a3, int32 a4, int32 a5); // NOTSA: a3/a4/a5 unused (confirmed via raw disasm), kept for signature parity with the other Lounge_AddX functions
     CObject* Lounge_AddHifi(int32 side, int32 x, int32 y, int32 angleIdx);
     void Lounge_AddChairInfo(int32 a2, int32 a3, CEntity* entityIgnoredCollision);
     void Lounge_AddSofaInfo(int32 sitType, int32 offsetX, CEntity* entityIgnoredCollision);
