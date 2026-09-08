@@ -30,7 +30,7 @@ void CTaskSimplePlayerOnFoot::InjectHooks() {
 
     RH_ScopedInstall(ProcessPlayerWeapon, 0x6859A0);
     RH_ScopedInstall(PlayIdleAnimations, 0x6872C0);
-    RH_ScopedInstall(PlayerControlFighter, 0x687530, {.reversed = false});
+    RH_ScopedInstall(PlayerControlFighter, 0x687530);
     RH_ScopedInstall(PlayerControlZelda, 0x6883D0);
 
     RH_ScopedVMTInstall(Clone, 0x68AFF0);
@@ -760,7 +760,124 @@ void CTaskSimplePlayerOnFoot::PlayIdleAnimations(CPlayerPed* player) {
 
 // 0x687530
 void CTaskSimplePlayerOnFoot::PlayerControlFighter(CPlayerPed* player) {
-    plugin::CallMethod<0x687530, CTaskSimplePlayerOnFoot*, CPlayerPed*>(this, player);
+    const auto fightTask = player->GetIntelligence()->GetTaskFighting();
+    if (!fightTask) {
+        return;
+    }
+
+    const auto weaponInfo = CWeaponInfo::GetWeaponInfo(player->GetActiveWeapon().m_Type, eWeaponSkill::STD);
+    const auto pad = player->GetPadFromPlayer();
+    CVector2D moveDir{ pad->GetPedWalkLeftRight() / 128.0f, pad->GetPedWalkUpDown() / 128.0f };
+
+    const auto step = CTimer::GetTimeStep() * 0.07f; // Max change per frame for the smoothed fight-movement vector below.
+
+    // Rotates `dir` (an analog-stick vector) by the camera-relative heading it represents, projected
+    // onto the ped's own right/forward axes. `checkAllowedDirection`: for the 2-player-controls case,
+    // the game gates the rotation behind CGameLogic::IsPlayerAllowedToGoInThisDirection(negSin,cosA).
+    const auto RotateByCameraRelativeAngle = [&](CVector2D dir, bool checkAllowedDirection) -> CVector2D {
+        const auto magnitude = dir.Magnitude();
+        if (magnitude <= 0.0f) {
+            return {};
+        }
+        const auto angle = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -dir.x, dir.y) - TheCamera.m_fOrientation);
+        const auto negSin = -std::sin(angle);
+        const auto cosA   = std::cos(angle);
+        if (checkAllowedDirection && !CGameLogic::IsPlayerAllowedToGoInThisDirection(player, { negSin, cosA, 0.0f }, 0.0f)) {
+            return {};
+        }
+        const auto& right = player->m_matrix->GetRight();
+        const auto& fwd   = player->m_matrix->GetForward();
+        return {
+            (negSin * right.x + cosA * right.y) * magnitude,
+            -((negSin * fwd.x + cosA * fwd.y) * magnitude)
+        };
+    };
+
+    if (CGameLogic::IsPlayerUse2PlayerControls(player)) {
+        moveDir = RotateByCameraRelativeAngle(moveDir, true);
+    } else if (player->m_pTargetedObject || (CCamera::m_bUseMouse3rdPerson && pad->GetTarget())) {
+        moveDir = RotateByCameraRelativeAngle(moveDir, false);
+    }
+
+    const auto playerData = player->GetPlayerData();
+
+    // Move `current` towards `target`, changing by at most `step` this frame.
+    const auto Approach = [](float current, float target, float step) {
+        const auto delta = target - current;
+        if (std::abs(delta) <= step) {
+            return target;
+        }
+        return delta <= 0.0f ? current - step : current + step;
+    };
+
+    // NOTSA: shared tail - picks a strafe/step fight move from the dominant axis of the smoothed
+    // fight-movement vector. IDs 3/4/5/6 are raw CTaskSimpleFight::ControlFight command values
+    // (ControlFight itself isn't reversed yet, so these aren't named).
+    const auto ControlFightTail = [&] {
+        if (std::abs(playerData->m_vecFightMovement.y) > 0.0f && std::abs(playerData->m_vecFightMovement.x) < std::abs(playerData->m_vecFightMovement.y)) {
+            fightTask->ControlFight(nullptr, playerData->m_vecFightMovement.y >= 0.0f ? 5 : 3);
+            return;
+        }
+        if (std::abs(playerData->m_vecFightMovement.x) > 0.0f) {
+            fightTask->ControlFight(nullptr, playerData->m_vecFightMovement.x > 0.0f ? 6 : 4);
+        }
+    };
+
+    if (player->m_pTargetedObject || (CCamera::m_bUseMouse3rdPerson && pad->GetTarget())) {
+        playerData->m_vecFightMovement.x = Approach(playerData->m_vecFightMovement.x, moveDir.x, step);
+        playerData->m_vecFightMovement.y = Approach(playerData->m_vecFightMovement.y, moveDir.y, step);
+
+        auto wantsAttack = pad->GetSprint() || weaponInfo->m_nWeaponFire != WEAPON_FIRE_MELEE;
+        if (player->m_pTargetedObject
+            && DistanceBetweenPointsSquared(player->m_pTargetedObject->GetPosition(), player->GetPosition()) > sq(4.0f)
+            && fightTask->m_nLastCommand < 11) {
+            wantsAttack = true;
+        }
+
+        if (wantsAttack) {
+            if (pad->GetSprint()) {
+                fightTask->ControlFight(nullptr, 0x11);
+                return;
+            }
+            fightTask->ControlFight(nullptr, moveDir.y >= -0.5f ? 0xf : 0x10);
+            return;
+        }
+        return ControlFightTail();
+    }
+
+    // No lock-on target: derive facing purely from the raw stick input, relative to the camera.
+    const auto rawStickAngle = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -(float)pad->GetPedWalkLeftRight(), (float)pad->GetPedWalkUpDown());
+    auto magnitude = moveDir.Magnitude();
+    if (magnitude > 1.0f) {
+        magnitude = 1.0f;
+    }
+    if (magnitude == 0.0f) {
+        playerData->m_vecFightMovement = {};
+    } else if (moveDir.y < 0.0f) {
+        playerData->m_vecFightMovement.y = Approach(playerData->m_vecFightMovement.y, -magnitude, step);
+        playerData->m_vecFightMovement.x = 0.0f;
+        player->m_fAimingRotation = CGeneral::LimitRadianAngle(rawStickAngle - TheCamera.m_fOrientation);
+    }
+
+    if (!player->m_pTargetedObject && moveDir.y < 0.0f && fightTask->m_nLastCommand < 11) {
+        m_nTimer += (int32)CTimer::GetTimeStepInMS();
+    } else {
+        m_nTimer = 0;
+    }
+
+    if (!pad->GetSprint() && !pad->GetDuck() && weaponInfo->m_nWeaponFire == WEAPON_FIRE_MELEE && moveDir.y <= 0.0f) {
+        if ((float)(uint32)m_nTimer < 2000.0f) {
+            return ControlFightTail();
+        }
+    }
+
+    if (pad->DuckJustDown() && CTaskSimpleDuck::CanPedDuck(player)) {
+        player->GetIntelligence()->SetTaskDuckSecondary(0);
+        fightTask->ControlFight(nullptr, 0x12);
+        return;
+    }
+
+    fightTask->ControlFight(nullptr, magnitude <= 0.5f ? 0xf : 0x10);
 }
 
 // 0x687C20
