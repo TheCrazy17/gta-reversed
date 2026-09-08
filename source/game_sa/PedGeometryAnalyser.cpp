@@ -7,7 +7,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedOverloadedInstall(CanPedJumpObstacle, "", 0x5F1B00, bool(*)(const CPed&,const CEntity&));
-    RH_ScopedOverloadedInstall(CanPedJumpObstacle, "contacted", 0x5F32D0, bool(*)(const CPed&,const CEntity&,const CVector&,const CVector&), { .reversed = false });
+    RH_ScopedOverloadedInstall(CanPedJumpObstacle, "contacted", 0x5F32D0, bool(*)(const CPed&,const CEntity&,const CVector&,const CVector&));
     RH_ScopedInstall(CanPedTargetPed, 0x5F1C40);
     RH_ScopedInstall(CanPedTargetPoint, 0x5F1B70);
     RH_ScopedInstall(ComputeBuildingHitPoints, 0x5F1E30);
@@ -41,7 +41,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .reversed = false });
     RH_ScopedInstall(GetNearestPed, 0x5F3590, { .reversed = false });
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970, { .reversed = false });
-    RH_ScopedInstall(IsInAir, 0x5F1CB0, { .reversed = false });
+    RH_ScopedInstall(IsInAir, 0x5F1CB0);
     RH_ScopedInstall(IsWanderPathClear, 0x5F2F70, { .reversed = false });
     RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880, { .reversed = false });
 }
@@ -56,7 +56,52 @@ bool CPedGeometryAnalyser::CanPedJumpObstacle(const CPed& ped, const CEntity& en
 
 // 0x5F32D0
 bool CPedGeometryAnalyser::CanPedJumpObstacle(const CPed& ped, const CEntity& entity, const CVector& contactNormal, const CVector& contactPos) {
-    return plugin::CallAndReturn<bool, 0x5F32D0, CPed const&, CEntity const&, CVector const&, CVector const&>(ped, entity, contactNormal, contactPos);
+    if (entity.m_bIsTempBuilding) {
+        return false;
+    }
+
+    if (g_surfaceInfos.IsShallowWater(ped.m_nContactSurface)) {
+        return true;
+    }
+
+    auto posn = ped.GetPosition();
+    auto offsetVec = ped.GetForward();
+
+    if (contactNormal.z <= 0.17f) {
+        if (!CPedGroups::IsInPlayersGroup(const_cast<CPed*>(&ped))) {
+            posn.z -= 0.15f;
+        }
+        // offsetVec stays as ped.GetForward()
+    } else {
+        if (contactNormal.z > 0.9f) {
+            return false;
+        }
+
+        const auto& sphere0 = ped.GetColModel()->GetData()->GetSpheres()[0];
+        posn.z += sphere0.m_vecCenter.z - sphere0.m_fRadius * contactNormal.z;
+
+        const auto horizMag = std::sqrt(contactNormal.y * contactNormal.y + contactNormal.x * contactNormal.x);
+
+        // NOTSA: the >0.5f branch's vector math was reconstructed by hand-tracing the x87 FPU stack
+        // across ~40 raw-disasm instructions - internally consistent, but not spot-checked in-game.
+        if (contactNormal.z <= 0.5f) {
+            offsetVec = offsetVec + offsetVec * horizMag * sphere0.m_fRadius;
+        } else {
+            auto v = CVector{ -contactNormal.x, -contactNormal.y, 0.0f } * (1.0f / horizMag);
+            offsetVec = offsetVec + v * horizMag * sphere0.m_fRadius;
+            offsetVec = offsetVec * std::min(2.0f / horizMag, 4.0f);
+        }
+    }
+
+    const auto testPoint = posn + offsetVec;
+    if (!CWorld::GetIsLineOfSightClear(posn, testPoint, true, false, false, true, false, false, false)) {
+        return false;
+    }
+
+    const auto scaledTestPoint = posn + offsetVec * 3.0f;
+    bool  foundGround{};
+    const auto groundZ = CWorld::FindGroundZFor3DCoord(scaledTestPoint, &foundGround, nullptr);
+    return foundGround && (scaledTestPoint.z - groundZ) < 3.0f;
 }
 
 // 0x5F1C40
@@ -316,7 +361,35 @@ bool CPedGeometryAnalyser::IsEntityBlockingTarget(CEntity* entity, const CVector
 
 // 0x5F1CB0
 bool CPedGeometryAnalyser::IsInAir(const CPed& ped) {
-    return plugin::CallAndReturn<bool, 0x5F1CB0, const CPed&>(ped);
+    if (ped.bInVehicle) {
+        return false;
+    }
+
+    auto& taskMgr = ped.GetTaskManager();
+    if (taskMgr.GetActiveTask()) {
+        if (ped.GetIntelligence()->GetTaskSwim())    { return false; }
+        if (ped.GetIntelligence()->GetTaskJetPack()) { return false; }
+        if (const auto* simplest = taskMgr.GetSimplestActiveTask(); simplest && simplest->GetTaskType() == TASK_SIMPLE_CLIMB) {
+            return false;
+        }
+    }
+
+    const auto* activeTask = taskMgr.GetActiveTask();
+    const auto  isComplexJumpTask = activeTask && activeTask->GetTaskType() == TASK_COMPLEX_JUMP;
+
+    const auto& posn = ped.GetPosition();
+
+    CColPoint colPoint{};
+    CEntity*  hitEntity{};
+    if (CWorld::ProcessVerticalLine(posn, posn.z - 1.5f, colPoint, hitEntity, true, true, false, true, false, false, nullptr)) {
+        return false;
+    }
+
+    if (isComplexJumpTask) {
+        return true;
+    }
+
+    return !CWorld::TestSphereAgainstWorld({ posn.x, posn.y, posn.z - 1.0f }, 0.15f, const_cast<CPed*>(&ped), true, false, false, false, false, false);
 }
 
 // 0x5F2F70
