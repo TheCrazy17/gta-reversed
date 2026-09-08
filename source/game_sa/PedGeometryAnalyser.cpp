@@ -37,7 +37,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "1", 0x5F6110, int32(*)(const CPed&,CEntity&,const CVector&,CPointRoute&,int32));
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32), { .reversed = false });
     RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890);
-    RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&), { .reversed = false });
+    RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&));
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .reversed = false });
     RH_ScopedInstall(GetNearestPed, 0x5F3590);
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970);
@@ -163,8 +163,6 @@ void CPedGeometryAnalyser::ComputeClearTarget(const CPed& ped, const CVector& ta
                 continue;
             }
 
-            // NOTSA: `GetIsLineOfSightClear` (0x5F5A30) is itself still unreversed - `distToHit` is
-            // whatever it writes to its `float&` out-param on a blocked test.
             float distToHit{};
             if (GetIsLineOfSightClear(ped, outTarget, *candidate, distToHit)) {
                 continue; // LOS clear - nothing to avoid
@@ -564,8 +562,64 @@ bool CPedGeometryAnalyser::ComputeRouteRoundSphere(const CPed& ped, const CColSp
 }
 
 // 0x5F5A30
-bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CPed& ped, const CVector& a2, CEntity& entity, float& a4) {
-    return plugin::CallAndReturn<bool, 0x5F5A30, const CPed&, const CVector&, CEntity&, float&>(ped, a2, entity, a4);
+bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CPed& ped, const CVector& target, CEntity& entity, float& outDist) {
+    static constexpr auto TOLERANCE = 0.35f;  // DAT_008d22b0 - dead-zone half-width around each plane for the inside/outside/on classification
+    static constexpr auto DENOM_EPS = 0.001f; // _DAT_00858cdc - guards the clip-parameter division against a near-parallel/zero denominator
+
+    auto segStart = ped.GetPosition();
+    auto segEnd   = target;
+
+    CColSphere sphere;
+    ComputeEntityBoundingSphere(ped, entity, sphere);
+
+    auto dir = segEnd - segStart;
+    dir.Normalise(); // Original calls NormaliseAndMag() and discards the returned pre-normalise length
+
+    CVector unusedNear{}, unusedFar{};
+    if (!sphere.IntersectRay(segStart, dir, unusedNear, unusedFar)) {
+        return true; // Doesn't even reach the (coarse) bounding sphere - can't reach the (tighter) box either
+    }
+
+    // NOTSA: `zPos` is `ped`'s position.z, not `entity`'s - a redundant re-derivation of `pedPos.z`
+    // (confirmed via raw disasm), matching the identical quirk in this file's `LiesInsideBoundingBox`/
+    // `ComputeMoveDirToAvoidEntity`.
+    const auto zPos = ped.GetPosition().z;
+
+    CVector corners[4];
+    ComputeEntityBoundingBoxCornersUncached(zPos, entity, corners);
+
+    CVector planes[4];
+    float   planesDot[4];
+    ComputeEntityBoundingBoxPlanesUncached(zPos, corners, &planes, planesDot);
+
+    outDist = 0.0f;
+
+    for (auto i = 0; i < 4; i++) {
+        const auto dStart = DotProduct(planes[i], segStart) + planesDot[i];
+        const auto dEnd   = DotProduct(planes[i], segEnd) + planesDot[i];
+
+        // -1 = clearly inside this face's half-space, 0 = within TOLERANCE of the plane ("on" it), +1 = clearly outside
+        const auto startSide = dStart > TOLERANCE ? 1 : (dStart < -TOLERANCE ? -1 : 0);
+        const auto endSide   = dEnd > TOLERANCE ? 1 : (dEnd < -TOLERANCE ? -1 : 0);
+
+        const auto denom = DotProduct(planes[i], dir);
+        const auto canClip = denom > DENOM_EPS;
+
+        if (startSide < 0) {
+            if (endSide > 0 && canClip) { // segStart inside, segEnd clearly outside -> pull segEnd back to the crossing point
+                segEnd = segStart + dir * ((-1.0f / denom) * dStart);
+            }
+        } else if (endSide >= 0) {
+            return true; // Both endpoints on/outside plane i - can't lie inside every plane's half-space at once, so not blocked
+        } else if (startSide == 1 && canClip) { // segStart clearly outside, segEnd inside -> pull segStart forward to the crossing point
+            segStart = segStart + dir * ((-1.0f / denom) * dStart);
+        }
+        // else: segStart "on" plane i (within TOLERANCE) and segEnd inside - no-op, matches the original's fallthrough
+    }
+
+    // The segment survived clipping against all 4 planes with a non-empty piece remaining inside - blocked.
+    outDist = (segEnd - segStart).Magnitude();
+    return false;
 }
 
 // 0x5F2F00

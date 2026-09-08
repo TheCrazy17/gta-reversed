@@ -68,7 +68,7 @@ public:
 
     static bool ComputeRouteRoundSphere(const CPed& ped, const CColSphere& sphere, const CVector& start, const CVector& target, CVector& newTarget, CVector& detourPoint);
 
-    static bool GetIsLineOfSightClear(const CPed& ped, const CVector& a2, CEntity& entity, float& a4);
+    static bool GetIsLineOfSightClear(const CPed& ped, const CVector& target, CEntity& entity, float& outDist);
     static bool GetIsLineOfSightClear(const CVector& a1, const CVector& a2, CEntity& a3);
     static CPed* GetNearestPed(const CVector& point);
 
