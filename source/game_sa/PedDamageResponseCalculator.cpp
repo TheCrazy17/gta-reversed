@@ -165,6 +165,13 @@ void CPedDamageResponseCalculator::ComputeWillKillPed(CPed* ped, CPedDamageRespo
 }
 
 /*!
+ * NOTSA CAUTION: 0x4B5C2A is code inlined inside `ComputeDamageResponse` (0x4B5AC0), not a
+ * standalone function - raw disasm shows it doesn't just return a bool, it also has a side effect
+ * (writes `ped->field_0x72f = 0xC8` when true) and falls straight through into the rest of
+ * `ComputeDamageResponse`'s body rather than returning. Do NOT flip this hook's `reversed` flag to
+ * enable it until `ComputeDamageResponse` itself is reversed and its own call site replicates that
+ * side effect/fallthrough - enabling this hook as-is would detour into the middle of the original
+ * `ComputeDamageResponse` and silently drop both the field write and everything after it.
  *
  * @param ped
  * @return
