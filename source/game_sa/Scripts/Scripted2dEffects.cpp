@@ -6,7 +6,7 @@ void CScripted2dEffects::InjectHooks() {
     RH_ScopedClass(CScripted2dEffects);
     RH_ScopedCategory("Scripts");
 
-    RH_ScopedInstall(Init, 0x6FA6F0, { .reversed = false });
+    RH_ScopedInstall(Init, 0x6FA6F0);
     RH_ScopedInstall(GetEffectPairs, 0x6FA840);
     RH_ScopedInstall(GetIndex, 0x6F9F60);
     RH_ScopedInstall(AddScripted2DEffect, 0x6FA7C0);
@@ -14,7 +14,6 @@ void CScripted2dEffects::InjectHooks() {
 }
 
 // 0x6FA6F0
-// FIXME: Makes game crash for some reason
 void CScripted2dEffects::Init() {
     for (auto i = 0u; i < NUM_SCRIPTED_2D_EFFECTS; i++) {
         ms_activated[i]             = false;
