@@ -18,7 +18,7 @@ public:
     float     m_fOffsetX;
     CVector   m_vecPosn;
     bool      m_bRemoveAnim;
-    bool      m_b31;
+    uint8     m_b31; // NOTSA: was `bool`, but ControlSubTask uses this as a 0-3 state, not a boolean
     CEntity*  m_pEntity;
     uint32    m_nTime;
     int32     dword3C;
