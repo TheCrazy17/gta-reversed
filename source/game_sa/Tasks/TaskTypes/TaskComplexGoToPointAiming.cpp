@@ -18,7 +18,7 @@ void CTaskComplexGoToPointAiming::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x668860);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x66DD70);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x66DDB0);
-    RH_ScopedVMTInstall(ControlSubTask, 0x6689E0, { .reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x6689E0);
 }
 
 // 0x668790
@@ -113,5 +113,37 @@ CTask* CTaskComplexGoToPointAiming::CreateFirstSubTask(CPed* ped) {
 
 // 0x6689E0
 CTask* CTaskComplexGoToPointAiming::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6689E0, CTaskComplexGoToPointAiming*, CPed*>(this, ped);
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_COMPLEX_GO_TO_POINT_AND_STAND_STILL: {
+        static_cast<CTaskComplexGoToPointAndStandStill*>(m_pSubTask)->GoToPoint(m_movePos, 0.5f, 2.0f, false);
+
+        const auto* const weaponInfo = CWeaponInfo::GetWeaponInfo(ped);
+        if (!weaponInfo->flags.bAimWithArm) {
+            break;
+        }
+
+        if (!ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_ATTACK)) {
+            ped->GetTaskManager().SetTaskSecondary(new CTaskSimpleUseGun(m_aimAtEntity, m_aimPos, eGunCommand::AIM, 1, false), TASK_SECONDARY_ATTACK);
+        } else if (const auto useGunTask = ped->GetIntelligence()->GetTaskUseGun()) {
+            const auto cmd = GetTaskType() == TASK_COMPLEX_GO_TO_POINT_SHOOTING && (rand() & 0x3F) == 0
+                ? eGunCommand::FIRE
+                : eGunCommand::AIM;
+            useGunTask->ControlGun(ped, m_aimAtEntity, cmd);
+        } else {
+            ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_ATTACK)->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr);
+        }
+        break;
+    }
+    case TASK_SIMPLE_GUN_CTRL: {
+        if (const auto useGunTask = ped->GetIntelligence()->GetTaskUseGun()) {
+            const CVector delta = m_movePos - ped->GetPosition();
+            const CVector2D moveDir{ delta.Dot(ped->GetRight()), -delta.Dot(ped->GetForward()) };
+            useGunTask->ControlGunMove(moveDir.SquaredMagnitude() > sq(m_moveTargetRadius) ? moveDir.Normalized() : CVector2D{ 0.f, 0.f });
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return m_pSubTask;
 }
