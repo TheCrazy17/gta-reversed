@@ -4733,6 +4733,11 @@ void CAutomobile::ProcessCarWheelPair(eCarWheel leftWheel, eCarWheel rightWheel,
         return;
     }
 
+    // FIX_BUGS candidate: every branch below that adjusts m_wheelSpeed (the -=0.1f/+=0.05f spin-up
+    // steps and the *=0.95f free-spin decay) is a flat per-frame constant with no
+    // CTimer::GetTimeStep() scaling, while the very next line (m_wheelRotation's update) correctly
+    // scales by CTimer::GetTimeStep() - at high framerates these off-ground wheel-spin adjustments
+    // apply many more times per real-world second than intended.
     if (m_WheelCounts[leftWheel] <= 0.0f) {
         if (driveWheels && acceleration != 0.0f) {
             if (acceleration > 0.0f) {

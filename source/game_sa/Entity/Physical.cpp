@@ -1438,6 +1438,11 @@ void CPhysical::ApplyAirResistance()
         }
 
         m_vecMoveSpeed *= pow(1.0f - fSpeedMagnitude, CTimer::GetTimeStep());
+        // FIX_BUGS candidate: unlike m_vecMoveSpeed right above (and unlike this same field in the
+        // `else` branch below, both of which use pow(base, CTimer::GetTimeStep())), this is a flat
+        // per-frame multiply with no timestep scaling - at high framerates m_vecTurnSpeed decays much
+        // faster than intended (this branch runs for all vehicles and any object with low air
+        // resistance), which can contribute to high-FPS instability/wobble.
         m_vecTurnSpeed *= 0.99f;
     }
     else

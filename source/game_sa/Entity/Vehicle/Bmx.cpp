@@ -399,6 +399,10 @@ void CBmx::PreRender() {
             if (ratio > 0.0f) {
                 targetZ -= ratio * m_fSuspensionLength[0];
             }
+            // FIX_BUGS candidate: this is a fixed-ratio approach-toward-target blend with no
+            // CTimer::GetTimeStep() scaling - at high framerates the suspension height snaps toward
+            // targetZ much faster than at low framerates instead of smoothing at a consistent
+            // real-world rate, which could contribute to the reported high-FPS bike wobble.
             m_aWheelSuspensionHeights[0] += (targetZ - m_aWheelSuspensionHeights[0]) * 0.75f;
         }
         {
@@ -409,6 +413,7 @@ void CBmx::PreRender() {
             if (ratio > 0.0f) {
                 targetZ -= ratio * m_fSuspensionLength[2];
             }
+            // FIX_BUGS candidate: same unscaled per-frame approach-toward-target blend as above.
             m_aWheelSuspensionHeights[1] += (targetZ - m_aWheelSuspensionHeights[1]) * 0.75f;
         }
     }
