@@ -206,7 +206,7 @@ public:
     static void InjectHooks();
 
     static void Shutdown();
-    static void AddWaveToResult(float x, float y, float* pfWaterLevel, float fUnkn1, float fUnkn2, CVector* pVecNormal);
+    static void AddWaveToResult(float x, float y, float* pfWaterLevel, float bigWavesAmpl, float smallWavesAmpl, CVector* pVecNormal);
     static void RenderWaterTriangle(int32 a1, int32 a2, CRenPar a3, int32 a4, int32 a5, CRenPar a6, int32 a7, int32 a8, CRenPar a9);
 
     // NOTSA
@@ -311,8 +311,6 @@ public:
     static void UpdateFlow();
 
     /* Missing (In no particular order):
-    static void AddWaveToResult(float x, float y, float z, float* pLevel, uint8 bTouchingWater, CVector* normalVec);
-    AddWaveToResult(int32, int32, float*, float, float)
     BlockHit(int32, int32)
     CalculateWavesForCoordinate(int32, int32, float, float, float*, float*, float*, CVector*)
     ChangeWaterConfiguration(int32)

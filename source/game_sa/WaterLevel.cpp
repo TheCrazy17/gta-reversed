@@ -49,7 +49,7 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(RenderWaterFog, 0x6E7760, { .reversed = false });
     RH_ScopedGlobalInstall(CalculateWavesOnlyForCoordinate, 0x6E6EF0);
     RH_ScopedGlobalInstall(RenderWater, 0x6EF650, { .reversed = false });
-    RH_ScopedGlobalInstall(AddWaveToResult, 0x6E81E0, { .reversed = false });
+    RH_ScopedGlobalInstall(AddWaveToResult, 0x6E81E0);
     RH_ScopedGlobalInstall(SetCameraRange, 0x6E9C80);
 }
 
@@ -192,9 +192,49 @@ void CWaterLevel::Shutdown() {
 }
 
 // 0x6E81E0
-void CWaterLevel::AddWaveToResult(float x, float y, float* pfWaterLevel, float fUnkn1, float fUnkn2, CVector* pVecNormal)
-{
-    plugin::Call<0x6E81E0, float, float, float*, float, float, CVector*>(x, y, pfWaterLevel, fUnkn1, fUnkn2, pVecNormal);
+void CWaterLevel::AddWaveToResult(float x, float y, float* pfWaterLevel, float bigWavesAmpl, float smallWavesAmpl, CVector* pVecNormal) {
+    const auto halfX  = x * 0.5f;
+    const auto floorX = std::floor(halfX);
+    const auto fracX  = halfX - floorX;
+    const auto cellX  = (int32)floorX;
+
+    const auto halfY  = y * 0.5f;
+    const auto floorY = std::floor(halfY);
+    const auto fracY  = halfY - floorY;
+    const auto cellY  = (int32)floorY;
+
+    float h0{}, h1{}, h2{};
+    if (fracX + fracY < 1.0f) {
+        CalculateWavesOnlyForCoordinate2(cellX,     cellY,     &h0, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY,     &h1, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX,     cellY + 2, &h2, bigWavesAmpl, smallWavesAmpl);
+
+        const auto dzX = h1 - h0;
+        const auto dzY = h2 - h0;
+        *pfWaterLevel += h0 + dzY * fracY + dzX * fracX;
+
+        if (pVecNormal) {
+            const CVector tangentA{2.0f, 0.0f, dzX};
+            const CVector tangentB{0.0f, 2.0f, dzY};
+            *pVecNormal = CrossProduct(tangentA, tangentB);
+            pVecNormal->Normalise();
+        }
+    } else {
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY + 2, &h0, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX,     cellY + 2, &h1, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY,     &h2, bigWavesAmpl, smallWavesAmpl);
+
+        const auto dz1 = h2 - h0; // (cellX+2,cellY) relative to the (cellX+2,cellY+2) corner
+        const auto dz2 = h1 - h0; // (cellX,cellY+2) relative to the (cellX+2,cellY+2) corner
+        *pfWaterLevel += h0 + (1.0f - fracX) * dz1 + (1.0f - fracY) * dz2;
+
+        if (pVecNormal) {
+            const CVector tangentA{-2.0f, 0.0f, dz2};
+            const CVector tangentB{0.0f, -2.0f, dz1};
+            *pVecNormal = CrossProduct(tangentA, tangentB);
+            pVecNormal->Normalise();
+        }
+    }
 }
 
 // 0x6EE240
