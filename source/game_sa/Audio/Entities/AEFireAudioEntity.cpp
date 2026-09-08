@@ -151,6 +151,7 @@ void CAEFireAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
     case AE_FRONTEND_HIGHLIGHT:
         if (m_FxSystem && m_FxSystem->GetPlayStatus() == eFxSystemPlayStatus::FX_STOPPED) {
             if (sound->m_Volume > -100.0f) {
+                // FIX_BUGS candidate: same unscaled per-frame volume ramp as the other 2 cases above.
                 sound->m_Volume -= 1.0f;
             }
         }
