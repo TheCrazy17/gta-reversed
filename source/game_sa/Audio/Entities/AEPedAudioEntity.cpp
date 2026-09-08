@@ -352,7 +352,7 @@ void CAEPedAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
                 m_LastSwimWakeTriggerTimeMs = 0;
                 return;
             }
-            sound->m_Volume = std::max(sound->m_Volume - 0.6f, vol);
+            sound->m_Volume = std::max(sound->m_Volume - 0.6f, vol); // TODO: Use TimeStep
         }
 
         return;

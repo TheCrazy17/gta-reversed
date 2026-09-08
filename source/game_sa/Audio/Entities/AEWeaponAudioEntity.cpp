@@ -838,7 +838,7 @@ void CAEWeaponAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
     switch (sound->m_Event) {
     case AE_WEAPON_SOUND_CAT_TAIL: { // 0x504BAA
         if (!CGame::CanSeeOutSideFromCurrArea()) {
-            sound->m_Volume -= 1.f;
+            sound->m_Volume -= 1.f; // TODO: Use TimeStep
         }
         break;
     }
@@ -895,7 +895,7 @@ void CAEWeaponAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
             if (sound->m_Volume <= -30.0) {
                 sound->StopSoundAndForget();
             } else {
-                sound->m_Volume -= 1.5f;
+                sound->m_Volume -= 1.5f; // TODO: Use TimeStep
             }
         }
         break;

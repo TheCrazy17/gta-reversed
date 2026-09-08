@@ -76,7 +76,7 @@ void CAEExplosionAudioEntity::AddAudioEvent(eAudioEvents audioEvent, CVector& po
 void CAEExplosionAudioEntity::UpdateParameters(CAESound* sound, int16 curPlayPos) {
     if (curPlayPos > 0) {
         if (sound->m_Volume > 0.0f) {
-            sound->m_Volume = std::max(sound->m_Volume - 1.0f, 0.0f);
+            sound->m_Volume = std::max(sound->m_Volume - 1.0f, 0.0f); // TODO: Use TimeStep
         }
     }
 }
