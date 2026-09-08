@@ -76,8 +76,8 @@ public:
     int32 Office_PlaceDesk(int32 a3, int32 arg4, int32 offsetY, int32 a5, uint8 a6, int32 b);
     int32 Office_PlaceEdgeDesks(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6);
     void Office_FurnishEdges();
-    int32 Office_PlaceDeskQuad(int32 a2, int32 a3, int32 a4, int32 a5);
-    int32 Office_FurnishCenter();
+    int32 Office_PlaceDeskQuad(int32 unused, int32 centerX, int32 centerY, int32 deskFurnitureId);
+    void Office_FurnishCenter();
     void FurnishOffice();
     int8 Shop_Place3PieceUnit(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6);
     int32 Shop_PlaceEdgeUnits(int32 a2, int32 a3, int32 a4, int32 a5);
@@ -108,7 +108,7 @@ public:
     void FindBoundingBox(int32, int32, int32*, int32*, int32*, int32*, int32*);
     void CalcExitPts();
     bool IsVisible();
-    void PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9);
+    CObject* PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9);
     void PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10, int32* a11,
                               int32* a12, int32* a13, int32* a14, int32* a15);
     void PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11, int32* a12,

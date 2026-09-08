@@ -22,8 +22,8 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Office_PlaceDesk, 0x5993E0, { .reversed = false });
     RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0, { .reversed = false });
     RH_ScopedInstall(Office_FurnishEdges, 0x599770, { .reversed = false });
-    RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960, { .reversed = false });
-    RH_ScopedInstall(Office_FurnishCenter, 0x599A30, { .reversed = false });
+    RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960);
+    RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
     RH_ScopedInstall(FurnishOffice, 0x599AF0, { .reversed = false });
     RH_ScopedInstall(Shop_Place3PieceUnit, 0x599BB0, { .reversed = false });
     RH_ScopedInstall(Shop_PlaceEdgeUnits, 0x599DC0, { .reversed = false });
@@ -234,13 +234,36 @@ void Interior_c::Office_FurnishEdges() {
 }
 
 // 0x599960
-int32 Interior_c::Office_PlaceDeskQuad(int32 a2, int32 a3, int32 a4, int32 a5) {
-    return plugin::CallMethodAndReturn<int32, 0x599960, Interior_c*, int32, int32, int32, int32>(this, a2, a3, a4, a5);
+int32 Interior_c::Office_PlaceDeskQuad(int32 unused, int32 centerX, int32 centerY, int32 deskFurnitureId) {
+    const auto y = centerY - 2;
+    Office_PlaceDesk(centerX, y, 2, 0x46, 0, deskFurnitureId);
+    Office_PlaceDesk(centerX, centerY, 0, 0x46, 0, deskFurnitureId);
+    Office_PlaceDesk(centerX - 2, centerY, 0, 0x46, 0, deskFurnitureId);
+    Office_PlaceDesk(centerX - 2, y, 2, 0x46, 0, deskFurnitureId);
+    SetTilesStatus(centerX - 3, centerY - 3, 6, 1, 3, false);
+    SetTilesStatus(centerX - 3, centerY + 2, 6, 1, 3, false);
+    SetTilesStatus(centerX - 3, y, 1, 4, 3, false);
+    SetTilesStatus(centerX + 2, y, 1, 4, 3, false);
+    return 6;
 }
 
 // 0x599A30
-int32 Interior_c::Office_FurnishCenter() {
-    return plugin::CallMethodAndReturn<int32, 0x599A30, Interior_c*>(this);
+void Interior_c::Office_FurnishCenter() {
+    const auto cols = (m_box->m_width - 6) / 6;
+    const auto rows = (m_box->m_depth - 6) / 6;
+    if (m_box->m_width - 6 <= 0 || m_box->m_depth - 6 <= 0 || cols <= 0) {
+        return;
+    }
+
+    auto centerX = ((m_box->m_width - 6) % 6) / 2;
+    for (auto col = cols; col > 0; col--) {
+        centerX += 6;
+        auto centerY = ((m_box->m_depth - 6) % 6) / 2 + 6;
+        for (auto row = rows; row > 0; row--) {
+            Office_PlaceDeskQuad(-1, centerX, centerY, m_furnitureId);
+            centerY += 6;
+        }
+    }
 }
 
 // 0x599AF0
@@ -654,8 +677,10 @@ bool Interior_c::IsVisible() {
 }
 
 // 0x592AA0
-void Interior_c::PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9) {
-    plugin::CallMethod<0x592AA0, Interior_c*, Furniture_c*, int32, int32, float, int32, int32, int32*, int32*, uint8>(this, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+// NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows
+// callers TEST/JZ on EAX and pass the result straight into AddInteriorInfo's CEntity* param).
+CObject* Interior_c::PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9) {
+    return plugin::CallMethodAndReturn<CObject*, 0x592AA0, Interior_c*, Furniture_c*, int32, int32, float, int32, int32, int32*, int32*, uint8>(this, a1, a2, a3, a4, a5, a6, a7, a8, a9);
 }
 
 // 0x593120
