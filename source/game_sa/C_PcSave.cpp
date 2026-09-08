@@ -13,9 +13,8 @@ void C_PcSave::InjectHooks() {
     RH_ScopedClass(C_PcSave);
     RH_ScopedCategoryGlobal();
 
-    // See note in CGenericGameStorage::InjectHooks as to why GenerateGameFilename is unhooked by default
     RH_ScopedInstall(SetSaveDirectory, 0x619040);
-    RH_ScopedInstall(GenerateGameFilename, 0x6190A0, { .reversed = false }); // bad
+    RH_ScopedInstall(GenerateGameFilename, 0x6190A0);
     RH_ScopedInstall(PopulateSlotInfo, 0x619140);
     RH_ScopedInstall(SaveSlot, 0x619060);
     RH_ScopedInstall(DeleteSlot, 0x6190D0);
@@ -30,8 +29,12 @@ void C_PcSave::SetSaveDirectory(const char* path) {
 void C_PcSave::GenerateGameFilename(int32 slot, char* out) {
     assert(slot < MAX_SAVEGAME_SLOTS);
 
-    const auto maxSize = std::size(DefaultPCSaveFileName) + std::size(std::to_string(MAX_SAVEGAME_SLOTS)) + std::size(".b") - 2u;
-    sprintf_s(out, maxSize, "%s%i%s", DefaultPCSaveFileName, slot + 1, ".b");
+    // NOTSA: `out` is type-erased, so we can't deduce its real capacity here - the original code just used
+    // an unbounded sprintf(). Bound it to the smallest buffer any caller actually passes in
+    // (CGenericGameStorage::ms_LoadFileNameWithPath, 104 bytes) so sprintf_s's size claim can never exceed
+    // the real destination buffer (the old `std::size(DefaultPCSaveFileName) + ...` formula could claim up
+    // to 262 bytes, overflowing that 104-byte buffer for long save-directory paths).
+    sprintf_s(out, std::size(CGenericGameStorage::ms_LoadFileNameWithPath), "%s%i%s", DefaultPCSaveFileName, slot + 1, ".b");
 }
 
 // 0x619140
