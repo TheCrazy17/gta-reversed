@@ -27,7 +27,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeEntityBoundingBoxSegmentPlanesUncachedAll, 0x5F2BC0);
     RH_ScopedInstall(ComputeEntityBoundingSphere, 0x5F3C20, { .reversed = false });
     RH_ScopedInstall(ComputeMoveDirToAvoidEntity, 0x5F3730, { .reversed = false });
-    RH_ScopedInstall(ComputeEntityDirs, 0x5F1500, { .reversed = false });
+    RH_ScopedInstall(ComputeEntityDirs, 0x5F1500);
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "1", 0x5F3BC0, int32 (*)(const CPed& ped, CEntity& entity), {.reversed = false});
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point1, const CVector* point2, const float* x), {.reversed = false});
     RH_ScopedOverloadedInstall(ComputeEntityHitSide, "3", 0x5F3AC0, int32 (*)(const CVector& point, CEntity& entity), {.reversed = false});
@@ -235,7 +235,18 @@ CVector CPedGeometryAnalyser::ComputeEntityDir(const CEntity& entity, eDirection
 
 // 0x5F1500
 CVector* CPedGeometryAnalyser::ComputeEntityDirs(const CEntity& entity, CVector* posn) {
-    return plugin::CallAndReturn<CVector*, 0x5F1500, const CEntity&, CVector*>(entity, posn);
+    const auto fwd = entity.m_matrix
+        ? entity.m_matrix->GetForward()
+        : CVector{ -std::sin(entity.m_placement.m_fHeading), std::cos(entity.m_placement.m_fHeading), 0.0f };
+    const auto right = entity.m_matrix
+        ? entity.m_matrix->GetRight()
+        : CVector{ std::cos(entity.m_placement.m_fHeading), std::sin(entity.m_placement.m_fHeading), 0.0f };
+
+    posn[0] = fwd;
+    posn[1] = -right;
+    posn[2] = -fwd;
+    posn[3] = right;
+    return posn;
 }
 
 // 0x5F3BC0
