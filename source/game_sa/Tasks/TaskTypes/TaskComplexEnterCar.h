@@ -31,6 +31,8 @@ public:
 
     auto GetTargetCar() const { return m_Car; }
     void SetMoveState(eMoveState ms) { m_MoveState = ms; }
+    bool GetQuitAfterOpeningDoor() const { return m_bQuitAfterOpeningDoor; }
+    bool GetQuitAfterDraggingPedOut() const { return m_bQuitAfterDraggingPedOut; }
 protected:
     virtual CTask* CreateNextSubTask_AfterSimpleCarAlign(CPed* ped);
 

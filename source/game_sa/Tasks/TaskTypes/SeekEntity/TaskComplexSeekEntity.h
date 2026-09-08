@@ -119,6 +119,12 @@ public:
         CEntity::SafeCleanUpRef(m_entityToSeek);
     }
 
+    // NOTSA: exposes `m_bAchievedSeekEntity` for cross-class access (see `CTaskComplexArrestPed::
+    // CreateNextSubTask`, which safely knows the concrete type is `CTaskComplexSeekEntityStandard`
+    // whenever `GetTaskType() == TASK_COMPLEX_SEEK_ENTITY`, since that's the only type `CreateSubTask`
+    // ever constructs for that task type project-wide)
+    bool IsAchievedSeekEntity() const { return m_bAchievedSeekEntity; }
+
     CTask* CreateSubTask(eTaskType type, CPed* ped) {
         switch (type) {
         case TASK_FINISHED:

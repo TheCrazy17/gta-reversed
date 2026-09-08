@@ -23,7 +23,7 @@ void CTaskComplexArrestPed::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x68B990);
     RH_ScopedInstall(Destructor, 0x68BA00);
     RH_ScopedVMTInstall(MakeAbortable, 0x68BA60);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x690220, { .reversed = false });
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x690220);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6907A0);
     RH_ScopedVMTInstall(ControlSubTask, 0x68D350);
     RH_ScopedInstall(CreateSubTask, 0x68CF80);
@@ -48,11 +48,124 @@ bool CTaskComplexArrestPed::MakeAbortable(CPed* ped, eAbortPriority priority, co
     return m_pSubTask->MakeAbortable(ped, priority, event);
 }
 
-// 0x690220 See #gists in discord
-
-
+// 0x690220
 CTask* CTaskComplexArrestPed::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x690220, CTaskComplexArrestPed*, CPed*>(this, ped);
+    if (!m_PedToArrest) {
+        return CreateSubTask(TASK_FINISHED, ped);
+    }
+
+    // If the target has already been cuffed, only a seek-then-arrest chain matters - override
+    // whatever the sub-task's own logic would otherwise decide.
+    if (m_PedToArrest->bIsBeingArrested && m_pSubTask->GetTaskType() != TASK_SIMPLE_ARREST_PED) {
+        if (m_pSubTask->GetTaskType() != TASK_COMPLEX_SEEK_ENTITY) {
+            return CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+        }
+        if (!static_cast<CTaskComplexSeekEntityStandard*>(m_pSubTask)->IsAchievedSeekEntity()) {
+            return CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+        }
+        return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+    }
+
+    // Shared by the SEEK_ENTITY/DRAG_PED_FROM_CAR cases below: if the target is falling and close
+    // enough to `ped`, tell the fall task to get up soon and switch straight to arresting them.
+    const auto TryFinishViaFallAndGetUp = [&]() -> CTask* {
+        const auto fallTask = static_cast<CTaskComplexFallAndGetUp*>(m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_FALL_AND_GET_UP));
+        if (!fallTask || !fallTask->IsFalling()) {
+            return nullptr;
+        }
+        const auto dir = ped->GetPosition() - m_PedToArrest->GetPosition();
+        if (std::abs(dir.z) > 2.f || dir.SquaredMagnitude() > sq(3.0f)) {
+            return nullptr;
+        }
+        fallTask->SetDownTime(100'000);
+        return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+    };
+
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_COMPLEX_DRAG_PED_FROM_CAR:
+        if (!static_cast<CTaskComplexEnterCar*>(m_pSubTask)->GetQuitAfterDraggingPedOut()) {
+            if (const auto result = TryFinishViaFallAndGetUp()) {
+                return result;
+            }
+        }
+        break;
+
+    case TASK_COMPLEX_CAR_OPEN_DRIVER_DOOR:
+    case TASK_COMPLEX_CAR_OPEN_PASSENGER_DOOR: {
+        auto* const enterCarTask = static_cast<CTaskComplexEnterCar*>(m_pSubTask);
+
+        if (enterCarTask->GetQuitAfterOpeningDoor() && m_PedToArrest->m_pVehicle && !m_PedToArrest->m_pVehicle->CanPedOpenLocks(ped)) {
+            m_Vehicle = m_PedToArrest->m_pVehicle;
+        }
+
+        if (!m_PedToArrest->IsAlive()) {
+            return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+        }
+
+        // NOTSA: `m_PedToArrest`'s flags dword at +0x46C (bit 0x100) hasn't been identified/named
+        // elsewhere in this codebase yet - verified directly via raw disassembly at 0x690341/0x6903d5.
+        if ((*reinterpret_cast<uint32*>(reinterpret_cast<char*>(m_PedToArrest) + 0x46C) & 0x100) && !enterCarTask->GetQuitAfterOpeningDoor()) {
+            if (m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR)) {
+                return CreateSubTask(TASK_COMPLEX_KILL_PED_ON_FOOT, ped);
+            }
+            return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+        }
+        break;
+    }
+
+    case TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR:
+        break;
+
+    case TASK_COMPLEX_SEEK_ENTITY:
+        if (static_cast<CTaskComplexSeekEntityStandard*>(m_pSubTask)->IsAchievedSeekEntity()) {
+            if (const auto result = TryFinishViaFallAndGetUp()) {
+                return result;
+            }
+        }
+        break;
+
+    case TASK_COMPLEX_DESTROY_CAR:
+        return CreateSubTask(TASK_FINISHED, ped);
+
+    case TASK_SIMPLE_ARREST_PED:
+        return CreateSubTask(TASK_FINISHED, ped);
+
+    case TASK_COMPLEX_KILL_PED_ON_FOOT: {
+        // NOTSA: `m_PedToArrest`+0x540 (float) hasn't been identified/named elsewhere in this
+        // codebase yet - verified directly via raw disassembly at 0x6904b0.
+        if (!(*reinterpret_cast<float*>(reinterpret_cast<char*>(m_PedToArrest) + 0x540) > 0.f)) {
+            return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+        }
+
+        const auto fallTask = static_cast<CTaskComplexFallAndGetUp*>(m_PedToArrest->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_FALL_AND_GET_UP));
+        if (fallTask && fallTask->IsFalling()) {
+            const auto dir = ped->GetPosition() - m_PedToArrest->GetPosition();
+            if (std::abs(dir.z) > 2.f || dir.SquaredMagnitude() > sq(3.0f)) {
+                return CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+            }
+            fallTask->SetDownTime(100'000);
+            return CreateSubTask(TASK_SIMPLE_ARREST_PED, ped);
+        }
+
+        // NOTSA: `m_PedToArrest`+0x598 (int32, compared against `ePedState::PEDSTATE_SEEK_POSITION`
+        // = 6) and +0x480 (a pointer chain, +0x18 byte checked on the final object) haven't been
+        // identified/named elsewhere in this codebase yet - verified directly via raw disassembly
+        // at 0x690597/0x6905c7.
+        if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(m_PedToArrest) + 0x598) != PEDSTATE_SEEK_POSITION && ped->IsPlayer()) {
+            const auto p = *reinterpret_cast<void***>(reinterpret_cast<char*>(m_PedToArrest) + 0x480);
+            const auto obj = p ? *p : nullptr;
+            if (obj && *(reinterpret_cast<char*>(obj) + 0x18) != 0) {
+                return CreateSubTask(TASK_FINISHED, ped);
+            }
+        }
+        break;
+    }
+
+    default:
+        return nullptr;
+    }
+
+    return CreateSubTask(TASK_COMPLEX_KILL_PED_ON_FOOT, ped);
 }
 
 // NOTSA
