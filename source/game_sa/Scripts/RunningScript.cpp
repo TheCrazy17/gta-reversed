@@ -1,6 +1,7 @@
 #include "StdInc.h"
 #include "Collision/Box.h"
 #include <extensions/Shapes/AngledRect.hpp>
+#include "Tasks/TaskTypes/TaskSimpleFinishBrain.h"
 
 #include "RunningScript.h"
 #include "TheScripts.h"
@@ -77,7 +78,7 @@ void CRunningScript::InjectHooks() {
     RH_ScopedInstall(SetCharCoordinates, 0x464DC0);
     RH_ScopedInstall(AddScriptToList, 0x464C00, { .stackArguments = 1 });
     RH_ScopedInstall(RemoveScriptFromList, 0x464BD0, { .stackArguments = 1 });
-    RH_ScopedInstall(ShutdownThisScript, 0x465AA0, { .reversed = false });
+    RH_ScopedInstall(ShutdownThisScript, 0x465AA0);
     RH_ScopedInstall(IsPedDead, 0x464D70);
     RH_ScopedInstall(ThisIsAValidRandomPed, 0x489490);
     RH_ScopedInstall(ScriptTaskPickUpObject, 0x46AF50, { .reversed = false });
@@ -207,31 +208,42 @@ void CRunningScript::RemoveScriptFromList(CRunningScript** queueList) {
  * @addr 0x465AA0
  */
 void CRunningScript::ShutdownThisScript() {
-    return plugin::CallMethod<0x465AA0>(this);
-    /*
-    if (m_bIsExternal) {
-        const auto idx = CTheScripts::StreamedScripts.GetStreamedScriptWithThisStartAddress(m_pBaseIP);
-        CTheScripts::StreamedScripts.m_aScripts[idx].Status--;
+    m_IsActive = false;
+
+    if (m_IsExternal) {
+        const auto idx = CTheScripts::StreamedScripts.GetStreamedScriptWithThisStartAddress(m_BaseIP);
+        CTheScripts::StreamedScripts.m_aScripts[idx].m_NumberOfUsers--;
     }
 
-    switch (m_nExternalType) {
+    switch (m_ExternalType) {
     case 0:
     case 2:
     case 3:
     case 5: {
-        const auto pedRef = m_bIsMission
-            ? CTheScripts::LocalVariablesForCurrentMission.front().iParam
-            : m_aLocalVars[0].iParam;
-        if (const auto ped = GetPedPool()->GetAtRef(pedRef)) {
+        const int32 pedRef = m_ThisMustBeTheOnlyMissionRunning
+            ? CTheScripts::LocalVariablesForCurrentMission[0].iParam
+            : m_LocalVars[0].iParam;
+        if (CPed* ped = GetPedPool()->GetAtRef(pedRef)) {
             ped->bHasAScriptBrain = false;
-            if (m_nExternalType == 5) {
+            if (m_ExternalType == 5) {
                 CScriptedBrainTaskStore::SetTask(ped, new CTaskSimpleFinishBrain{});
             }
         }
         break;
     }
+    case 1:
+    case 4: {
+        const int32 objRef = m_ThisMustBeTheOnlyMissionRunning
+            ? CTheScripts::LocalVariablesForCurrentMission[0].iParam
+            : m_LocalVars[0].iParam;
+        if (CObject* obj = GetObjectPool()->GetAtRef(objRef)) {
+            obj->objectFlags.b0x100000_0x200000 = 1; // matches TheScripts.cpp's ProcessScriptsForBrains, which reacts to this state
+        }
+        break;
     }
-    */
+    default:
+        break;
+    }
 }
 
 // 0x465C20
