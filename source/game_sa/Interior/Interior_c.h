@@ -7,6 +7,7 @@
 #include "Vector.h"
 #include "NodeAddress.h"
 #include "InteriorInfo_t.h"
+#include "InteriorGotoPoint_t.h"
 #include "List_c.h"
 #include "ListItem_c.h"
 #include "FurnitureEntity_c.h"
@@ -34,18 +35,11 @@ public:
     int32             field_3F8;            // 0x3F8
     int32             field_3FC;            // 0x3FC
     CVector           m_position;           // 0x400
-    int8              field_40C;            // 0x40C
+    int8              m_gotoPointCount;     // 0x40C - count of valid entries in m_gotoPoints, capped at 16 (see AddGotoPt)
     int8              m_interiorInfosCount; // 0x40D
-    int32             field_412;            // 0x412
-    int32             field_416;            // 0x416
-    int32             field_41A;            // 0x41A
-    int32             field_41E;            // 0x41E
-    int32             field_422;            // 0x422
-    int32             field_426;            // 0x426
-    int32             field_42A;            // 0x42A
-    int32             field_42E;            // 0x42E
-    int32             field_432;            // 0x432
-    char              gap436[346];          // 0x436
+    char              gap40E[2];            // 0x40E - alignment padding before m_gotoPoints
+    InteriorGotoPoint_t m_gotoPoints[16];   // 0x410
+    char              gap510[128];          // 0x510
     InteriorInfo_t    m_interiorInfos[16];  // 0x590
     int8              m_furnitureGroupId;   // 0x790
     int8              m_furnitureId;        // 0x791
@@ -102,7 +96,7 @@ public:
     int32 GetRandomTile(int32 a2, int32* a3, int32* a4);
     void Shop_FurnishAisles();
     CVector* GetTileCentre(float offsetX, float offsetY, CVector* pointsIn);
-    void AddGotoPt(int32 a, int32 b, float a3, float a4);
+    void AddGotoPt(int32 x, int32 y, float offsetX, float offsetY);
     bool AddInteriorInfo(int32 actionType, float offsetX, float offsetY, int32 direction, CEntity* entityIgnoredCollision);
     void AddPickups();
     void FindBoundingBox(int32, int32, int32*, int32*, int32*, int32*, int32*);

@@ -49,7 +49,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(GetRandomTile, 0x591B20);
     RH_ScopedInstall(Shop_FurnishAisles, 0x59A590, { .reversed = false });
     RH_ScopedInstall(GetTileCentre, 0x591BD0);
-    RH_ScopedInstall(AddGotoPt, 0x591D20, { .reversed = false });
+    RH_ScopedInstall(AddGotoPt, 0x591D20);
     RH_ScopedInstall(AddInteriorInfo, 0x591E40);
     RH_ScopedInstall(AddPickups, 0x591F90, { .reversed = false });
     RH_ScopedInstall(Exit, 0x592230, { .reversed = false });
@@ -609,8 +609,29 @@ CVector* Interior_c::GetTileCentre(float offsetX, float offsetY, CVector* points
 }
 
 // 0x591D20
-void Interior_c::AddGotoPt(int32 a, int32 b, float a3, float a4) {
-    plugin::CallMethod<0x591D20, Interior_c*, int32, int32, float, float>(this, a, b, a3, a4);
+void Interior_c::AddGotoPt(int32 x, int32 y, float offsetX, float offsetY) {
+    if (m_gotoPointCount >= 16) {
+        return;
+    }
+
+    const auto inBoundsTile3 = x >= 0 && y >= 0 && x < m_box->m_width && y < m_box->m_depth && m_tiles[x][y] == 3;
+    if (!inBoundsTile3 && GetTileStatus(x, y) != 7) {
+        return;
+    }
+
+    auto& pt = m_gotoPoints[m_gotoPointCount];
+    GetTileCentre((float)x + offsetX, (float)y + offsetY, &pt.Pos);
+    pt.X = (int8)x;
+    pt.Y = (int8)y;
+
+    if (x >= 0 && y >= 0 && x + 1 <= m_box->m_width && y + 1 <= m_box->m_depth) {
+        auto& tile = m_tiles[x][y];
+        if (tile == 3 || tile == 0) {
+            tile = 4;
+        }
+    }
+
+    m_gotoPointCount++;
 }
 
 // 0x591E40
