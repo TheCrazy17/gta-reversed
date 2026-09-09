@@ -28,7 +28,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Office_FurnishEdges, 0x599770);
     RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960);
     RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
-    RH_ScopedInstall(FurnishOffice, 0x599AF0, { .reversed = false });
+    RH_ScopedInstall(FurnishOffice, 0x599AF0);
     RH_ScopedInstall(Shop_Place3PieceUnit, 0x599BB0, { .reversed = false });
     RH_ScopedInstall(Shop_PlaceEdgeUnits, 0x599DC0, { .reversed = false });
     RH_ScopedInstall(Shop_PlaceCounter, 0x599EF0, { .reversed = false });
@@ -486,7 +486,16 @@ void Interior_c::Office_FurnishCenter() {
 
 // 0x599AF0
 void Interior_c::FurnishOffice() {
-    plugin::CallMethod<0x599AF0, Interior_c*>(this);
+    SetTilesStatus(0, 0, 2, 2, 2, false);
+    SetTilesStatus(0, m_box->m_depth - 2, 2, 2, 2, false);
+    SetTilesStatus(m_box->m_width - 2, 0, 2, 2, 2, false);
+    SetTilesStatus(m_box->m_width - 2, m_box->m_depth - 2, 2, 2, 2, false);
+
+    m_furnitureId      = (int8)g_furnitureMan.GetRandomId(1, 0, m_box->m_status);
+    m_chairFurnitureId = (int8)g_furnitureMan.GetRandomId(1, 1, m_box->m_status);
+
+    Office_FurnishEdges();
+    Office_FurnishCenter();
 }
 
 // 0x599BB0
