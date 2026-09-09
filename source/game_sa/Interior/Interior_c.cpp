@@ -34,7 +34,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Shop_PlaceCounter, 0x599EF0, { .reversed = false });
     RH_ScopedInstall(Shop_PlaceFixedUnits, 0x59A030, { .reversed = false });
     RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130, { .reversed = false });
-    RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140, { .reversed = false });
+    RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
     RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0, { .reversed = false });
     RH_ScopedInstall(GetBoundingBox, 0x593DB0, { .reversed = false });
     RH_ScopedInstall(Init, 0x593BF0, { .reversed = false });
@@ -993,9 +993,25 @@ void Interior_c::Shop_FurnishCeiling() {
     plugin::CallMethod<0x59A130, Interior_c*>(this);
 }
 
+// Cooldown counter gating how often a "shop shelf" AddInteriorInfo point (action type 8) can be
+// registered - shared by Shop_AddShelfInfo and (by proven-equivalent inlining) Shop_FurnishEdges.
+static auto& s_shopShelfCooldown = StaticRef<int32>(0x8D0948);
+
 // 0x59A140
-void Interior_c::Shop_AddShelfInfo(int32 a2, int32 a3, int32 a5) {
-    plugin::CallMethod<0x59A140, Interior_c*, int32, int32, int32>(this, a2, a3, a5);
+void Interior_c::Shop_AddShelfInfo(int32 x, int32 y, int32 direction) {
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Only roll for a placement once the cooldown has had at least 2 misses/skips build up; on success
+    // the cooldown resets to 1 (not 0), so a fresh spacing gap must accumulate again before the next
+    // shelf can be placed.
+    if (s_shopShelfCooldown > 1 && RandRound(100.0f) > 60) {
+        AddInteriorInfo(8, (float)x, (float)y, direction, nullptr);
+        s_shopShelfCooldown = 1;
+        return;
+    }
+    s_shopShelfCooldown++;
 }
 
 // 0x59A1B0

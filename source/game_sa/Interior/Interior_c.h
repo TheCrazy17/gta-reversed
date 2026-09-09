@@ -78,7 +78,7 @@ public:
     int32 Shop_PlaceCounter(uint8 a2);
     void Shop_PlaceFixedUnits();
     void Shop_FurnishCeiling();
-    void Shop_AddShelfInfo(int32 a2, int32 a3, int32 a5);
+    void Shop_AddShelfInfo(int32 x, int32 y, int32 direction);
     void Shop_FurnishEdges();
     bool GetBoundingBox(FurnitureEntity_c* entity, CVector* a3);
     void ResetTiles();
