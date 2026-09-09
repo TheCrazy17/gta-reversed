@@ -3,6 +3,8 @@
 #include "FurnitureManager_c.h"
 #include "Pickups.h"
 #include "ModelIndices.h"
+#include "InteriorGroup_c.h"
+#include "InteriorManager_c.h"
 
 // One-shot flag: has the rare/special office filler item already been placed this game session?
 // Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
@@ -18,6 +20,11 @@ static auto& s_nShopUnitTypeTier = StaticRef<int32>(0xBB3DE4);
 // scan - likely a session/level-start reference timestamp set elsewhere, making the check below "don't
 // spawn random pickups until >=3 minutes after that reference point" rather than a per-call cooldown.
 static auto& s_nPickupSpawnGateTime = StaticRef<uint32>(0xBB3DC4);
+
+// NOTSA: read-only in the -noanalysis scan (only xref is Interior_c::Init) - always null in the static
+// image, no writer located anywhere in the binary. Points to an object with floats at +0x8/+0x14/+0x18
+// (type not identified), mixed into the furniture-RNG seed below when non-null.
+static auto& s_furnitureSeedExtraSource = StaticRef<uint8*>(0xBB3DAC);
 
 void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
@@ -50,7 +57,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
     RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0);
     RH_ScopedInstall(GetBoundingBox, 0x593DB0);
-    RH_ScopedInstall(Init, 0x593BF0, { .reversed = false });
+    RH_ScopedInstall(Init, 0x593BF0);
     RH_ScopedInstall(ResetTiles, 0x593910);
     RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
     RH_ScopedInstall(GetFurnitureEntity, 0x5913B0);
@@ -69,7 +76,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(AddGotoPt, 0x591D20);
     RH_ScopedInstall(AddInteriorInfo, 0x591E40);
     RH_ScopedInstall(AddPickups, 0x591F90);
-    RH_ScopedInstall(Exit, 0x592230, { .reversed = false });
+    RH_ScopedInstall(Exit, 0x592230);
     RH_ScopedInstall(FindBoundingBox, 0x5922C0, { .reversed = false });
     RH_ScopedInstall(CalcExitPts, 0x5924A0, { .reversed = false });
     RH_ScopedInstall(IsVisible, 0x5929F0);
@@ -82,12 +89,71 @@ void Interior_c::InjectHooks() {
 
 // 0x593BF0
 int32 Interior_c::Init(const CVector& pos) {
-    return plugin::CallMethodAndReturn<int32, 0x593BF0>(this, &pos);
+    CalcMatrix(const_cast<CVector*>(&pos));
+    ResetTiles();
+
+    // Ensure the interior group's associated entity (door/marker object) has a valid transform matrix.
+    auto* entity = m_pGroup->GetEntity();
+    if (!entity->m_matrix) {
+        entity->AllocateMatrix();
+        entity->m_placement.UpdateMatrix(entity->m_matrix);
+    }
+
+    // Detached value-copy of the door entity's current world matrix - only its .pos is used below.
+    const CMatrix doorMatrix{ *entity->m_matrix };
+
+    // Seed the CRT RNG (the Furnish* calls below use rand() for furniture variant/position choices) from
+    // the door position + this room's fixed seed byte (+ optionally another unresolved object's data) -
+    // skipped entirely if this room's type is 99.
+    if (m_box->m_type != 99) {
+        const auto& doorPos = doorMatrix.GetPosition();
+        int32 seed;
+        if (s_furnitureSeedExtraSource) {
+            const auto* src = s_furnitureSeedExtraSource;
+            seed = std::lround(*(float*)(src + 0x18)) * std::lround(*(float*)(src + 0x14)) * std::lround(*(float*)(src + 0x8))
+                 + std::lround(doorPos.z) * std::lround(doorPos.y) * std::lround(doorPos.x)
+                 + m_box->m_seed;
+        } else {
+            seed = std::lround(doorPos.z * doorPos.y * doorPos.x + (float)m_box->m_seed);
+        }
+        srand(seed);
+    }
+
+    m_gotoPointCount = 0;
+    m_interiorInfosCount = 0;
+
+    switch (m_box->m_type) {
+    case 0: FurnishShop(0);   break;
+    case 1: FurnishOffice();  break;
+    case 2: FurnishLounge();  break;
+    case 3: FurnishBedroom(); break;
+    case 4: FurnishKitchen(); break;
+    default: break;
+    }
+
+    CalcExitPts();
+
+    if (!g_interiorMan.HasInteriorHadStealDataSetup(this)) {
+        g_interiorMan.AddInteriorId(m_interiorId);
+    }
+
+    if (m_box->m_type == 2 || m_box->m_type == 3) { // Lounge or Bedroom
+        AddPickups();
+    }
+
+    return 1;
 }
 
 // 0x592230
 void Interior_c::Exit() {
-    plugin::CallMethod<0x592230, Interior_c*>(this);
+    // Clear any pickups lingering within a 50-unit box around the interior's (transformed) exit
+    // position before tearing the interior down.
+    constexpr auto REMOVE_PICKUPS_MARGIN = 50.0f;
+    const auto& pos = m_matrix.pos; // NOT m_position (0x400) - the transformed matrix position
+    CPickups::RemovePickUpsInArea(pos.x - REMOVE_PICKUPS_MARGIN, pos.x + REMOVE_PICKUPS_MARGIN,
+                                   pos.y - REMOVE_PICKUPS_MARGIN, pos.y + REMOVE_PICKUPS_MARGIN,
+                                   pos.z - REMOVE_PICKUPS_MARGIN, pos.z + REMOVE_PICKUPS_MARGIN);
+    Unfurnish();
 }
 
 // 0x593F10

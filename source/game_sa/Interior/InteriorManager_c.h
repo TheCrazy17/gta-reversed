@@ -64,6 +64,13 @@ public:
     auto GetInteriorIds() const { return m_InteriorIds | rng::views::take(m_InteriorCount); }
     auto GetObjects() const { return m_Objects | rng::views::take(m_ObjectCount); }
 
+    // Appends an interior id to the steal-data-tracked list, if there's still room (matches Interior_c::Init).
+    void AddInteriorId(int32 id) {
+        if (m_InteriorCount < std::size(m_InteriorIds)) {
+            m_InteriorIds[m_InteriorCount++] = id;
+        }
+    }
+
 private:
     Interior_c               m_Interiors[8]{};               // 0x0
     TList_c<Interior_c>      m_InteriorPool{};               // 0x3CA0
