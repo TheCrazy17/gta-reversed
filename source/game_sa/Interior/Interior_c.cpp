@@ -62,8 +62,8 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
     RH_ScopedInstall(GetFurnitureEntity, 0x5913B0);
     RH_ScopedInstall(IsPtInside, 0x5913E0);
-    RH_ScopedInstall(CalcMatrix, 0x5914D0, { .reversed = false });
-    RH_ScopedInstall(Furnish, 0x591590, { .reversed = false });
+    RH_ScopedInstall(CalcMatrix, 0x5914D0);
+    RH_ScopedInstall(Furnish, 0x591590);
     RH_ScopedInstall(Unfurnish, 0x5915D0);
     RH_ScopedInstall(CheckTilesEmpty, 0x591680);
     RH_ScopedInstall(SetTilesStatus, 0x591700);
@@ -1497,12 +1497,42 @@ bool Interior_c::IsPtInside(const CVector& pt, CVector bias) {
 
 // 0x5914D0
 void Interior_c::CalcMatrix(CVector* translation) {
-    plugin::CallMethod<0x5914D0, Interior_c*, CVector*>(this, translation);
+    // Reset the interior's local transform (m_matrix) to identity.
+    RwMatrixSetIdentity(&m_matrix);
+
+    // Rotate around Z by the room's fixed placement angle (tEffectInterior::m_rot, in degrees, from the
+    // map data), then move it to `translation` (Init() forwards its own `pos` parameter through unchanged).
+    const CVector zAxis{ 0.0f, 0.0f, 1.0f };
+    RwMatrixRotate(&m_matrix, &zAxis, m_box->m_rot, rwCOMBINEREPLACE);
+    RwMatrixTranslate(&m_matrix, translation, rwCOMBINEPOSTCONCAT);
+
+    // If the interior group's associated entity (the door/marker object) has a renderable RW object
+    // (RpAtomic/RpClump) attached, fold that object's frame matrix into ours - lets the interior track the
+    // orientation/position of a moving object (e.g. a rotating door) it's attached to.
+    auto* entity = m_pGroup->GetEntity();
+    if (entity->GetRwObject()) {
+        RwMatrixMultiply(&m_matrix, &m_matrix, entity->GetRwMatrix());
+    } else {
+        // NOTSA: matches original - when the entity has no RW object, the original still calls
+        // RwMatrixMultiply with a NULL 3rd argument here. Faithfully reproduced, not "fixed" - this branch
+        // is likely dead in practice, since every interior door/marker entity has a clump/atomic attached.
+        RwMatrixMultiply(&m_matrix, &m_matrix, nullptr);
+    }
 }
 
 // 0x591590
 void Interior_c::Furnish() {
-    plugin::CallMethod<0x591590, Interior_c*>(this);
+    // Exact dispatcher duplicate of the switch in Init() (compiled as tail-jumps to 4 of the 5 targets,
+    // confirmed via raw disasm - JMP targets match FurnishOffice/FurnishLounge/FurnishBedroom/FurnishKitchen's
+    // InjectHooks addresses exactly; the 5th (m_type==0) uses a real CALL since FurnishShop takes an argument).
+    switch (m_box->m_type) {
+    case 0: FurnishShop(0);   break;
+    case 1: FurnishOffice();  break;
+    case 2: FurnishLounge();  break;
+    case 3: FurnishBedroom(); break;
+    case 4: FurnishKitchen(); break;
+    default: break;
+    }
 }
 
 // 0x5915D0
