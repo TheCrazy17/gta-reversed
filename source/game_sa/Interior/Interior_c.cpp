@@ -15,8 +15,8 @@ void Interior_c::InjectHooks() {
 
     RH_ScopedInstall(Bedroom_AddTableItem, 0x593F10);
     RH_ScopedInstall(FurnishBedroom, 0x593FC0);
-    RH_ScopedInstall(Kitchen_FurnishEdges, 0x596930, { .reversed = false });
-    RH_ScopedInstall(FurnishKitchen, 0x5970B0, { .reversed = false });
+    RH_ScopedInstall(Kitchen_FurnishEdges, 0x596930);
+    RH_ScopedInstall(FurnishKitchen, 0x5970B0);
     RH_ScopedInstall(Lounge_AddTV, 0x597240);
     RH_ScopedInstall(Lounge_AddHifi, 0x597430);
     RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
@@ -211,13 +211,199 @@ void Interior_c::FurnishBedroom() {
 }
 
 // 0x596930
+// NOTSA: Ghidra reports this function's body as 3 disjoint ranges. Investigated: both gaps are dead MSVC
+// alignment padding (multi-byte NOP idioms) sitting between an unconditional JMP and its 16-byte-aligned
+// jump target - not a stale-marker bug, not a shared thunk; the function is genuinely contiguous.
 CObject* Interior_c::Kitchen_FurnishEdges() {
-    return plugin::CallMethodAndReturn<CObject*, 0x596930, Interior_c*>(this);
+    const auto wealth      = m_box->m_status;
+    const auto widthLimit  = m_box->m_width - 1;
+    const auto depthLimit  = m_box->m_depth - 1;
+
+    int32 outX, outY; // NOTSA: PlaceFurniture's snapped-position out params - written but never read back
+
+    // Two back-corner pieces (group 4 subgroup 7).
+    const auto cornerFurniture = g_furnitureMan.GetFurniture(4, 7, m_furnitureId, wealth);
+    const auto placedCorner1 = PlaceFurniture(cornerFurniture, 0, depthLimit, 0.0f, 1, 1, &outX, &outY, 0) != nullptr;
+    const auto placedCorner2 = PlaceFurniture(cornerFurniture, widthLimit, depthLimit, 0.0f, 1, 0, &outX, &outY, 0) != nullptr;
+
+    // Window/door "no-furniture" span for the left (x=0) and right (x=widthLimit) walls - the larger of
+    // each wall's door-end/window-end marker, clamped to >=0. If neither wall has a marker, both spans
+    // are rolled randomly instead.
+    auto leftExtent  = std::max({ (int32)m_box->m_lDoorEnd, (int32)m_box->m_lWindowEnd, 0 });
+    auto rightExtent = std::max({ (int32)m_box->m_rDoorEnd, (int32)m_box->m_rWindowEnd, 0 });
+    if (rightExtent > 0) {
+        if (leftExtent <= 0) {
+            leftExtent = 0;
+        }
+    } else if (leftExtent > 0) {
+        rightExtent = 0;
+    } else {
+        leftExtent  = CGeneral::GetRandomNumberInRange<int32>(0, depthLimit);
+        rightExtent = CGeneral::GetRandomNumberInRange<int32>(0, depthLimit);
+    }
+    if (leftExtent > 0) {
+        SetTilesStatus(0, 0, 1, leftExtent, 2, false);
+    }
+    if (rightExtent > 0) {
+        SetTilesStatus(widthLimit, 0, 1, rightExtent, 2, false);
+    }
+
+    // Sink-ish pieces at the top of each marked span.
+    const auto sinkFurniture1 = g_furnitureMan.GetFurniture(4, 0, m_furnitureId, wealth);
+    PlaceFurniture(sinkFurniture1, 0, leftExtent, 0.0f, 1, 1, &outX, &outY, 0);
+    const auto sinkFurniture2 = g_furnitureMan.GetFurniture(4, 2, m_furnitureId, wealth);
+    PlaceFurniture(sinkFurniture2, widthLimit, rightExtent, 0.0f, 1, 3, &outX, &outY, 0);
+
+    // Four wall-mounted pieces (subgroups 3/5/4/6). Only the first (subgroup 3, near the top window)
+    // registers an AI interior-info point if it's placed.
+    const auto tWindowStart = (int32)m_box->m_tWindowStart; // NOTSA: raw disasm has a redundant "==-1" check here that folds to a plain sign-extending cast
+    int32 wallOutA, wallOutB; // NOTSA: PlaceFurnitureOnWall's out params; wallOutB (a11) is read back below, wallOutA (a10) never is
+    if (PlaceFurnitureOnWall(4, 3, m_furnitureId, 0.0f, 1, 0, tWindowStart, 0, &wallOutA, &wallOutB, nullptr, nullptr, nullptr, nullptr)) {
+        AddInteriorInfo(5, (float)(wallOutB + 1), (float)m_box->m_depth - 1.5f, 2, nullptr);
+    }
+    PlaceFurnitureOnWall(4, 5, m_furnitureId, 0.0f, 1, -1, -1, 0, &wallOutA, &wallOutB, nullptr, nullptr, nullptr, nullptr);
+    PlaceFurnitureOnWall(4, 4, m_furnitureId, 0.0f, 1, -1, -1, 0, &wallOutA, &wallOutB, nullptr, nullptr, nullptr, nullptr);
+    PlaceFurnitureOnWall(4, 6, m_furnitureId, 0.0f, 1, -1, -1, 0, &wallOutA, &wallOutB, nullptr, nullptr, nullptr, nullptr);
+
+    // Fill the left wall, back wall and right wall with "edge" furniture (group 4 subgroup 1), remembering
+    // each successfully-placed piece's position/rotation for the scatter/island pass below.
+    constexpr auto MAX_EDGE_ITEMS = 32;
+    float offsetXs[MAX_EDGE_ITEMS]{};
+    float offsetYs[MAX_EDGE_ITEMS]{};
+    float rotations[MAX_EDGE_ITEMS]{};
+    bool  slotUsed[MAX_EDGE_ITEMS]{};
+    auto edgeCount = 0;
+
+    const auto edgeFurniture = g_furnitureMan.GetFurniture(4, 1, m_furnitureId, wealth);
+
+    for (auto y = leftExtent + 1; y < depthLimit; y++) { // left wall, x=0
+        if (PlaceFurniture(edgeFurniture, 0, y, 0.0f, 1, 1, &outX, &outY, 0)) {
+            offsetXs[edgeCount]  = TILE_SIZE;
+            rotations[edgeCount] = 90.0f;
+            offsetYs[edgeCount]  = (float)y + TILE_SIZE;
+            edgeCount++;
+        }
+    }
+    for (auto x = 1; x < widthLimit; x++) { // back wall, y=depthLimit
+        if (PlaceFurniture(edgeFurniture, x, depthLimit, 0.0f, 1, 0, &outX, &outY, 0)) {
+            rotations[edgeCount] = 0.0f;
+            offsetXs[edgeCount]  = (float)x + TILE_SIZE;
+            offsetYs[edgeCount]  = (float)depthLimit + TILE_SIZE;
+            edgeCount++;
+        }
+    }
+    for (auto y = rightExtent + 1; y < depthLimit; y++) { // right wall, x=widthLimit
+        if (PlaceFurniture(edgeFurniture, widthLimit, y, 0.0f, 1, 3, &outX, &outY, 0)) {
+            rotations[edgeCount] = 270.0f;
+            offsetXs[edgeCount]  = (float)widthLimit + TILE_SIZE;
+            offsetYs[edgeCount]  = (float)y + TILE_SIZE;
+            edgeCount++;
+        }
+    }
+
+    // One extra decorative piece (group 4 subgroup 10) in whichever back corner was actually placed
+    // above, gated by a ~50% coin flip favoring corner 1.
+    const auto cornerDecorFurniture = g_furnitureMan.GetFurniture(4, 10, -1, wealth);
+    if (rand() < 0x3FFF && placedCorner1) {
+        PlaceObject(true, cornerDecorFurniture, TILE_SIZE, (float)m_box->m_depth - TILE_SIZE, 1.05f, 45.0f);
+    } else if (placedCorner2) {
+        PlaceObject(true, cornerDecorFurniture, (float)m_box->m_width - TILE_SIZE, (float)m_box->m_depth - TILE_SIZE, 1.05f, 315.0f);
+    }
+
+    if (edgeCount <= 0) {
+        return nullptr;
+    }
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Pick two distinct "island" slots among the placed edge furniture for bigger/stealable pieces.
+    // island2 gives up (-1) if it can't find a free slot within 30 tries.
+    const auto island1 = RandRound((float)edgeCount);
+    slotUsed[island1] = true;
+
+    auto island2 = RandRound((float)edgeCount);
+    if (slotUsed[island2]) {
+        auto retry = 0;
+        do {
+            if (retry > 0x1D) {
+                break;
+            }
+            island2 = RandRound((float)edgeCount);
+            retry++;
+        } while (slotUsed[island2]);
+        if (retry == 0x1E) {
+            island2 = -1;
+        }
+    }
+
+    // Wealth-tiered threshold (0-100) for scattering small clutter items on the remaining, non-island slots.
+    int32 scatterThreshold;
+    if (wealth >= 75) {
+        scatterThreshold = RandRound(20.0f);               // [0, 20]
+    } else if (wealth >= 50) {
+        scatterThreshold = 20 - RandRound(-30.0f);          // [20, 50]
+    } else {
+        scatterThreshold = 50 - RandRound(-50.0f);          // [50, 100]
+    }
+
+    for (auto i = 0; i < edgeCount; i++) {
+        if (slotUsed[i]) {
+            continue;
+        }
+        if (RandRound(100.0f) >= scatterThreshold) {
+            continue;
+        }
+        const auto scatterFurniture = (rand() < 0x3FFF)
+            ? g_furnitureMan.GetFurniture(8, 3, -1, wealth)
+            : g_furnitureMan.GetFurniture(8, 4, -1, wealth);
+        if (scatterFurniture) {
+            PlaceObject(false, scatterFurniture, offsetXs[i], offsetYs[i], 1.05f, rotations[i]);
+        }
+    }
+
+    CObject* result = nullptr;
+    if (island1 != -1) { // NOTSA: island1 is never actually -1 (RandRound is always >=0), but the original checks anyway
+        const auto islandFurniture1 = g_furnitureMan.GetFurniture(4, 8, -1, wealth);
+        result = PlaceObject(true, islandFurniture1, offsetXs[island1], offsetYs[island1], 1.05f, rotations[island1]);
+    }
+    if (island2 != -1) {
+        const auto islandFurniture2 = g_furnitureMan.GetFurniture(4, 9, -1, wealth);
+        result = PlaceObject(true, islandFurniture2, offsetXs[island2], offsetYs[island2], 1.05f, rotations[island2]);
+    }
+    return result;
 }
 
 // 0x5970B0
 void Interior_c::FurnishKitchen() {
-    plugin::CallMethod<0x5970B0, Interior_c*>(this);
+    SetTilesStatus(m_box->m_door - 1, 0, 2, 1, 7, false);
+
+    const auto maxX = m_box->m_width - 2;
+    const auto maxY = m_box->m_depth - 2;
+    for (auto x = 1; x <= maxX; x++) {
+        SetTilesStatus(x, maxY, 1, 1, 3, false);
+        SetTilesStatus(x, 0, 1, 1, 3, false);
+    }
+    for (auto y = 0; y <= maxY; y++) {
+        SetTilesStatus(1, y, 1, 1, 3, false);
+        SetTilesStatus(maxX, y, 1, 1, 3, false);
+    }
+
+    AddGotoPt(1, 1, 0.0f, 0.0f);
+    AddGotoPt(1, maxY, 0.0f, 0.0f);
+    AddGotoPt(maxX, 1, 0.0f, 0.0f);
+    AddGotoPt(maxX, maxY, 0.0f, 0.0f);
+
+    m_furnitureId = (int8)g_furnitureMan.GetRandomId(4, 0, m_box->m_status);
+    Kitchen_FurnishEdges();
+
+    // Central table-like item (group 8 subgroup 1), centered in the room and offset against its own footprint.
+    const auto tableFurniture = g_furnitureMan.GetFurniture(8, 1, -1, m_box->m_status);
+    const auto centerY = (int32)std::lround(((float)m_box->m_depth - (float)tableFurniture->m_nWidthY) * 0.5f);
+    const auto centerX = (int32)std::lround(((float)m_box->m_width  - (float)tableFurniture->m_nWidthX) * 0.5f);
+    int32 outX, outY; // NOTSA: PlaceFurniture's snapped-position out params, unused by the original
+    PlaceFurniture(tableFurniture, centerX, centerY, 0.0f, 0, 0, &outX, &outY, 0);
 }
 
 // 0x597240
