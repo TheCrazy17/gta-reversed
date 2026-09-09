@@ -40,7 +40,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Shop_PlaceFixedUnits, 0x59A030);
     RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130);
     RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
-    RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0, { .reversed = false });
+    RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0);
     RH_ScopedInstall(GetBoundingBox, 0x593DB0, { .reversed = false });
     RH_ScopedInstall(Init, 0x593BF0, { .reversed = false });
     RH_ScopedInstall(ResetTiles, 0x593910);
@@ -56,7 +56,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(GetTileStatus, 0x5918E0);
     RH_ScopedInstall(GetNumEmptyTiles, 0x591920);
     RH_ScopedInstall(GetRandomTile, 0x591B20);
-    RH_ScopedInstall(Shop_FurnishAisles, 0x59A590, { .reversed = false });
+    RH_ScopedInstall(Shop_FurnishAisles, 0x59A590);
     RH_ScopedInstall(GetTileCentre, 0x591BD0);
     RH_ScopedInstall(AddGotoPt, 0x591D20);
     RH_ScopedInstall(AddInteriorInfo, 0x591E40);
@@ -1086,8 +1086,103 @@ void Interior_c::Shop_AddShelfInfo(int32 x, int32 y, int32 direction) {
 }
 
 // 0x59A1B0
+// NOTSA: Raw disasm confirms this function calls ONLY Shop_PlaceEdgeUnits (x3), GetTileStatus,
+// SetTilesStatus and AddInteriorInfo. The Shop_AddShelfInfo-shaped "shelf" logic (a cooldown-gated
+// AddInteriorInfo(8, ...) call) is inlined here 3 separate times rather than CALLed - verified
+// instruction-by-instruction to be behaviorally identical to 3 calls to Shop_AddShelfInfo (same net
+// cooldown-counter state transitions), so this draft calls it by name instead of re-duplicating the logic.
 void Interior_c::Shop_FurnishEdges() {
-    plugin::CallMethod<0x59A1B0, Interior_c*>(this);
+    const auto width = m_box->m_width;
+    const auto depth = m_box->m_depth;
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Rolls a 0-100 dice and buckets it into one of 4 evenly-spaced-by-3 "unit variant" values, passed
+    // as Shop_PlaceEdgeUnits's first argument - same threshold ladder as Shop_FurnishAisles.
+    const auto RollEdgeUnitVariant = [&]() {
+        const auto roll = RandRound(100.0f);
+        if (roll <= 50) {
+            return (roll <= 25) ? ((roll <= 10) ? 9 : 6) : 3;
+        }
+        return 0;
+    };
+
+    const auto widthLimit  = width - 1;
+    const auto depthLimit  = depth - 1;
+
+    // Back wall (y = depthLimit): walk x = 1..widthLimit placing edge units, side 0. The variant is
+    // rolled once per wall and held constant across every unit placed along it.
+    const auto backWallVariant = RollEdgeUnitVariant();
+    for (auto x = 1; x < widthLimit; ) {
+        x += Shop_PlaceEdgeUnits(backWallVariant, x, depthLimit, 0);
+    }
+
+    const auto depthLimit2 = depth - 2;
+
+    // Left wall (x = 0): walk y = 1..depthLimit2, side 1.
+    const auto leftWallVariant = RollEdgeUnitVariant();
+    for (auto y = 1; y <= depthLimit2; ) {
+        y += Shop_PlaceEdgeUnits(leftWallVariant, 0, y, 1);
+    }
+
+    // Right wall (x = widthLimit): walk y = 1..depthLimit2, side 3. No side-2 (front/door wall) call
+    // exists anywhere in this function - the entrance wall gets no edge units.
+    const auto rightWallVariant = RollEdgeUnitVariant();
+    for (auto y = 1; y <= depthLimit2; ) {
+        y += Shop_PlaceEdgeUnits(rightWallVariant, widthLimit, y, 3);
+    }
+
+    // --- Back-wall shelf row (y = depthLimit2) + front-wall buffer row (y = 1) -------------------------
+    // For each x in [1, width-2], skip the shelf attempt if it falls inside the back wall's own door span
+    // (m_tDoorStart/m_tDoorEnd, when one exists); either way, block the corresponding front-wall buffer
+    // tile if it's still empty.
+    const auto widthLimit2  = width - 2;
+    const auto topDoorStart = m_box->m_tDoorStart;
+    const auto topDoorEnd   = m_box->m_tDoorEnd;
+    for (auto x = 1; x <= widthLimit2; ++x) {
+        if (topDoorStart == -1 || x < topDoorStart || topDoorEnd < x) {
+            Shop_AddShelfInfo(x, depthLimit2, 2);
+        }
+        if (GetTileStatus(x, 1) == 0) {
+            SetTilesStatus(x, 1, 1, 1, 2, false);
+        }
+    }
+
+    // --- Left/right inner-column shelves (y = 2..depth-3), one tile in from each side wall -------------
+    const auto depthLimit3    = depth - 3;
+    const auto leftDoorStart  = m_box->m_lDoorStart;
+    const auto leftDoorEnd    = m_box->m_lDoorEnd;
+    const auto rightDoorStart = m_box->m_rDoorStart;
+    const auto rightDoorEnd   = m_box->m_rDoorEnd;
+    for (auto y = 2; y <= depthLimit3; ++y) {
+        if (leftDoorStart == -1 || y < leftDoorStart || leftDoorEnd < y) {
+            Shop_AddShelfInfo(1, y, 3);            // one tile in from the left wall (x=0)
+        }
+        if (rightDoorStart == -1 || y < rightDoorStart || rightDoorEnd < y) {
+            Shop_AddShelfInfo(widthLimit2, y, 1);  // one tile in from the right wall (x=widthLimit)
+        }
+    }
+
+    // --- Inner buffer ring, one tile further in (row y=2, row y=depthLimit3) ---------------------------
+    const auto widthLimit3 = width - 3;
+    for (auto x = 2; x <= widthLimit3; ++x) {
+        if (GetTileStatus(x, 2) == 0) {
+            SetTilesStatus(x, 2, 1, 1, 2, false);
+        }
+        SetTilesStatus(x, depthLimit3, 1, 1, 3, false);
+    }
+
+    // Same ring, left/right columns (x=2, x=widthLimit3) for y = 3..depth-4.
+    const auto depthLimit4 = depth - 4;
+    for (auto y = 3; y <= depthLimit4; ++y) {
+        SetTilesStatus(2, y, 1, 1, 3, false);
+        SetTilesStatus(widthLimit3, y, 1, 1, 3, false);
+    }
+
+    // Final inner strip along y=3, closing the ring.
+    SetTilesStatus(3, 3, width - 6, 1, 3, false);
 }
 
 // 0x593DB0
@@ -1380,7 +1475,68 @@ int32 Interior_c::GetRandomTile(int32 targetStatus, int32* outX, int32* outY) {
 
 // 0x59A590
 void Interior_c::Shop_FurnishAisles() {
-    plugin::CallMethod<0x59A590, Interior_c*>(this);
+    const auto width = m_box->m_width;
+    const auto depth = m_box->m_depth;
+
+    const auto colsSpan = width - 6; // number of aisle columns, at x = [3, width-3)
+    const auto rowsSpan = depth - 7; // number of shelf rows per aisle, at y = [4, depth-3)
+    if (colsSpan <= 0 || rowsSpan <= 0) {
+        return;
+    }
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Left-edge AI nav points bookending the whole aisle block (near/far ends).
+    const auto farY = depth - 3;
+    AddGotoPt(2, 3,    -TILE_SIZE, -TILE_SIZE);
+    AddGotoPt(2, farY, -TILE_SIZE,  TILE_SIZE);
+
+    for (auto aisleX = 0; aisleX < colsSpan; ++aisleX) {
+        auto cursorY = 4;
+
+        // Weighted-random "edge unit" variant for this column: 0 (~50%), 3 (~25%), 6 (~15%), 9 (~10%).
+        const auto roll = RandRound(100.0f); // ~[0,100)
+        int32 unitVariant;
+        if (roll <= 50) {
+            unitVariant = (roll <= 25) ? ((roll <= 10) ? 9 : 6) : 3;
+        } else {
+            unitVariant = 0;
+        }
+
+        // Cycle through 4 layouts per column: top-run / bottom-run / shelf column / open walkway.
+        switch (aisleX % 4) {
+        case 0:
+            // Skip the very last column for this layout (matches original).
+            if (aisleX != colsSpan - 1) {
+                for (auto i = rowsSpan; i != 0; --i) {
+                    cursorY += Shop_PlaceEdgeUnits(unitVariant, aisleX + 3, cursorY, 3);
+                }
+            }
+            break;
+        case 1:
+            for (auto i = rowsSpan; i != 0; --i) {
+                cursorY += Shop_PlaceEdgeUnits(unitVariant, aisleX + 3, cursorY, 1);
+            }
+            break;
+        case 2:
+            for (auto row = 0; row < rowsSpan; ++row) {
+                Shop_AddShelfInfo(aisleX + 3, row + 4, 3);
+            }
+            break;
+        case 3:
+            // Leave this aisle clear as an open walkway, with a nav point at each end.
+            SetTilesStatus(aisleX + 3, 4, 1, rowsSpan, 3, false);
+            AddGotoPt(aisleX + 3, 3,    -TILE_SIZE, -TILE_SIZE);
+            AddGotoPt(aisleX + 3, farY, -TILE_SIZE,  TILE_SIZE);
+            break;
+        }
+    }
+
+    // Right-edge AI nav points bookending the aisle block.
+    AddGotoPt(width - 3, 3,    TILE_SIZE, -TILE_SIZE);
+    AddGotoPt(width - 3, farY, TILE_SIZE,  TILE_SIZE);
 }
 
 // 0x591BD0
