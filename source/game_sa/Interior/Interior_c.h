@@ -108,7 +108,7 @@ public:
     CObject* PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11, int32* a12,
                                 int32* a13);
     bool FindEmptyTiles(int32 xSpan, int32 ySpan, int32* outX, int32* outY);
-    void FurnishShop(int32 a2);
+    void FurnishShop(int8 furnitureGroupId); // NOTSA: header previously declared `int32 a2` - raw disasm shows only the low byte is ever read (stored straight into m_furnitureGroupId, itself int8)
 
     auto GetNodeAddress() const { return m_nodeAddress; }
 };

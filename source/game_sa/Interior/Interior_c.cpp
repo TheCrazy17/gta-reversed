@@ -69,7 +69,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .reversed = false });
     RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .reversed = false });
     RH_ScopedInstall(FindEmptyTiles, 0x591C50);
-    RH_ScopedInstall(FurnishShop, 0x59A790, { .reversed = false });
+    RH_ScopedInstall(FurnishShop, 0x59A790);
 }
 
 // 0x593BF0
@@ -1755,6 +1755,23 @@ bool Interior_c::FindEmptyTiles(int32 xSpan, int32 ySpan, int32* outX, int32* ou
 }
 
 // 0x59A790
-void Interior_c::FurnishShop(int32 a2) {
-    plugin::CallMethod<0x59A790, Interior_c*, int32>(this, a2);
+void Interior_c::FurnishShop(int8 furnitureGroupId) {
+    m_furnitureGroupId = furnitureGroupId;
+
+    const auto width = m_box->m_width;
+    const auto depth = m_box->m_depth;
+    const auto door  = m_box->m_door;
+
+    // Guard: skip furnishing entirely if the door sits too close to both the left and right walls at once
+    // (degenerate/too-narrow room shape for this layout).
+    if (door - 1 > 5 || width - door > 5) {
+        SetTilesStatus(0,         0,         1, 1, 2, false);
+        SetTilesStatus(0,         depth - 1, 1, 1, 2, false);
+        SetTilesStatus(width - 1, 0,         1, 1, 2, false);
+        SetTilesStatus(width - 1, depth - 1, 1, 1, 2, false);
+
+        Shop_PlaceFixedUnits();
+        Shop_FurnishEdges();
+        Shop_FurnishAisles();
+    }
 }
