@@ -58,7 +58,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
     RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
     RH_ScopedVMTInstall(SetupDamageAfterLoad, 0x6B7070);
-    RH_ScopedVMTInstall(DoBurstAndSoftGroundRatios, 0x6B6950, { .reversed = false });
+    RH_ScopedVMTInstall(DoBurstAndSoftGroundRatios, 0x6B6950);
     RH_ScopedVMTInstall(SetUpWheelColModel, 0x6B67E0);
     RH_ScopedVMTInstall(RemoveRefsToVehicle, 0x6B67B0);
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6B6620);
@@ -1222,7 +1222,89 @@ void CBike::SetupDamageAfterLoad() {
 
 // 0x6B6950
 void CBike::DoBurstAndSoftGroundRatios() {
-    plugin::CallMethod<0x6B6950, CBike*>(this);
+    auto* mi = GetVehicleModelInfo();
+    const auto speedToFwdRatio = std::fabs(DotProduct(m_vecMoveSpeed, GetForward()));
+
+    std::array<bool, NUM_SUSP_LINES> lineEligibleForSandSoften{ true, true, true, true };
+
+    for (auto wheel = 0; wheel < 2; wheel++) {
+        const auto line0 = wheel == 0 ? 0 : 2;
+        const auto line1 = wheel == 0 ? 1 : 3;
+
+        switch (m_nWheelStatus[wheel]) {
+        case WHEEL_STATUS_MISSING:
+            m_aWheelRatios[line0] = 1.0f;
+            m_aWheelRatios[line1] = 1.0f;
+            lineEligibleForSandSoften[line0] = false;
+            lineEligibleForSandSoften[line1] = false;
+            break;
+
+        case WHEEL_STATUS_BURST: {
+            const auto val = CGeneral::GetRandomNumberInRange(0, int32(speedToFwdRatio * 40.0f) + 98);
+            if (val < 100) {
+                const auto remaining0 = (m_fLineLength[line0] - m_fSuspensionLength[line0]) / m_fLineLength[line0];
+                const auto delta = remaining0 * 0.2f;
+                m_aWheelRatios[line0] = std::min(1.0f, m_aWheelRatios[line0] + delta);
+                m_aWheelRatios[line1] = std::min(1.0f, m_aWheelRatios[line1] + delta);
+            }
+            lineEligibleForSandSoften[line0] = false;
+            lineEligibleForSandSoften[line1] = false;
+            break;
+        }
+
+        default: // WHEEL_STATUS_OK
+            if ((m_aWheelRatios[line0] < 1.0f && m_aWheelColPoints[line0].m_nSurfaceTypeB == SURFACE_RAILTRACK) ||
+                (m_aWheelRatios[line1] < 1.0f && m_aWheelColPoints[line1].m_nSurfaceTypeB == SURFACE_RAILTRACK)) {
+
+                const auto wheelSize = wheel == 0 ? mi->m_fWheelSizeFront : mi->m_fWheelSizeRear;
+                auto wheelSizeFactor = 1.5f / (wheelSize * 0.5f);
+                if (speedToFwdRatio > 0.3f) {
+                    wheelSizeFactor *= speedToFwdRatio / 0.3f;
+                }
+                const auto wheelSizeInv = 1.0f / wheelSizeFactor;
+
+                const auto wheelRotFactor = wheelSizeInv * m_aWheelPitchAngles[wheel];
+                const auto wheelRotFactorFract = wheelRotFactor - std::floor(wheelRotFactor);
+
+                const auto timeSpeedRotFactor = (CTimer::GetTimeStep() * m_aWheelAngularVelocity[wheel] + m_aWheelPitchAngles[wheel]) * wheelSizeInv;
+                const auto timeSpeedRotFactorFract = timeSpeedRotFactor - std::floor(timeSpeedRotFactor);
+
+                if ((m_aWheelAngularVelocity[wheel] > 0.0f && timeSpeedRotFactorFract < wheelRotFactorFract) ||
+                    (m_aWheelAngularVelocity[wheel] < 0.0f && timeSpeedRotFactorFract > wheelRotFactorFract)) {
+                    const auto remaining0 = (m_fLineLength[line0] - m_fSuspensionLength[line0]) / m_fLineLength[line0];
+                    const auto delta = remaining0 * 0.3f;
+                    m_aWheelRatios[line0] = std::max(0.2f, m_aWheelRatios[line0] - delta);
+                    m_aWheelRatios[line1] = std::max(0.2f, m_aWheelRatios[line1] - delta);
+                }
+                lineEligibleForSandSoften[line0] = false;
+                lineEligibleForSandSoften[line1] = false;
+            }
+            break;
+        }
+    }
+
+    // Second pass: soften ratios for lines resting on sand
+    for (auto line = 0; line < NUM_SUSP_LINES; line++) {
+        if (!lineEligibleForSandSoften[line]) continue;
+        if (m_aWheelRatios[line] >= 1.0f) continue;
+        if (g_surfaceInfos.GetAdhesionGroup(m_aWheelColPoints[line].m_nSurfaceTypeB) != ADHESION_GROUP_SAND) continue;
+        if (m_nModelIndex == MODEL_RHINO) continue; // NOTSA: dead for CBike - copied verbatim from the shared/original code, kept for fidelity
+
+        float offroadFactor;
+        if (handlingFlags.bOffroadAbility2) {
+            offroadFactor = 0.1f;
+        } else if (handlingFlags.bOffroadAbility) {
+            offroadFactor = 0.15f;
+        } else {
+            offroadFactor = 0.25f;
+        }
+
+        auto adhesionFactor = 1.0f - (speedToFwdRatio / 0.3f) * 0.7f - CWeather::WetRoads * 0.7f;
+        adhesionFactor = std::max(0.4f, adhesionFactor);
+
+        const auto remaining = (m_fLineLength[line] - m_fSuspensionLength[line]) / m_fLineLength[line];
+        m_aWheelRatios[line] = std::min(1.0f, m_aWheelRatios[line] + offroadFactor * remaining * adhesionFactor);
+    }
 }
 
 // 0x6B67E0
