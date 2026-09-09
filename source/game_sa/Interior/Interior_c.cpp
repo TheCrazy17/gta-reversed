@@ -14,7 +14,7 @@ void Interior_c::InjectHooks() {
     //RH_ScopedInstall(Destructor, 0x591360, { .reversed = false });
 
     RH_ScopedInstall(Bedroom_AddTableItem, 0x593F10);
-    RH_ScopedInstall(FurnishBedroom, 0x593FC0, { .reversed = false });
+    RH_ScopedInstall(FurnishBedroom, 0x593FC0);
     RH_ScopedInstall(Kitchen_FurnishEdges, 0x596930, { .reversed = false });
     RH_ScopedInstall(FurnishKitchen, 0x5970B0, { .reversed = false });
     RH_ScopedInstall(Lounge_AddTV, 0x597240);
@@ -93,7 +93,121 @@ CObject* Interior_c::Bedroom_AddTableItem(int32 groupId, int32 subGroupId, int32
 
 // 0x593FC0
 void Interior_c::FurnishBedroom() {
-    plugin::CallMethod<0x593FC0, Interior_c*>(this);
+    // Roll the room's main bedroom-catalog item once; reused as furnitureId for every group-3
+    // (bedroom) placement below.
+    m_furnitureId = (int8)g_furnitureMan.GetRandomId(3, 1, m_box->m_status);
+
+    // Block a 2x2 patch in front of the door.
+    const auto doorX = m_box->m_door - 1;
+    SetTilesStatus(doorX, 0, 2, 2, 7, false);
+
+    // --- Furniture along one wall (chosen internally by PlaceFurnitureOnWall) ----------------------
+    // Probe call: furnitureId -1 places nothing, just finds a wall/run and writes back which side (0-3)
+    // and how many empty tiles are available along it. The returned CObject* is only used below as the
+    // "ignore collision with this" hint for the AddInteriorInfo AI nodes.
+    int32 wallSide = 0, wallCount = 0;
+    auto* const wallAnchor = PlaceFurnitureOnWall(3, 0, -1, 0.0f, 1, -1, -1, 0, &wallSide, &wallCount, nullptr, nullptr, nullptr, nullptr);
+
+    if (wallCount > 0) {
+        // Place one piece one tile in from the near end of the run.
+        if (PlaceFurnitureOnWall(3, 1, m_furnitureId, 0.0f, 1, wallSide, wallCount - 1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)) {
+            int32 infoType, offsetX, offsetY, direction, tileX, tileY;
+            switch (wallSide) {
+            case 1: infoType = 3; offsetX = 1;                  offsetY = wallCount - 1;      direction = 2; tileX = 2;                  tileY = wallCount - 1;      break;
+            case 3: infoType = 4; offsetX = m_box->m_width - 2; offsetY = wallCount - 1;      direction = 2; tileX = m_box->m_width - 3; tileY = wallCount - 1;      break;
+            case 0: infoType = 3; offsetX = wallCount - 1;      offsetY = m_box->m_depth - 2; direction = 1; tileX = wallCount - 1;      tileY = m_box->m_depth - 3; break;
+            case 2: infoType = 4; offsetX = wallCount - 1;      offsetY = 1;                  direction = 1; tileX = wallCount - 1;      tileY = 2;                  break;
+            default: infoType = offsetX = offsetY = direction = tileX = tileY = 0; break; // NOTSA: unreachable - wallSide is always 0-3
+            }
+            AddInteriorInfo(infoType, (float)offsetX, (float)offsetY, direction, wallAnchor);
+            SetTilesStatus(tileX, tileY, 1, 1, 2, false);
+        }
+    }
+
+    // Place a second piece further along the SAME run (2 tiles past the probed span), regardless of
+    // whether the first piece above was placed - reuses the same wallSide/wallCount from the probe.
+    if (PlaceFurnitureOnWall(3, 1, m_furnitureId, 0.0f, 1, wallSide, wallCount + 2, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)) {
+        int32 infoType, offsetX, offsetY, direction, tileX, tileY;
+        switch (wallSide) {
+        case 1: infoType = 4; offsetX = 1;                  offsetY = wallCount + 2;      direction = 0; tileX = 2;                  tileY = wallCount + 2;      break;
+        case 3: infoType = 3; offsetX = m_box->m_width - 2; offsetY = wallCount + 2;      direction = 0; tileX = m_box->m_width - 3; tileY = wallCount + 2;      break;
+        case 0: infoType = 4; offsetX = wallCount + 2;      offsetY = m_box->m_depth - 2; direction = 3; tileX = wallCount + 2;      tileY = m_box->m_depth - 3; break;
+        case 2: infoType = 3; offsetX = wallCount + 2;      offsetY = 1;                  direction = 3; tileX = wallCount + 2;      tileY = 2;                  break;
+        default: infoType = offsetX = offsetY = direction = tileX = tileY = 0; break; // NOTSA: unreachable - wallSide is always 0-3
+        }
+        AddInteriorInfo(infoType, (float)offsetX, (float)offsetY, direction, wallAnchor);
+        SetTilesStatus(tileX, tileY, 1, 1, 2, false);
+    }
+
+    // Two more "fire and forget" attempts on other walls/subgroups - results aren't consumed by
+    // anything downstream.
+    PlaceFurnitureOnWall(3, 3, m_furnitureId, 0.0f, 1, -1, -1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    PlaceFurnitureOnWall(3, 2, m_furnitureId, 0.0f, 1, -1, -1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    // RandRound: rand()&0xFFFF scaled and rounded to nearest int (ties away from zero) - the exact
+    // FUN_00821b40 idiom already established in Office_PlaceEdgeDesks; redefined locally here since
+    // there's still no shared wrapper for it in this codebase.
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // --- Extra small item, group 2 subgroup 6 catalog ------------------------------------------------
+    const auto placementRoll = RandRound(100.0f); // ~[0,100]
+    if (placementRoll < 25) {
+        int32 side, x, y;
+        if (PlaceFurnitureOnWall(2, 6, -1, 0.0f, 1, -1, -1, 0, &side, nullptr, &x, &y, nullptr, nullptr)) {
+            Bedroom_AddTableItem(2, 8, side, x, y, side);
+        }
+    } else if (placementRoll < 75) {
+        if (placementRoll >= 50) {
+            int32 side, x, y;
+            if (PlaceFurnitureOnWall(2, 6, -1, 0.0f, 1, -1, -1, 0, &side, nullptr, &x, &y, nullptr, nullptr)) {
+                Bedroom_AddTableItem(2, 8, side, x, y, side);
+            }
+        }
+        int32 side, x, y;
+        if (PlaceFurnitureOnWall(2, 6, -1, 0.0f, 1, -1, -1, 0, &side, nullptr, &x, &y, nullptr, nullptr)) {
+            Bedroom_AddTableItem(2, 3, side, x, y, side);
+        }
+    }
+    // placementRoll >= 75: nothing placed here.
+
+    // --- Wealth-scaled clutter items, group 8 subgroups 2/5/4/3/6 -------------------------------------
+    // Poorer rooms (low m_box->m_status) get a much higher per-slot chance; richer rooms a small one.
+    int32 clutterChance;
+    if (m_box->m_status < 0x32) {          // status < 50
+        clutterChance = CGeneral::GetRandomNumberInRange<int32>(50, 100);
+    } else if (m_box->m_status < 0x4b) {   // 50 <= status < 75
+        clutterChance = 20 - RandRound(-30.0f);
+    } else {                                // status >= 75
+        clutterChance = RandRound(20.0f);
+    }
+
+    const auto TryAddClutterItem = [&](int32 subGroupId, int32 xSpan, int32 ySpan) {
+        if (RandRound(60.0f) >= clutterChance) {
+            return;
+        }
+        int32 x, y;
+        if (!FindEmptyTiles(xSpan, ySpan, &x, &y)) {
+            return;
+        }
+        const auto furniture = g_furnitureMan.GetFurniture(8, subGroupId, -1, m_box->m_status);
+        PlaceObject(false, furniture, (float)x + TILE_SIZE, (float)y + TILE_SIZE, 0.05f, 0.0f);
+        SetTilesStatus(x, y, xSpan, ySpan, 2, false);
+    };
+    TryAddClutterItem(2, 2, 2);
+    TryAddClutterItem(5, 1, 1);
+    TryAddClutterItem(4, 1, 1);
+    TryAddClutterItem(3, 1, 1);
+    TryAddClutterItem(6, 2, 2);
+
+    // --- Guaranteed centrepiece item, group 8 subgroup 1, centred in the room -------------------------
+    // NOTSA: matches original - no null-check on `centerpiece` before dereferencing m_nWidthX/m_nWidthY.
+    const auto centerpiece = g_furnitureMan.GetFurniture(8, 1, -1, m_box->m_status);
+    const auto centerX = (int32)std::lround(((float)m_box->m_width  - (float)centerpiece->m_nWidthX) * TILE_SIZE);
+    const auto centerY = (int32)std::lround(((float)m_box->m_depth - (float)centerpiece->m_nWidthY) * TILE_SIZE);
+    int32 unusedX, unusedY; // NOTSA: PlaceFurniture's snapped-position out params - written but never read back (same idiom as Office_PlaceDesk)
+    PlaceFurniture(centerpiece, centerX, centerY, 0.0f, 0, 0, &unusedX, &unusedY, 0);
 }
 
 // 0x596930
@@ -932,16 +1046,21 @@ CObject* Interior_c::PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a
 }
 
 // 0x593120
-void Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10,
+// NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows callers
+// TEST/JZ on EAX and feed the result straight into AddInteriorInfo/Lounge_Add*Info's CEntity* params, same
+// fix as PlaceFurniture).
+CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10,
                                       int32* a11, int32* a12, int32* a13, int32* a14, int32* a15) {
-    plugin::CallMethod<0x593120, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32, int32*, int32*, int32*, int32*, int32*, int32*>(
+    return plugin::CallMethodAndReturn<CObject*, 0x593120, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32, int32*, int32*, int32*, int32*, int32*, int32*>(
         this, furnitureGroupId, furnitureSubgroupId, furnitureId, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
 }
 
 // 0x593340
-void Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11,
+// NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows the
+// caller TEST/JZ-ing EAX right after the call, same fix as PlaceFurniture/PlaceFurnitureOnWall).
+CObject* Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11,
                                         int32* a12, int32* a13) {
-    plugin::CallMethod<0x593340, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32*, int32*, int32*, int32*, int32*>(this, furnitureGroupId, furnitureSubgroupId,
+    return plugin::CallMethodAndReturn<CObject*, 0x593340, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32*, int32*, int32*, int32*, int32*>(this, furnitureGroupId, furnitureSubgroupId,
                                                                                                                                        id, a4, a5, a6, a2, a9, a10, a11, a12, a13);
 }
 
