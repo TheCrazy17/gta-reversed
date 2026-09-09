@@ -34,9 +34,9 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960);
     RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
     RH_ScopedInstall(FurnishOffice, 0x599AF0);
-    RH_ScopedInstall(Shop_Place3PieceUnit, 0x599BB0, { .reversed = false });
+    RH_ScopedInstall(Shop_Place3PieceUnit, 0x599BB0);
     RH_ScopedInstall(Shop_PlaceEdgeUnits, 0x599DC0);
-    RH_ScopedInstall(Shop_PlaceCounter, 0x599EF0, { .reversed = false });
+    RH_ScopedInstall(Shop_PlaceCounter, 0x599EF0);
     RH_ScopedInstall(Shop_PlaceFixedUnits, 0x59A030);
     RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130);
     RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
@@ -974,8 +974,58 @@ void Interior_c::FurnishOffice() {
 }
 
 // 0x599BB0
-int8 Interior_c::Shop_Place3PieceUnit(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6) {
-    return plugin::CallMethodAndReturn<int8, 0x599BB0, Interior_c*, int32, int32, int32, int32, int32>(this, a2, a3, a4, a5, a6);
+// NOTSA: Ghidra reports this function's body as 2 disjoint ranges. Investigated: the gap is NOT dead
+// padding - it's a genuine tail-jump through a shared linker "trampoline pool" thunk at 0x00408080 (one of
+// dozens of unrelated 1-2 instruction stubs packed together there, each belonging to a different, unrelated
+// function). This particular thunk does one real instruction of THIS function's own work (loads
+// this->m_furnitureGroupId) before jumping back into the function's own body a few bytes further along -
+// confirmed via reference search (both the thunk and its jump-back target are referenced from nowhere else
+// in the binary) and by manually re-unifying the body, which recovers one contiguous function ending in the
+// real RET.
+int8 Interior_c::Shop_Place3PieceUnit(int32 furnitureSubgroupBase, int32 x, int32 y, int32 side, int32 count) {
+    const auto wealth = m_box->m_status;
+
+    Furniture_c* endFurnitureA;
+    Furniture_c* middleFurniture;
+    Furniture_c* endFurnitureB;
+    if (side == 2 || side == 3) {
+        endFurnitureA   = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase + 1, -1, wealth);
+        middleFurniture = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase,     endFurnitureA->m_nId, wealth);
+        endFurnitureB   = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase + 2, endFurnitureA->m_nId, wealth);
+    } else {
+        // Reached via the tail-jump through the shared thunk at 0x00408080 (see NOTSA comment above) -
+        // functionally identical to the side==2||3 case except endFurnitureA/middleFurniture's subgroups
+        // are swapped (base vs base+1).
+        endFurnitureA   = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase,     -1, wealth);
+        middleFurniture = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase + 1, endFurnitureA->m_nId, wealth);
+        endFurnitureB   = g_furnitureMan.GetFurniture(m_furnitureGroupId, furnitureSubgroupBase + 2, endFurnitureA->m_nId, wealth);
+    }
+
+    // PlaceFurniture's out-params - one of these IS read back below each iteration (as the per-piece step
+    // along the axis this run advances on); the other stays genuinely write-only scratch, matching
+    // whichever axis is held fixed for this side.
+    int32 stepX, stepY;
+    if (side == 2 || side == 0) {
+        // Horizontal run (top/bottom wall): fixed Y, steps along X.
+        PlaceFurniture(endFurnitureA, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+        x += stepX;
+        for (auto i = count - 2; i > 0; i--) {
+            PlaceFurniture(middleFurniture, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+            x += stepX;
+        }
+        PlaceFurniture(endFurnitureB, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+    } else {
+        // Vertical run (left/right wall, or any other side value): fixed X, steps along Y.
+        PlaceFurniture(endFurnitureA, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+        y += stepY;
+        for (auto i = count - 2; i > 0; i--) {
+            PlaceFurniture(middleFurniture, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+            y += stepY;
+        }
+        PlaceFurniture(endFurnitureB, x, y, 0.0f, 1, side, &stepX, &stepY, 0);
+    }
+
+    return 1; // always succeeds - no failure path in the original (GetFurniture results are never null-checked)
 }
 
 // 0x599DC0
@@ -1016,8 +1066,35 @@ int32 Interior_c::Shop_PlaceEdgeUnits(int32 unitTypeOverride, int32 x, int32 y, 
 }
 
 // 0x599EF0
-int32 Interior_c::Shop_PlaceCounter(uint8 a2) {
-    return plugin::CallMethodAndReturn<int32, 0x599EF0, Interior_c*, uint8>(this, a2);
+int32 Interior_c::Shop_PlaceCounter(uint8 doorSide) {
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    const auto wealth = m_box->m_status;
+    const auto runFurniture    = g_furnitureMan.GetFurniture(0, 0xC, -1, wealth); // shop counter run piece
+    const auto cornerFurniture = g_furnitureMan.GetFurniture(0, 0xD, -1, wealth); // shop counter corner/end piece
+
+    const auto cornerRotation = RandRound(4.0f); // ~[0,4) -> one of 4 facing directions
+
+    int32 runEndX;
+    int32 cornerX;
+    int32 tilesConsumed, unused; // PlaceFurniture out-params; tilesConsumed IS read back for SetTilesStatus below
+    if (doorSide == 0) {
+        runEndX = m_box->m_door + 2;
+        PlaceFurniture(runFurniture, runEndX, 1, 0.0f, 1, 0, &tilesConsumed, &unused, 0);
+        SetTilesStatus(runEndX, 0, tilesConsumed + 1, 1, 2, false);
+        cornerX = m_box->m_door - 2;
+    } else {
+        const auto door = m_box->m_door;
+        runEndX = door - 5;
+        PlaceFurniture(runFurniture, runEndX, 1, 0.0f, 1, 0, &tilesConsumed, &unused, 0);
+        SetTilesStatus(door - 6, 0, tilesConsumed + 1, 1, 2, false);
+        cornerX = door + 1;
+    }
+    PlaceFurniture(cornerFurniture, cornerX, 0, 0.0f, 1, cornerRotation, &tilesConsumed, &unused, 1);
+
+    return runEndX + 2;
 }
 
 // 0x59A030

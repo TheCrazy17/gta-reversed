@@ -73,9 +73,9 @@ public:
     int32 Office_PlaceDeskQuad(int32 unused, int32 centerX, int32 centerY, int32 deskFurnitureId);
     void Office_FurnishCenter();
     void FurnishOffice();
-    int8 Shop_Place3PieceUnit(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6);
+    int8 Shop_Place3PieceUnit(int32 furnitureSubgroupBase, int32 x, int32 y, int32 side, int32 count);
     int32 Shop_PlaceEdgeUnits(int32 unitTypeOverride, int32 x, int32 y, int32 side);
-    int32 Shop_PlaceCounter(uint8 a2);
+    int32 Shop_PlaceCounter(uint8 doorSide);
     void Shop_PlaceFixedUnits();
     void Shop_FurnishCeiling();
     void Shop_AddShelfInfo(int32 x, int32 y, int32 direction);
