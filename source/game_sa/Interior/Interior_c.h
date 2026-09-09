@@ -39,11 +39,11 @@ public:
     int8              m_interiorInfosCount; // 0x40D
     char              gap40E[2];            // 0x40E - alignment padding before m_gotoPoints
     InteriorGotoPoint_t m_gotoPoints[16];   // 0x410
-    char              gap510[128];          // 0x510
+    char              gap510[128];          // 0x510 - exit-point candidate data, written by CalcExitPts (unreversed)
     InteriorInfo_t    m_interiorInfos[16];  // 0x590
     int8              m_furnitureGroupId;   // 0x790
     int8              m_furnitureId;        // 0x791
-    int8              field_792;            // 0x792
+    int8              m_chairFurnitureId;   // 0x792
     int8              field_793;            // 0x793
 
 public:
@@ -67,8 +67,8 @@ public:
     void Lounge_AddSofaInfo(int32 sitType, int32 offsetX, CEntity* entityIgnoredCollision);
     void FurnishLounge();
     bool Office_PlaceEdgeFillers(int32 arg0, int32 a2, int32 a3, int32 a6, int32);
-    int32 Office_PlaceDesk(int32 a3, int32 arg4, int32 offsetY, int32 a5, uint8 a6, int32 b);
-    int32 Office_PlaceEdgeDesks(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6);
+    int32 Office_PlaceDesk(int32 x, int32 y, int32 side, int32 a4, int32 a5, int32 deskFurnitureId); // NOTSA: a4/a5 unused (confirmed via raw disasm), always 0x46/0 at the only call site
+    int32 Office_PlaceEdgeDesks(int32 unused, int32 x, int32 y, int32 direction, int32 edge); // NOTSA: `unused` (1st stack param) is genuinely dead - never read in the body (confirmed via raw disasm)
     void Office_FurnishEdges();
     int32 Office_PlaceDeskQuad(int32 unused, int32 centerX, int32 centerY, int32 deskFurnitureId);
     void Office_FurnishCenter();

@@ -19,8 +19,8 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
     RH_ScopedInstall(FurnishLounge, 0x597740, { .reversed = false });
     RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210, { .reversed = false });
-    RH_ScopedInstall(Office_PlaceDesk, 0x5993E0, { .reversed = false });
-    RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0, { .reversed = false });
+    RH_ScopedInstall(Office_PlaceDesk, 0x5993E0);
+    RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0);
     RH_ScopedInstall(Office_FurnishEdges, 0x599770, { .reversed = false });
     RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960);
     RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
@@ -219,13 +219,119 @@ bool Interior_c::Office_PlaceEdgeFillers(int32 arg0, int32 a2, int32 a3, int32 a
 }
 
 // 0x5993E0
-int32 Interior_c::Office_PlaceDesk(int32 a3, int32 arg4, int32 offsetY, int32 a5, uint8 a6, int32 b) {
-    return plugin::CallMethodAndReturn<int32, 0x5993E0, Interior_c*, int32, int32, int32, int32, uint8, int32>(this, a3, arg4, offsetY, a5, a6, b);
+int32 Interior_c::Office_PlaceDesk(int32 x, int32 y, int32 side, int32, int32, int32 deskFurnitureId) {
+    const auto rotBase = (side - 2) & 3;
+
+    // First furniture piece (the desk itself). Its grid cell is offset by +1 along one axis depending on `side`.
+    auto deskX = x;
+    auto deskY = y;
+    if (side == 2) {
+        deskY = y + 1;
+    } else if (side == 1) {
+        deskX = x + 1;
+    }
+
+    const auto deskFurniture = g_furnitureMan.GetFurniture(1, 0, deskFurnitureId, m_box->m_status); // group 1 = office, subgroup 0 = desk
+    int32 placedX, placedY; // NOTSA: PlaceFurniture's snapped-position out params - written by PlaceFurniture but never read back by the original
+    const auto placedDesk = PlaceFurniture(deskFurniture, deskX, deskY, 0.0f, 1, rotBase, &placedX, &placedY, 0);
+    if (!placedDesk) {
+        return 1;
+    }
+
+    // Second furniture piece (the chair). Its grid cell is offset by `side` independently of the desk's cell,
+    // and the tile-status coordinates used at the very end are independent again - the three don't all agree.
+    auto chairX = x;
+    auto chairY = y;
+    auto tilesX = x;
+    auto tilesY = y;
+    switch (side) {
+    case 2:
+        chairX = x + 1;
+        break;
+    case 0:
+        chairY = y + 1;
+        tilesX = x + 1;
+        tilesY = y + 1;
+        break;
+    case 3:
+        chairX = x + 1;
+        chairY = y + 1;
+        tilesX = x + 1;
+        break;
+    case 1:
+        tilesY = y + 1;
+        break;
+    default:
+        break;
+    }
+
+    const auto chairFurniture = g_furnitureMan.GetFurniture(1, 1, m_chairFurnitureId, m_box->m_status); // group 1 = office, subgroup 1 = chair
+    const auto placedChair = PlaceFurniture(chairFurniture, chairX, chairY, 0.0f, 1, rotBase, &placedX, &placedY, 1);
+
+    // Chair's own placement offset, snapped half a tile towards the desk depending on facing.
+    auto offsetX = (float)chairX;
+    auto offsetY = (float)chairY;
+    switch (rotBase) {
+    case 2: offsetY += TILE_SIZE; break;
+    case 0: offsetY -= TILE_SIZE; break;
+    case 3: offsetX -= TILE_SIZE; break;
+    case 1: offsetX += TILE_SIZE; break;
+    default: break;
+    }
+    AddInteriorInfo(6, offsetX, offsetY, (rotBase - 2) & 3, placedChair);
+
+    SetTilesStatus(tilesX, tilesY, 1, 1, 2, true);
+
+    return 2;
 }
 
 // 0x5995B0
-int32 Interior_c::Office_PlaceEdgeDesks(int32 a2, int32 a3, int32 a4, int32 a5, int32 a6) {
-    return plugin::CallMethodAndReturn<int32, 0x5995B0, Interior_c*, int32, int32, int32, int32, int32>(this, a2, a3, a4, a5, a6);
+int32 Interior_c::Office_PlaceEdgeDesks(int32, int32 x, int32 y, int32 direction, int32 edge) {
+    // FUN_00821b40 (raw disasm) is a generic compiler-emitted "round the float on the FPU stack to the
+    // nearest int, ties away from zero" runtime helper - not interior/desk specific (30+ unrelated call
+    // sites all over the binary), so there's no existing named wrapper for it in this codebase.
+    // `rand() * (1/32768)` (NOT CGeneral's `RAND_MAX_FLOAT_RECIPROCAL` = 1/32767) is rounded rather than
+    // truncated, so `CGeneral::GetRandomNumberInRange` doesn't reproduce it - reimplemented inline.
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)rand() * (1.0f / 32768.0f) * scale);
+    };
+
+    const auto randPercent = RandRound(100.0f); // dice roll, ~[0, 100]
+    const auto randOffset  = RandRound(-40.0f); // ~[-40, 0]
+
+    // GetNumEmptyTiles scans along the x-axis for a horizontal wall (direction 0/2) or the y-axis for a
+    // vertical wall (direction 1/3, or anything else) - `direction` is the wall/side this run is placed on.
+    const auto scanDirection = (direction == 0 || direction == 2) ? 1 : 2;
+    const auto emptyTiles    = GetNumEmptyTiles(x, y, scanDirection, 1);
+    if (emptyTiles <= 1) {
+        return 1;
+    }
+
+    auto deskCount = emptyTiles / 2;
+    if (deskCount >= 2 - RandRound(-2.0f)) {
+        deskCount = 2 - RandRound(-2.0f); // re-rolled with a fresh draw, discarding the value used for the check above
+    }
+
+    if (randPercent > 30 - randOffset) {
+        return 1;
+    }
+
+    auto totalConsumed = 0;
+    if (deskCount > 0) {
+        const auto side = (direction - 2) & 3; // same rotation idiom Office_PlaceDesk computes internally
+        for (auto i = deskCount; i != 0; i--) {
+            int32 deskX, deskY;
+            switch (edge) {
+            case 0: deskX = totalConsumed + x; deskY = y - 1;             break;
+            case 1: deskX = x;                 deskY = totalConsumed + y; break;
+            case 2: deskX = totalConsumed + x; deskY = y;                 break;
+            case 3: deskX = x - 1;             deskY = totalConsumed + y; break;
+            default: continue; // no matching edge -> place nothing this iteration (matches original)
+            }
+            totalConsumed += Office_PlaceDesk(deskX, deskY, side, 0x46, 0, m_furnitureId);
+        }
+    }
+    return totalConsumed + 1;
 }
 
 // 0x599770
