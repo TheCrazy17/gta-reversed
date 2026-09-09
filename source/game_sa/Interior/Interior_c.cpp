@@ -21,7 +21,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Lounge_AddHifi, 0x597430);
     RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
     RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
-    RH_ScopedInstall(FurnishLounge, 0x597740, { .reversed = false });
+    RH_ScopedInstall(FurnishLounge, 0x597740);
     RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210);
     RH_ScopedInstall(Office_PlaceDesk, 0x5993E0);
     RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0);
@@ -328,7 +328,177 @@ void Interior_c::Lounge_AddSofaInfo(int32 sitType, int32 offset, CEntity* entity
 
 // 0x597740
 void Interior_c::FurnishLounge() {
-    plugin::CallMethod<0x597740, Interior_c*>(this);
+    // Door-adjacent tiles: a 2-wide walkable notch centered on the door (status 7), flanked by a single
+    // blocked tile on each side (status 2).
+    SetTilesStatus(m_box->m_door - 1, 0, 2, 1, 7, false);
+    SetTilesStatus(m_box->m_door - 2, 0, 1, 1, 2, false);
+    SetTilesStatus(m_box->m_door + 1, 0, 1, 1, 2, false);
+
+    const auto width  = m_box->m_width;
+    const auto depth  = m_box->m_depth;
+    const auto wealth = m_box->m_status;
+
+    const auto perimeter = (depth + width) * 2;
+
+    // Try to place a piece of furniture into one of the room's 4 corners.
+    int32 cornerSide, cornerA10, cornerA11, cornerA12, cornerA13;
+    const auto cornerFurniture = PlaceFurnitureInCorner(2, 2, -1, 0.0f, 1, -1, 0, &cornerSide, &cornerA10, &cornerA11, &cornerA12, &cornerA13);
+    auto placedCornerSide = -1; // -1 = "no corner furniture placed"
+    if (cornerFurniture) {
+        Lounge_AddTV(cornerSide, cornerA10, cornerA11, 0);
+        placedCornerSide = cornerSide;
+    }
+    SetCornerTiles(cornerSide, 2, 2, true);
+
+    // Block the inner ring (inset 1 tile from each wall).
+    const auto innerRight  = width - 2;
+    const auto innerBottom = depth - 2;
+    for (auto x = 1; x <= innerRight; ++x) {
+        SetTilesStatus(x, innerBottom, 1, 1, 3, false);
+        SetTilesStatus(x, 1,           1, 1, 3, false);
+    }
+    for (auto y = 1; y <= innerBottom; ++y) {
+        SetTilesStatus(1,          y, 1, 1, 3, false);
+        SetTilesStatus(innerRight, y, 1, 1, 3, false);
+    }
+
+    // 4 AI goto-points at the inner ring's corners.
+    AddGotoPt(1,          1,           0.0f, 0.0f);
+    AddGotoPt(1,          innerBottom, 0.0f, 0.0f);
+    AddGotoPt(innerRight, 1,           0.0f, 0.0f);
+    AddGotoPt(innerRight, innerBottom, 0.0f, 0.0f);
+
+    // Block all 4 corners (2x2 each) up front; corners not used by the corner-furniture placed above get
+    // cleared again below.
+    SetCornerTiles(0, 2, 2, false);
+    SetCornerTiles(2, 2, 2, false);
+    SetCornerTiles(1, 2, 2, false);
+    SetCornerTiles(3, 2, 2, false);
+
+    // Main wall furniture (e.g. sofa): pick a random id, remember it, and try to place it against a wall.
+    m_furnitureId = (int8)g_furnitureMan.GetRandomId(2, 0, wealth);
+    {
+        int32 sofaSide, sofaOffset;
+        if (const auto sofa = PlaceFurnitureOnWall(2, 0, m_furnitureId, 0.0f, 1, -1, -1, 0, &sofaSide, &sofaOffset, nullptr, nullptr, nullptr, nullptr)) {
+            Lounge_AddSofaInfo(sofaSide, sofaOffset, sofa);
+            // Companion item next to the sofa - try one spot, then a fallback spot if the first is blocked.
+            if (!PlaceFurnitureOnWall(2, 4, -1, 0.0f, 1, sofaSide, sofaOffset, 2, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)) {
+                PlaceFurnitureOnWall(2, 4, -1, 0.0f, 1, sofaSide, sofaOffset, 3, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+            }
+        }
+    }
+
+    // Up to 2 chairs, unconditionally attempted; a 3rd only for rooms large enough (perimeter > 0x1C).
+    {
+        int32 chairSide, chairOffset;
+        if (const auto chair = PlaceFurnitureOnWall(2, 1, m_furnitureId, 0.0f, 1, -1, -1, 0, &chairSide, &chairOffset, nullptr, nullptr, nullptr, nullptr)) {
+            Lounge_AddChairInfo(chairSide, chairOffset, chair);
+        }
+    }
+    {
+        int32 chairSide, chairOffset;
+        if (const auto chair = PlaceFurnitureOnWall(2, 1, m_furnitureId, 0.0f, 1, -1, -1, 0, &chairSide, &chairOffset, nullptr, nullptr, nullptr, nullptr)) {
+            Lounge_AddChairInfo(chairSide, chairOffset, chair);
+        }
+    }
+    if (perimeter > 0x1C) { // 0x1C = 28
+        int32 chairSide, chairOffset;
+        if (const auto chair = PlaceFurnitureOnWall(2, 1, m_furnitureId, 0.0f, 1, -1, -1, 0, &chairSide, &chairOffset, nullptr, nullptr, nullptr, nullptr)) {
+            Lounge_AddChairInfo(chairSide, chairOffset, chair);
+        }
+    }
+
+    // Clear (unblock) every corner that DIDN'T end up with the corner-furniture placed at the very start.
+    if (placedCornerSide != 0) SetCornerTiles(0, 2, 0, false);
+    if (placedCornerSide != 2) SetCornerTiles(2, 2, 0, false);
+    if (placedCornerSide != 1) SetCornerTiles(1, 2, 0, false);
+    if (placedCornerSide != 3) SetCornerTiles(3, 2, 0, false);
+
+    // TV stand / hifi wall unit.
+    {
+        int32 wallSide, wallA12, wallA13;
+        if (PlaceFurnitureOnWall(2, 6, -1, 0.0f, 1, -1, -1, 0, &wallSide, nullptr, &wallA12, &wallA13, nullptr, nullptr)) {
+            Lounge_AddHifi(wallSide, wallA12, wallA13, 0);
+        }
+    }
+
+    // 3 more unconditional wall-furniture placements; results discarded (best-effort fillers).
+    PlaceFurnitureOnWall(2, 5, -1, 0.0f, 1, -1, -1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    PlaceFurnitureOnWall(8, 0, -1, 0.0f, 1, -1, -1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    PlaceFurnitureOnWall(8, 0, -1, 0.0f, 1, -1, -1, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    // Wealth-tiered budget for a handful of loose decorative items placed at random empty tiles.
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    int32 randomItemBudget;
+    if (wealth >= 0x4B) {        // wealth >= 75
+        randomItemBudget = RandRound(20.0f);
+    } else if (wealth >= 0x32) { // wealth in [50, 74]
+        randomItemBudget = 20 - RandRound(-30.0f);
+    } else {                     // wealth < 50
+        randomItemBudget = 50 - RandRound(-50.0f);
+    }
+
+    constexpr float kSmallItemZOffset = 0.05f;
+
+    if (RandRound(60.0f) < randomItemBudget) {
+        int32 spawnX, spawnY;
+        if (FindEmptyTiles(2, 2, &spawnX, &spawnY)) {
+            const auto item = g_furnitureMan.GetFurniture(8, 2, -1, wealth);
+            PlaceObject(false, item, (float)spawnX + TILE_SIZE, (float)spawnY + TILE_SIZE, kSmallItemZOffset, 0.0f);
+            SetTilesStatus(spawnX, spawnY, 2, 2, 2, false);
+        }
+    }
+    if (RandRound(100.0f) < randomItemBudget) {
+        int32 spawnX, spawnY;
+        if (FindEmptyTiles(1, 1, &spawnX, &spawnY)) {
+            const auto item = g_furnitureMan.GetFurniture(8, 5, -1, wealth);
+            PlaceObject(false, item, (float)spawnX + TILE_SIZE, (float)spawnY + TILE_SIZE, kSmallItemZOffset, 0.0f);
+            SetTilesStatus(spawnX, spawnY, 1, 1, 2, false);
+        }
+    }
+    if (RandRound(100.0f) < randomItemBudget) {
+        int32 spawnX, spawnY;
+        if (FindEmptyTiles(1, 1, &spawnX, &spawnY)) {
+            const auto item = g_furnitureMan.GetFurniture(8, 4, -1, wealth);
+            PlaceObject(false, item, (float)spawnX + TILE_SIZE, (float)spawnY + TILE_SIZE, kSmallItemZOffset, 0.0f);
+            SetTilesStatus(spawnX, spawnY, 1, 1, 2, false);
+        }
+    }
+
+    // Centerpiece furniture, centered in the room using its own footprint (m_nWidthX/m_nWidthY).
+    {
+        const auto centerpiece = g_furnitureMan.GetFurniture(8, 1, -1, wealth);
+        const auto centerX = (int32)std::lround(((float)width - (float)centerpiece->m_nWidthX) * 0.5f);
+        const auto centerY = (int32)std::lround(((float)depth - (float)centerpiece->m_nWidthY) * 0.5f);
+        int32 placedX, placedY; // NOTSA: PlaceFurniture's out params, never read back here
+        PlaceFurniture(centerpiece, centerX, centerY, 0.0f, 0, 0, &placedX, &placedY, 0);
+    }
+
+    // Walk the top/bottom walls: any tile that's empty (0) or "blocked-but-walkable" (2) gets a goto-point.
+    for (auto x = 0; x < width - 1; ++x) {
+        const auto topStatus = GetTileStatus(x, 0);
+        if (topStatus == 0 || topStatus == 2) {
+            AddInteriorInfo(2, (float)x, 0.0f, 2, nullptr);
+        }
+        const auto bottomStatus = GetTileStatus(x, depth - 1);
+        if (bottomStatus == 0 || bottomStatus == 2) {
+            AddInteriorInfo(2, (float)x, (float)(depth - 1), 0, nullptr);
+        }
+    }
+    // Same for the left/right walls.
+    for (auto y = 1; y < depth - 2; ++y) {
+        const auto leftStatus = GetTileStatus(0, y);
+        if (leftStatus == 0 || leftStatus == 2) {
+            AddInteriorInfo(2, 0.0f, (float)y, 1, nullptr);
+        }
+        const auto rightStatus = GetTileStatus(width - 1, y);
+        if (rightStatus == 0 || rightStatus == 2) {
+            AddInteriorInfo(2, (float)(width - 1), (float)y, 3, nullptr);
+        }
+    }
 }
 
 // 0x599210 (prologue tail-jumps through a linker-shared `rand() & 0xFFFF` thunk at 0x405BEF into the
