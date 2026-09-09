@@ -6,6 +6,11 @@
 // Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
 static auto& s_bRareOfficeFillerPlaced = StaticRef<bool>(0xBB3DC8);
 
+// NOTSA: read-only in the -noanalysis scan (only xref found is the read in Shop_PlaceEdgeUnits below) -
+// likely some shop-progression/wealth tier counter selecting which unit-type bracket to place, but no
+// writer was located to confirm the exact semantics.
+static auto& s_nShopUnitTypeTier = StaticRef<int32>(0xBB3DE4);
+
 void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
     RH_ScopedCategory("Interior");
@@ -30,10 +35,10 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
     RH_ScopedInstall(FurnishOffice, 0x599AF0);
     RH_ScopedInstall(Shop_Place3PieceUnit, 0x599BB0, { .reversed = false });
-    RH_ScopedInstall(Shop_PlaceEdgeUnits, 0x599DC0, { .reversed = false });
+    RH_ScopedInstall(Shop_PlaceEdgeUnits, 0x599DC0);
     RH_ScopedInstall(Shop_PlaceCounter, 0x599EF0, { .reversed = false });
-    RH_ScopedInstall(Shop_PlaceFixedUnits, 0x59A030, { .reversed = false });
-    RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130, { .reversed = false });
+    RH_ScopedInstall(Shop_PlaceFixedUnits, 0x59A030);
+    RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130);
     RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
     RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0, { .reversed = false });
     RH_ScopedInstall(GetBoundingBox, 0x593DB0, { .reversed = false });
@@ -974,8 +979,40 @@ int8 Interior_c::Shop_Place3PieceUnit(int32 a2, int32 a3, int32 a4, int32 a5, in
 }
 
 // 0x599DC0
-int32 Interior_c::Shop_PlaceEdgeUnits(int32 a2, int32 a3, int32 a4, int32 a5) {
-    return plugin::CallMethodAndReturn<int32, 0x599DC0, Interior_c*, int32, int32, int32, int32>(this, a2, a3, a4, a5);
+int32 Interior_c::Shop_PlaceEdgeUnits(int32 unitTypeOverride, int32 x, int32 y, int32 side) {
+    const auto scanAxis   = (side == 0 || side == 2) ? 1 : 2;
+    const auto emptyTiles = GetNumEmptyTiles(x, y, scanAxis, 1);
+    if (emptyTiles <= 1) {
+        return 1;
+    }
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Randomized target run-length, nudged/capped against the actual empty-tile run: an exact run of
+    // 3 tiles is always honored as-is; otherwise clamp to the run when it's shorter than the
+    // threshold, and back off by one when it's exactly one longer.
+    const auto threshold = 2 - RandRound(-3.0f);
+    auto unitCount = emptyTiles;
+    if (emptyTiles != 3) {
+        const auto diff = emptyTiles - threshold;
+        if (diff >= 0) {
+            unitCount = (diff == 1) ? (threshold - 1) : threshold;
+        }
+    }
+
+    // No explicit unit type requested (-1): pick one from a global shop-progression tier counter.
+    auto unitType = unitTypeOverride;
+    if (unitType == -1) {
+        if (s_nShopUnitTypeTier > 50)      unitType = 0;
+        else if (s_nShopUnitTypeTier > 25) unitType = 3;
+        else if (s_nShopUnitTypeTier > 10) unitType = 6;
+        else                               unitType = 9;
+    }
+
+    Shop_Place3PieceUnit(unitType, x, y, side, unitCount); // return value discarded
+    return unitCount;
 }
 
 // 0x599EF0
@@ -985,12 +1022,46 @@ int32 Interior_c::Shop_PlaceCounter(uint8 a2) {
 
 // 0x59A030
 void Interior_c::Shop_PlaceFixedUnits() {
-    return plugin::CallMethod<0x59A030, Interior_c*>(this);
+    if (m_box->m_door == -1) {
+        return; // no door in this room -> nothing to place
+    }
+    SetTilesStatus(m_box->m_door - 1, 0, 2, 1, 7, false);
+
+    const auto door = m_box->m_door; // re-read after the call above (matches raw disasm - not cached across it)
+    const auto doorGapFromRight = m_box->m_width - door - 2;
+    const auto doorGapFromLeft  = door - 2;
+
+    // NOTSA quirk (raw-disasm-verified): the original reserves this local's stack slot with a `PUSH ECX`
+    // at function entry (a cheap `sub esp,4` substitute), which incidentally initializes it with the
+    // `this` pointer. On the one path below where BOTH gaps are narrow, the compiled code never
+    // overwrites that slot before it's converted to float and used - so `counterResult` genuinely reads
+    // back the `this` pointer reinterpreted as an int in that case. Reproduced faithfully, not "fixed".
+    auto counterResult = static_cast<int32>(reinterpret_cast<intptr_t>(this));
+
+    if (doorGapFromRight < 6 && doorGapFromLeft < 6) {
+        // both sides too narrow: no counter unit placed, counterResult keeps the quirky value above
+    } else {
+        bool wantsCounter;
+        if (doorGapFromRight < 6) {
+            wantsCounter = true;
+        } else if (doorGapFromLeft < 6) {
+            wantsCounter = false;
+        } else {
+            wantsCounter = rand() < 0x3FFF;
+        }
+        counterResult = Shop_PlaceCounter(wantsCounter);
+    }
+
+    AddInteriorInfo(9,  (float)counterResult, 2.0f, 0, nullptr);
+    AddInteriorInfo(10, (float)counterResult, 0.0f, 2, nullptr);
 }
 
 // 0x59A130
 void Interior_c::Shop_FurnishCeiling() {
-    plugin::CallMethod<0x59A130, Interior_c*>(this);
+    // NOTSA: Confirmed genuinely empty in the shipped binary - body is a single `ret` followed by NOP
+    // alignment padding to the next function. The only incoming xref is an unconditional jump (not a
+    // call) from FurnishOffice's own tail - the linker folded FurnishOffice's trivial "pop esi; ret"
+    // epilogue into this same bare ret. Ceiling furnishing was apparently never implemented for shops.
 }
 
 // Cooldown counter gating how often a "shop shelf" AddInteriorInfo point (action type 8) can be
