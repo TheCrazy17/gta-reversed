@@ -52,7 +52,7 @@ public:
     int8 SetupPaths();
     int8 ArePathsLoaded();
     void Setup();
-    int8 Exit();
+    void Exit(); // NOTSA: header previously declared `int8` - raw disasm never sets a meaningful EAX before its tail-jump into DereferenceAnims
     int8 ContainsInteriorType(int32 type);
     int8 CalcIsVisible();
 
@@ -66,7 +66,7 @@ public:
     CEntity* GetEntity();
     CPed* GetPed(int32);
     bool FindClosestInteriorInfo(int32 infoType, CVector point, float maxDist, InteriorInfo_t** outInfo, Interior_c** outInterior, float* outDistSq);
-    bool FindInteriorInfo(eInteriorInfoType infoType, InteriorInfo_t** a3, Interior_c** a4);
+    bool FindInteriorInfo(eInteriorInfoType infoType, InteriorInfo_t** outInfo, Interior_c** outInterior);
     int32 GetNumInteriorInfos(eInteriorInfoType infoType);
     int32 GetRandomInterior();
     auto GetId() const { return m_id; }
