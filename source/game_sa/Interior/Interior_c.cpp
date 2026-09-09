@@ -77,7 +77,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(AddInteriorInfo, 0x591E40);
     RH_ScopedInstall(AddPickups, 0x591F90);
     RH_ScopedInstall(Exit, 0x592230);
-    RH_ScopedInstall(FindBoundingBox, 0x5922C0, { .reversed = false });
+    RH_ScopedInstall(FindBoundingBox, 0x5922C0);
     RH_ScopedInstall(CalcExitPts, 0x5924A0, { .reversed = false });
     RH_ScopedInstall(IsVisible, 0x5929F0);
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .reversed = false });
@@ -1862,8 +1862,75 @@ void Interior_c::AddPickups() {
 }
 
 // 0x5922C0
-void Interior_c::FindBoundingBox(int32 a1, int32 a2, int32* a3, int32* a4, int32* a5, int32* a6, int32* a7) {
-    plugin::CallMethod<0x5922C0, Interior_c*, int32, int32, int32*, int32*, int32*, int32*, int32*>(this, a1, a2, a3, a4, a5, a6, a7);
+// Self-recursive 4-directional flood fill over m_tiles, gated on tile status == 5. `visited` is a
+// flattened 30x30 int32 scratch grid matching m_tiles's [x][y] indexing (see GetBoundingBox, which
+// seeds visited[tileX][tileY] = 1 before the first call). Left/Up/Right recurse; Down is compiled as
+// a tail loop instead (confirmed via raw disasm - it jumps back to this function's own entry point
+// rather than calling itself), so a single call here can walk an entire connected column of tiles
+// without growing the call stack in that direction.
+void Interior_c::FindBoundingBox(int32 x, int32 y, int32* minX, int32* maxX, int32* minY, int32* maxY, int32* visited) {
+    for (;;) {
+        // Left (x-1) - updates *minX
+        if (x > 0) {
+            const auto nx = x - 1;
+            if (nx < m_box->m_width && y < m_box->m_depth && nx >= 0 && y >= 0) {
+                if (m_tiles[nx][y] == 5 && !visited[nx * 30 + y]) {
+                    visited[nx * 30 + y] = 1;
+                    if (nx < *minX) {
+                        *minX = nx;
+                    }
+                    FindBoundingBox(nx, y, minX, maxX, minY, maxY, visited);
+                }
+            }
+        }
+
+        // Up (y+1) - updates *maxY
+        if (y < 29) {
+            const auto ny = y + 1;
+            if (x < m_box->m_width && ny < m_box->m_depth && x >= 0 && ny >= 0) {
+                if (m_tiles[x][ny] == 5 && !visited[x * 30 + ny]) {
+                    visited[x * 30 + ny] = 1;
+                    if (ny > *maxY) {
+                        *maxY = ny;
+                    }
+                    FindBoundingBox(x, ny, minX, maxX, minY, maxY, visited);
+                }
+            }
+        }
+
+        // Right (x+1) - updates *maxX
+        if (x < 29) {
+            const auto nx = x + 1;
+            if (nx < m_box->m_width && y < m_box->m_depth && nx >= 0 && y >= 0) {
+                if (m_tiles[nx][y] == 5 && !visited[nx * 30 + y]) {
+                    visited[nx * 30 + y] = 1;
+                    if (nx > *maxX) {
+                        *maxX = nx;
+                    }
+                    FindBoundingBox(nx, y, minX, maxX, minY, maxY, visited);
+                }
+            }
+        }
+
+        // Down (y-1) - updates *minY. Tail-loop-optimized by the compiler instead of recursing:
+        // every failed check here returns immediately (matches raw disasm exactly - since this is
+        // the last of the 4 blocks, its "skip this block" and "return from function" targets coincide).
+        if (y <= 0 || x >= m_box->m_width) {
+            return;
+        }
+        const auto ny = y - 1;
+        if (ny >= m_box->m_depth || x < 0 || ny < 0) {
+            return;
+        }
+        if (m_tiles[x][ny] != 5 || visited[x * 30 + ny]) {
+            return;
+        }
+        visited[x * 30 + ny] = 1;
+        if (ny < *minY) {
+            *minY = ny;
+        }
+        y = ny;
+    }
 }
 
 // 0x5924A0

@@ -99,7 +99,7 @@ public:
     void AddGotoPt(int32 x, int32 y, float offsetX, float offsetY);
     bool AddInteriorInfo(int32 actionType, float offsetX, float offsetY, int32 direction, CEntity* entityIgnoredCollision);
     void AddPickups();
-    void FindBoundingBox(int32, int32, int32*, int32*, int32*, int32*, int32*);
+    void FindBoundingBox(int32 x, int32 y, int32* minX, int32* maxX, int32* minY, int32* maxY, int32* visited);
     void CalcExitPts();
     bool IsVisible();
     CObject* PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9);
