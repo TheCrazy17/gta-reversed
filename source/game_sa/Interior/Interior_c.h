@@ -66,7 +66,7 @@ public:
     void Lounge_AddChairInfo(int32 a2, int32 a3, CEntity* entityIgnoredCollision);
     void Lounge_AddSofaInfo(int32 sitType, int32 offsetX, CEntity* entityIgnoredCollision);
     void FurnishLounge();
-    bool Office_PlaceEdgeFillers(int32 arg0, int32 a2, int32 a3, int32 a6, int32);
+    int32 Office_PlaceEdgeFillers(int32 furnitureSubGroupOverride, int32 x, int32 y, int32 side, int32); // NOTSA: 5th param genuinely unused (confirmed via raw disasm), kept for signature parity with Office_PlaceEdgeDesks
     int32 Office_PlaceDesk(int32 x, int32 y, int32 side, int32 a4, int32 a5, int32 deskFurnitureId); // NOTSA: a4/a5 unused (confirmed via raw disasm), always 0x46/0 at the only call site
     int32 Office_PlaceEdgeDesks(int32 unused, int32 x, int32 y, int32 direction, int32 edge); // NOTSA: `unused` (1st stack param) is genuinely dead - never read in the body (confirmed via raw disasm)
     void Office_FurnishEdges();

@@ -2,6 +2,10 @@
 #include "Interior_c.h"
 #include "FurnitureManager_c.h"
 
+// One-shot flag: has the rare/special office filler item already been placed this game session?
+// Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
+static auto& s_bRareOfficeFillerPlaced = StaticRef<bool>(0xBB3DC8);
+
 void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
     RH_ScopedCategory("Interior");
@@ -18,7 +22,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Lounge_AddChairInfo, 0x5974E0);
     RH_ScopedInstall(Lounge_AddSofaInfo, 0x5975C0);
     RH_ScopedInstall(FurnishLounge, 0x597740, { .reversed = false });
-    RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210, { .reversed = false });
+    RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210);
     RH_ScopedInstall(Office_PlaceDesk, 0x5993E0);
     RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0);
     RH_ScopedInstall(Office_FurnishEdges, 0x599770, { .reversed = false });
@@ -213,9 +217,61 @@ void Interior_c::FurnishLounge() {
     plugin::CallMethod<0x597740, Interior_c*>(this);
 }
 
-// 0x599210
-bool Interior_c::Office_PlaceEdgeFillers(int32 arg0, int32 a2, int32 a3, int32 a6, int32 a7) {
-    return plugin::CallMethodAndReturn<bool, 0x599210, Interior_c*, int32, int32, int32, int32, int32>(this, arg0, a2, a3, a6, a7);
+// 0x599210 (prologue tail-jumps through a linker-shared `rand() & 0xFFFF` thunk at 0x405BEF into the
+// body at 0x599223 - not a separate function, just code folded by the linker)
+int32 Interior_c::Office_PlaceEdgeFillers(int32 furnitureSubGroupOverride, int32 x, int32 y, int32 side, int32) {
+    // rand() & 0xFFFF scaled to a 0-99 "roll". rand() only ever returns 0-0x7FFF so the mask is a
+    // no-op here, but the original does it anyway (this arithmetic is the linker-shared fragment).
+    const auto roll = (int32)((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * 100.0f);
+
+    // GetNumEmptyTiles scans along X for wall sides 0/2 and along Y for sides 1/3.
+    const auto scanAxis = (side == 0 || side == 2) ? 1 : 2;
+    if (GetNumEmptyTiles(x, y, scanAxis, 1) < 1) {
+        return 1;
+    }
+
+    // One tile further along the wall in `side`'s direction - used only for the AddInteriorInfo
+    // goto-point below, NOT for the PlaceFurniture call (which always uses the original x/y).
+    auto nextX = x;
+    auto nextY = y;
+    switch (side) {
+    case 2: nextY = y + 1; break;
+    case 0: nextY = y - 1; break;
+    case 3: nextX = x - 1; break;
+    case 1: nextX = x + 1; break;
+    default: break;
+    }
+
+    Furniture_c* furniture;
+    auto placeArg = side; // passed to PlaceFurniture's `a6` below; overwritten with a random count in the "assorted" branch
+    if (furnitureSubGroupOverride == -1) {
+        if (roll > 90 && !s_bRareOfficeFillerPlaced) {
+            // Rare/special filler - placed at most once per game session.
+            furniture = g_furnitureMan.GetFurniture(1, 2, -1, m_box->m_status);
+            if (furniture) {
+                AddInteriorInfo(7, (float)nextX, (float)nextY, (side - 2) & 3, nullptr);
+            }
+            s_bRareOfficeFillerPlaced = true;
+        } else if (roll <= 75) {
+            if (roll <= 25) {
+                return 1; // nothing placed
+            }
+            furniture = g_furnitureMan.GetFurniture(1, 3, -1, m_box->m_status);
+            if (furniture) {
+                AddInteriorInfo(7, (float)nextX, (float)nextY, (side - 2) & 3, nullptr);
+            }
+        } else {
+            // 75 < roll <= 90 (or roll > 90 but the rare item was already placed this session): assorted filler set.
+            placeArg = CGeneral::GetRandomNumberInRange<int32>(0, 5);
+            furniture = g_furnitureMan.GetFurniture(8, 0, -1, m_box->m_status);
+        }
+    } else {
+        furniture = g_furnitureMan.GetFurniture(1, furnitureSubGroupOverride, -1, m_box->m_status);
+    }
+
+    int32 tilesConsumed, unused;
+    PlaceFurniture(furniture, x, y, 0.0f, 1, placeArg, &tilesConsumed, &unused, 0);
+    return tilesConsumed;
 }
 
 // 0x5993E0
