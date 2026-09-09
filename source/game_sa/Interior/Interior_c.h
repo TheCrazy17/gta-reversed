@@ -80,7 +80,7 @@ public:
     void Shop_FurnishCeiling();
     void Shop_AddShelfInfo(int32 x, int32 y, int32 direction);
     void Shop_FurnishEdges();
-    bool GetBoundingBox(FurnitureEntity_c* entity, CVector* a3);
+    bool GetBoundingBox(FurnitureEntity_c* entity, CVector* corners); // NOTSA: `corners` must point to room for 4 CVectors, not 1
     void ResetTiles();
     CObject* PlaceObject(uint8 isStealable, Furniture_c* furniture, float offsetX, float offsetY, float offsetZ, float rotationZ);
     FurnitureEntity_c* GetFurnitureEntity(CEntity*);

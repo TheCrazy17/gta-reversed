@@ -1,6 +1,8 @@
 #include "StdInc.h"
 #include "Interior_c.h"
 #include "FurnitureManager_c.h"
+#include "Pickups.h"
+#include "ModelIndices.h"
 
 // One-shot flag: has the rare/special office filler item already been placed this game session?
 // Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
@@ -10,6 +12,12 @@ static auto& s_bRareOfficeFillerPlaced = StaticRef<bool>(0xBB3DC8);
 // likely some shop-progression/wealth tier counter selecting which unit-type bracket to place, but no
 // writer was located to confirm the exact semantics.
 static auto& s_nShopUnitTypeTier = StaticRef<int32>(0xBB3DE4);
+
+// NOTSA: sits in the same small flag/counter block as s_bRareOfficeFillerPlaced (0xBB3DC8, above) and
+// InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2). Never written anywhere found in a -noanalysis
+// scan - likely a session/level-start reference timestamp set elsewhere, making the check below "don't
+// spawn random pickups until >=3 minutes after that reference point" rather than a per-call cooldown.
+static auto& s_nPickupSpawnGateTime = StaticRef<uint32>(0xBB3DC4);
 
 void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
@@ -41,7 +49,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Shop_FurnishCeiling, 0x59A130);
     RH_ScopedInstall(Shop_AddShelfInfo, 0x59A140);
     RH_ScopedInstall(Shop_FurnishEdges, 0x59A1B0);
-    RH_ScopedInstall(GetBoundingBox, 0x593DB0, { .reversed = false });
+    RH_ScopedInstall(GetBoundingBox, 0x593DB0);
     RH_ScopedInstall(Init, 0x593BF0, { .reversed = false });
     RH_ScopedInstall(ResetTiles, 0x593910);
     RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
@@ -60,7 +68,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(GetTileCentre, 0x591BD0);
     RH_ScopedInstall(AddGotoPt, 0x591D20);
     RH_ScopedInstall(AddInteriorInfo, 0x591E40);
-    RH_ScopedInstall(AddPickups, 0x591F90, { .reversed = false });
+    RH_ScopedInstall(AddPickups, 0x591F90);
     RH_ScopedInstall(Exit, 0x592230, { .reversed = false });
     RH_ScopedInstall(FindBoundingBox, 0x5922C0, { .reversed = false });
     RH_ScopedInstall(CalcExitPts, 0x5924A0, { .reversed = false });
@@ -1263,8 +1271,37 @@ void Interior_c::Shop_FurnishEdges() {
 }
 
 // 0x593DB0
-bool Interior_c::GetBoundingBox(FurnitureEntity_c* entity, CVector* a3) {
-    return plugin::CallMethodAndReturn<bool, 0x593DB0, Interior_c*, FurnitureEntity_c*, CVector*>(this, entity, a3);
+bool Interior_c::GetBoundingBox(FurnitureEntity_c* entity, CVector* corners) {
+    // NOTSA: Only proceeds for a subset of tEffectInterior::m_type values (0/1/6). This is the ONLY
+    // reader of m_box->m_type in the whole class - reproduced byte-for-byte from raw disasm; the
+    // real-world semantics of this specific gate aren't clear from static analysis alone.
+    const auto boxType = m_box->m_type;
+    if (boxType != 0 && boxType != 1 && boxType != 6) {
+        return false;
+    }
+
+    const auto tileX = (int32)entity->m_tileX;
+    const auto tileY = (int32)entity->m_tileY;
+
+    // Scratch "visited" grid for FindBoundingBox's flood fill - same 30x30 dimensions/indexing as m_tiles.
+    int32 visited[30][30]{};
+    visited[tileX][tileY] = 1;
+
+    // Flood-fill outward from the entity's own tile through connected same-status tiles to find the
+    // full tile-space footprint of the (possibly multi-tile) placed furniture piece.
+    auto minX = tileX, maxX = tileX;
+    auto minY = tileY, maxY = tileY;
+    FindBoundingBox(tileX, tileY, &minX, &maxX, &minY, &maxY, visited[0]);
+
+    constexpr auto MARGIN = 0.35f;
+    constexpr auto OUTSET = TILE_SIZE + MARGIN; // 0.85f
+
+    GetTileCentre((float)minX - OUTSET, (float)maxY + OUTSET, &corners[0]);
+    GetTileCentre((float)minX - OUTSET, (float)minY - OUTSET, &corners[1]);
+    GetTileCentre((float)maxX + OUTSET, (float)minY - OUTSET, &corners[2]);
+    GetTileCentre((float)maxX + OUTSET, (float)maxY + OUTSET, &corners[3]);
+
+    return true;
 }
 
 // 0x593910
@@ -1685,7 +1722,47 @@ bool Interior_c::AddInteriorInfo(int32 actionType, float offsetX, float offsetY,
 
 // 0x591F90
 void Interior_c::AddPickups() {
-    plugin::CallMethod<0x591F90, Interior_c*>(this);
+    if (CTimer::m_snTimeInMilliseconds - s_nPickupSpawnGateTime <= 179999u) { // 180000ms = 3 minutes
+        return;
+    }
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // Up to 100 attempts to find one valid empty-ish tile, then place exactly one pickup and stop.
+    for (auto attempt = 0; attempt < 100; attempt++) {
+        const auto x = RandRound((float)(m_box->m_width - 1));
+        const auto y = RandRound((float)(m_box->m_depth - 1));
+        if (x < 0 || x >= m_box->m_width || y < 0 || y >= m_box->m_depth) {
+            continue;
+        }
+
+        const auto tile = m_tiles[x][y];
+        if (tile != 0 && tile != 3 && tile != 4) {
+            continue;
+        }
+
+        CVector pos;
+        GetTileCentre((float)x, (float)y, &pos);
+
+        if (RandRound(100.0f) < 75) {
+            // ~75% chance: a wad of cash, amount in [10, 50].
+            const auto moneyRoll = RandRound(-40.0f); // [-40, 0]
+            CPickups::GenerateNewOne(pos, ModelIndices::MI_MONEY, PICKUP_MONEY, 10 - moneyRoll);
+        } else {
+            // ~25% chance: a loose weapon pickup, ammo in [3, 18].
+            pos.z += TILE_SIZE;
+            const auto weaponRoll = RandRound(100.0f); // [0, 100]
+            const auto weaponType = weaponRoll < 40 ? WEAPON_BASEBALLBAT
+                                   : weaponRoll < 80 ? WEAPON_PISTOL
+                                   : weaponRoll < 90 ? WEAPON_KNIFE
+                                                      : WEAPON_SHOTGUN;
+            const auto ammoRoll = RandRound(-15.0f); // [-15, 0]
+            CPickups::GenerateNewOne_WeaponType(pos, weaponType, PICKUP_ONCE, 3 - ammoRoll, false, nullptr);
+        }
+        break; // successCount can only ever reach 1 in the original
+    }
 }
 
 // 0x5922C0
