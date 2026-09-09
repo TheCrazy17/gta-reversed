@@ -6,6 +6,12 @@
 #include "Population.h"
 #include "General.h"
 #include "Entity/Ped/Ped.h"
+#include "Streaming.h"
+#include "Models/ModelInfo.h"
+#include "Clock.h"
+#include "Tasks/TaskTypes/Interior/TaskInteriorBeInOffice.h"
+#include "Tasks/TaskTypes/Interior/TaskInteriorBeInShop.h"
+#include "Tasks/TaskTypes/Interior/TaskInteriorShopKeeper.h"
 
 // NOTSA: enables interior ped setup/update - purpose not fully derived, cross-referenced from
 // Interior_c::Init's `m_box->m_type != 'c'` branch and here.
@@ -39,9 +45,9 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(CalcIsVisible, 0x595200);
     RH_ScopedInstall(DereferenceAnims, 0x595160);
     RH_ScopedInstall(ReferenceAnims, 0x5950D0);
-    RH_ScopedInstall(UpdateOfficePeds, 0x594E90, { .reversed = false });
+    RH_ScopedInstall(UpdateOfficePeds, 0x594E90);
     RH_ScopedInstall(RemovePed, 0x594E30);
-    RH_ScopedInstall(SetupShopPeds, 0x594C10, { .reversed = false });
+    RH_ScopedInstall(SetupShopPeds, 0x594C10);
     RH_ScopedInstall(SetupOfficePeds, 0x594BF0);
     RH_ScopedInstall(GetEntity, 0x594BD0);
     RH_ScopedInstall(GetPed, 0x594B90);
@@ -272,7 +278,66 @@ void InteriorGroup_c::ReferenceAnims() {
 
 // 0x594E90
 void InteriorGroup_c::UpdateOfficePeds() {
-    plugin::CallMethod<0x594E90, InteriorGroup_c*>(this);
+    if (!m_isVisible) {
+        if (m_lastIsVisible) { // was visible, now isn't - tear down all office peds
+            for (auto& ped : m_peds) {
+                if (!ped) {
+                    continue;
+                }
+                if (ped->IsPointerValid()) {
+                    CPopulation::RemovePed(ped);
+                }
+                ped = nullptr;
+            }
+            m_numPeds = 0;
+        }
+        return;
+    }
+    if (m_lastIsVisible) {
+        return; // was visible last frame too - nothing changed
+    }
+
+    // Just became visible this frame: (re)populate the office. Models were already streamed in
+    // by SetupOfficePeds() (called from SetupPeds(), before this function ever runs).
+    const CVector spawnPos = m_pEntity->GetMatrix().GetPosition();
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    const auto numDesks = GetNumInteriorInfos(eInteriorInfoType::UNK_6);
+
+    int32 minCount, maxCount;
+    if (CClock::GetIsTimeInRange(9, 18)) {            // 9am-6pm: full office hours
+        minCount = numDesks / 2;
+        maxCount = numDesks;
+    } else if (CClock::GetIsTimeInRange(18, 22) ||     // 6pm-10pm / 6am-9am: transitional, fewer workers
+               CClock::GetIsTimeInRange(6, 9)) {
+        minCount = 0;
+        maxCount = numDesks / 2;
+    } else {                                            // overnight: no workers
+        return;
+    }
+
+    auto numWorkers = CGeneral::GetRandomNumberInRange(minCount, maxCount);
+    if (numWorkers > 15) {
+        numWorkers = 16;
+    }
+
+    for (int32 i = 0; i < numWorkers; i++) {
+        const auto selector = RandRound(8.0f); // TOTAL_LOADED_PEDS == 8
+        const auto modelId  = CStreaming::FindMIPedSlotForInterior(selector);
+        const auto pedType  = CModelInfo::GetPedModelInfo(modelId)->GetPedType();
+        const auto ped      = CPopulation::AddPed(pedType, (eModelID)modelId, spawnPos, false);
+
+        m_peds[m_numPeds] = ped;
+        if (ped) {
+            m_numPeds++;
+            ped->SetCharCreatedBy(PED_MISSION);
+            ped->GetIntelligence()->SetPedDecisionMakerType(7);
+            ped->GetTaskManager().SetTask(new CTaskInteriorBeInOffice{ this }, TASK_PRIMARY_DEFAULT);
+        }
+    }
 }
 
 // 0x594E30
@@ -289,8 +354,50 @@ int8 InteriorGroup_c::RemovePed(CPed* ped) {
 }
 
 // 0x594C10
+// NOTSA: Ghidra reports this function's body as 2 disjoint ranges. Investigated: the gap between them is
+// dead MSVC alignment padding (a JMP over a 3-byte NOP) between the JMP and its 16-byte-aligned target -
+// same pattern as Kitchen_FurnishEdges - not a stale marker or shared thunk.
 int32 InteriorGroup_c::SetupShopPeds() {
-    return plugin::CallMethodAndReturn<int32, 0x594C10, InteriorGroup_c*>(this);
+    CStreaming::StreamPedsForInterior(1); // SHOP: streams a single shopkeeper model into slot 0
+    m_numPeds = 0;
+
+    const auto RandRound = [](float scale) {
+        return (int32)std::lround((float)(rand() & 0xFFFF) * (1.0f / 32768.0f) * scale);
+    };
+
+    // (2 to 5) * numInteriors + 1 total shop peds; the first one created is always the shopkeeper.
+    const auto numShopPeds = (2 - RandRound(-3.0f)) * m_numInteriors + 1;
+
+    for (int32 i = 0; i < numShopPeds; i++) {
+        // StreamPedsForInterior(SHOP) only ever loads ONE model (slot 0), so every shop ped -
+        // shopkeeper and customers alike - ends up resolving to that same model.
+        const auto selector = i == 0 ? 0 : (1 - RandRound(-7.0f));
+        const auto modelId  = CStreaming::FindMIPedSlotForInterior(selector);
+
+        auto* const interior = (Interior_c*)GetRandomInterior();
+        int32 tileX, tileY;
+        interior->GetRandomTile(3, &tileX, &tileY); // status 3 = open/walkable floor tile
+        CVector pos{};
+        interior->GetTileCentre((float)tileX, (float)tileY, &pos);
+        pos.z += 1.0f;
+
+        const auto pedType = CModelInfo::GetPedModelInfo(modelId)->GetPedType();
+        const auto ped     = CPopulation::AddPed(pedType, (eModelID)modelId, pos, false);
+
+        m_peds[m_numPeds] = ped;
+        if (ped) {
+            m_numPeds++;
+            ped->SetCharCreatedBy(PED_MISSION);
+            ped->GetIntelligence()->SetPedDecisionMakerType(7);
+            if (i == 0) {
+                ped->GetTaskManager().SetTask(new CTaskInteriorShopKeeper{ this, false }, TASK_PRIMARY_DEFAULT);
+            } else {
+                ped->GetTaskManager().SetTask(new CTaskInteriorBeInShop{ this }, TASK_PRIMARY_DEFAULT);
+            }
+        }
+    }
+
+    return numShopPeds;
 }
 
 // 0x594BF0
