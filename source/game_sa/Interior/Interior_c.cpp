@@ -25,7 +25,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(Office_PlaceEdgeFillers, 0x599210);
     RH_ScopedInstall(Office_PlaceDesk, 0x5993E0);
     RH_ScopedInstall(Office_PlaceEdgeDesks, 0x5995B0);
-    RH_ScopedInstall(Office_FurnishEdges, 0x599770, { .reversed = false });
+    RH_ScopedInstall(Office_FurnishEdges, 0x599770);
     RH_ScopedInstall(Office_PlaceDeskQuad, 0x599960);
     RH_ScopedInstall(Office_FurnishCenter, 0x599A30);
     RH_ScopedInstall(FurnishOffice, 0x599AF0, { .reversed = false });
@@ -392,7 +392,63 @@ int32 Interior_c::Office_PlaceEdgeDesks(int32, int32 x, int32 y, int32 direction
 
 // 0x599770
 void Interior_c::Office_FurnishEdges() {
-    plugin::CallMethod<0x599770, Interior_c*>(this);
+    const auto width = m_box->m_width;
+    const auto depth = m_box->m_depth;
+
+    // Block the inner border ring (inset 2 tiles from each wall) so the desks/fillers placed below
+    // don't end up on the room's perimeter walkway.
+    const auto ringRight  = width - 3;
+    const auto ringBottom = depth - 3;
+    for (auto x = 2; x <= ringRight; ++x) {
+        SetTilesStatus(x, ringBottom, 1, 1, 3, false);
+        SetTilesStatus(x, 2,          1, 1, 3, false);
+    }
+    for (auto y = 2; y <= ringBottom; ++y) {
+        SetTilesStatus(2,         y, 1, 1, 3, false);
+        SetTilesStatus(ringRight, y, 1, 1, 3, false);
+    }
+
+    // 4 AI goto-points at the inner corners of that ring.
+    AddGotoPt(2,         2,          TILE_SIZE,  TILE_SIZE);
+    AddGotoPt(2,         ringBottom, TILE_SIZE, -TILE_SIZE);
+    AddGotoPt(ringRight, 2,         -TILE_SIZE,  TILE_SIZE);
+    AddGotoPt(ringRight, ringBottom,-TILE_SIZE, -TILE_SIZE);
+
+    // Mark a 4x2 door-notch area along the top wall, offset from the door position.
+    const auto doorX = m_box->m_door - 2;
+    SetTilesStatus(doorX, 0, 4, 2, 7, false);
+
+    const auto rightX    = width - 1;
+    const auto bottomY   = depth - 1;
+    const auto innerMaxY = depth - 2;
+
+    // Edge desks: top, bottom, left, right walls.
+    for (auto x = 1; x < rightX; ) {
+        x += Office_PlaceEdgeDesks(-1, x, 0, 2, 2);
+    }
+    for (auto x = 1; x < rightX; ) {
+        x += Office_PlaceEdgeDesks(-1, x, bottomY, 0, 0);
+    }
+    for (auto y = 1; y <= innerMaxY; ) {
+        y += Office_PlaceEdgeDesks(-1, 0, y, 1, 1);
+    }
+    for (auto y = 1; y <= innerMaxY; ) {
+        y += Office_PlaceEdgeDesks(-1, rightX, y, 3, 3);
+    }
+
+    // Edge fillers: same 4-wall walk, filling gaps left by the desks.
+    for (auto x = 1; x < rightX; ) {
+        x += Office_PlaceEdgeFillers(-1, x, 0, 2, 2);
+    }
+    for (auto x = 1; x < rightX; ) {
+        x += Office_PlaceEdgeFillers(-1, x, bottomY, 0, 0);
+    }
+    for (auto y = 1; y <= innerMaxY; ) {
+        y += Office_PlaceEdgeFillers(-1, 0, y, 1, 1);
+    }
+    for (auto y = 1; y <= innerMaxY; ) {
+        y += Office_PlaceEdgeFillers(-1, rightX, y, 3, 3);
+    }
 }
 
 // 0x599960
