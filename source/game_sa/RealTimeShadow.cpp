@@ -15,6 +15,7 @@ void CRealTimeShadow::InjectHooks() {
     RH_ScopedInstall(Create, 0x706460);
     RH_ScopedInstall(Update, 0x706600);
     RH_ScopedInstall(Destroy, 0x705990);
+    RH_ScopedInstall(SetupForThisEntity, 0x706520, { .reversed = false });
 }
 
 CRealTimeShadow::~CRealTimeShadow() {
@@ -60,6 +61,11 @@ void CRealTimeShadow::Destroy() {
 
         m_pLight = nullptr;
     }
+}
+
+// 0x706520
+bool CRealTimeShadow::SetupForThisEntity(CPhysical* owner) {
+    return plugin::CallMethodAndReturn<bool, 0x706520, CRealTimeShadow*, CPhysical*>(this, owner);
 }
 
 // 0x705A00

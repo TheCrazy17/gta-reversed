@@ -12,7 +12,7 @@ void CRealTimeShadowManager::InjectHooks() {
     RH_ScopedInstall(Init, 0x7067C0);
     RH_ScopedInstall(ReInit, 0x706870, {.reversed = false});
     RH_ScopedInstall(ReturnRealTimeShadow, 0x705B30);
-    RH_ScopedInstall(GetRealTimeShadow, 0x706970, { .reversed = false });
+    RH_ScopedInstall(GetRealTimeShadow, 0x706970);
     RH_ScopedInstall(Update, 0x706AB0);
     RH_ScopedInstall(DoShadowThisFrame, 0x706BA0);
     RH_ScopedInstall(Exit, 0x706A60);
@@ -121,23 +121,46 @@ void CRealTimeShadowManager::Update() {
 }
 
 CRealTimeShadow& CRealTimeShadowManager::GetRealTimeShadow(CPhysical* physical) {
-    return plugin::CallMethodAndReturn<CRealTimeShadow&, 0x706970, CRealTimeShadowManager*, CPhysical*>(this, physical);
-    /*
-    * Unfinished
-    if (m_bInitialised) {
-        return;
-    }
+    // NOTSA: `isFirstPlayer` is only ever computed when `physical` is a ped, matching the
+    // original's short-circuit - see the `notFirstPlayerPed` derivation below.
+    const bool isFirstPlayer = physical->GetIsTypePed() && physical->AsPed()->m_nPedType == PED_TYPE_PLAYER1;
+    const bool notFirstPlayerPed = !physical->GetIsTypePed() || !isFirstPlayer;
 
-    bool isFirstPlayer{};
-
-    if (!physical->GetIsTypePed() || physical->AsPed()->IsPlayer()) {
-        if (FindPlayerPed()->IsInVehicle()) { // Maybe wrong?
-            if (FindPlayerPed()->m_pVehicle->GetMoveSpeed().SquaredMagnitude() < sq(0.3f)) {
-                return;
-            }
+    // Deny a shadow to anything but the main player while the main player is riding a fast vehicle
+    // (likely a perf heuristic - skip real-time shadows for everything else during fast travel).
+    bool allowShadow = true;
+    if (notFirstPlayerPed) {
+        auto* const playerVehicle = FindPlayerPed()->m_pVehicle;
+        if (FindPlayerPed()->IsInVehicle() && playerVehicle && playerVehicle->GetMoveSpeed().SquaredMagnitude() > 0.09f /* 0.3^2 */) {
+            allowShadow = false;
         }
     }
-    */
+
+    CRealTimeShadow* shadow{};
+    if (m_bInitialised && allowShadow) {
+        if (isFirstPlayer) {
+            shadow = m_apShadows[0]; // Slot 0 is reserved for the main player
+        } else {
+            // NOTSA: keeps scanning after finding a free slot rather than stopping at the first one,
+            // so this ends up picking the LAST free slot (highest index), not the first - matches original.
+            for (auto i = 1; i < NUM_REALTIME_SHADOWS; i++) {
+                if (!m_apShadows[i]->m_pOwner) {
+                    shadow = m_apShadows[i];
+                }
+            }
+        }
+
+        if (shadow) {
+            shadow->SetupForThisEntity(physical);
+            physical->m_pShadowData = shadow;
+            shadow->m_bKeepAlive = true;
+            shadow->m_nIntensity = 0;
+        }
+    }
+
+    // NOTSA: `shadow` can be null here (not initialised / not allowed / no free slot) - the original
+    // dereferences it unconditionally too (its only caller, DoShadowThisFrame, discards the result).
+    return *shadow;
 }
 
 // 0x706BA0
