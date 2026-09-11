@@ -110,7 +110,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(IsExtraEntityToIgnore, 0x50CE80);
     RH_ScopedInstall(ConsiderPedAsDucking, 0x50CEB0);
     RH_ScopedInstall(ResetDuckingSystem, 0x50CEF0);
-    RH_ScopedInstall(HandleCameraMotionForDucking, 0x50CFA0, { .reversed = false });
+    RH_ScopedInstall(HandleCameraMotionForDucking, 0x50CFA0);
     RH_ScopedInstall(HandleCameraMotionForDuckingDuringAim, 0x50D090, { .reversed = false });
     RH_ScopedInstall(VectorMoveLinear, 0x50D160);
     RH_ScopedInstall(VectorTrackLinear, 0x50D1D0);
@@ -1265,7 +1265,25 @@ void CCamera::ResetDuckingSystem(CPed* ped) {
 // arg5 always used as false
 // 0x50CFA0
 void CCamera::HandleCameraMotionForDucking(CPed* ped, CVector* source, CVector* targPosn, bool arg5) {
-    plugin::CallMethod<0x50CFA0, CCamera*, CPed*, CVector*, CVector*, bool>(this, ped, source, targPosn, arg5);
+    auto* task = ped->GetIntelligence()->GetTaskDuck(true);
+
+    auto factor = m_fDuckCamMotionFactor; // default: no change
+    if (task && ped->bIsDucking && !task->m_bIsAborting) {
+        factor = ped->m_vecMoveSpeed.SquaredMagnitude() <= 0.000001f
+            ? 0.3f - 1.0f
+            : 0.3f - 0.5f;
+    }
+
+    if (!arg5) {
+        m_fDuckCamMotionFactor += CTimer::GetTimeStep() * 0.1f * (factor - m_fDuckCamMotionFactor);
+    }
+
+    if (source) {
+        source->z += m_fDuckCamMotionFactor;
+    }
+    if (targPosn) {
+        targPosn->z += m_fDuckCamMotionFactor;
+    }
 }
 
 // arg5 always used as false
