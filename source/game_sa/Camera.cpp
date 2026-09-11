@@ -112,8 +112,8 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(ResetDuckingSystem, 0x50CEF0);
     RH_ScopedInstall(HandleCameraMotionForDucking, 0x50CFA0, { .reversed = false });
     RH_ScopedInstall(HandleCameraMotionForDuckingDuringAim, 0x50D090, { .reversed = false });
-    RH_ScopedInstall(VectorMoveLinear, 0x50D160, { .reversed = false });
-    RH_ScopedInstall(VectorTrackLinear, 0x50D1D0, { .reversed = false });
+    RH_ScopedInstall(VectorMoveLinear, 0x50D160);
+    RH_ScopedInstall(VectorTrackLinear, 0x50D1D0);
     RH_ScopedInstall(AddShakeSimple, 0x50D240);
     RH_ScopedInstall(InitialiseScriptableComponents, 0x50D2D0);
     RH_ScopedInstall(DrawBordersForWideScreen, 0x514860);
@@ -1276,12 +1276,20 @@ void CCamera::HandleCameraMotionForDuckingDuringAim(CPed* ped, CVector* source, 
 
 // 0x50D160
 void CCamera::VectorMoveLinear(CVector* to, CVector* from, float duration, bool bMoveLinearWithEase) {
-    plugin::CallMethod<0x50D160, CCamera*, CVector*, CVector*, float, bool>(this, to, from, duration, bMoveLinearWithEase);
+    m_fMoveLinearStartTime = static_cast<float>(CTimer::GetTimeInMS());
+    m_fMoveLinearEndTime = m_fMoveLinearStartTime + duration;
+    m_vecMoveLinearPosnStart = *from;
+    m_vecMoveLinearPosnEnd = *to;
+    m_bMoveLinearWithEase = bMoveLinearWithEase;
 }
 
 // 0x50D1D0
 void CCamera::VectorTrackLinear(CVector* to, CVector* from, float duration, bool bEase) {
-    plugin::CallMethod<0x50D1D0, CCamera*, CVector*, CVector*, float, bool>(this, to, from, duration, bEase);
+    m_fTrackLinearStartTime = static_cast<float>(CTimer::GetTimeInMS());
+    m_fTrackLinearEndTime = m_fTrackLinearStartTime + duration;
+    m_vecTrackLinearEndPoint = *from;
+    m_vecTrackLinearStartPoint = *to;
+    m_bTrackLinearWithEase = bEase;
 }
 
 // 0x516400
