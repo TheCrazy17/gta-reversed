@@ -12,7 +12,7 @@ void CPedDamageResponseCalculator::InjectHooks() {
     RH_ScopedInstall(AccountForPedArmour, 0x4AD550);
     RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610, { .reversed = false });
     RH_ScopedInstall(ComputeWillKillPed, 0x4B3210);
-    RH_ScopedInstall(IsBleedingWeapon, 0x4B5C2A, { .reversed = false });
+    RH_ScopedInstall(IsBleedingWeapon, 0x4B5C2A);
     RH_ScopedInstall(ComputeDamageResponse, 0x4B5AC0, { .reversed = false });
 }
 

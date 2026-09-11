@@ -64,7 +64,7 @@ void CGenericGameStorage::InjectHooks() {
 
     RH_ScopedInstall(ReportError, 0x5D08C0);
     RH_ScopedInstall(DoGameSpecificStuffBeforeSave, 0x618F50);
-    RH_ScopedInstall(DoGameSpecificStuffAfterSucessLoad, 0x618E90, { .reversed = false });
+    RH_ScopedInstall(DoGameSpecificStuffAfterSucessLoad, 0x618E90);
     RH_ScopedInstall(InitRadioStationPositionList, 0x618E70);
     RH_ScopedGlobalInstall(GetSavedGameDateAndTime, 0x618D00);
     RH_ScopedInstall(GenericLoad, 0x5D17B0);
