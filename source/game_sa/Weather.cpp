@@ -26,7 +26,7 @@ void CWeather::InjectHooks() {
     RH_ScopedInstall(FindWeatherTypesList, 0x72A520);
     RH_ScopedInstall(ForceWeather, 0x72A4E0);
     RH_ScopedInstall(ForceWeatherNow, 0x72A4F0);
-    RH_ScopedInstall(ForecastWeather, 0x72A590, { .reversed = false });
+    RH_ScopedInstall(ForecastWeather, 0x72A590);
     RH_ScopedInstall(ReleaseWeather, 0x72A510);
     RH_ScopedInstall(RenderRainStreaks, 0x72AF70);
     RH_ScopedInstall(SetWeatherToAppropriateTypeNow, 0x72A790);
@@ -101,7 +101,17 @@ void CWeather::ForceWeatherNow(eWeatherType weatherType) {
 
 // 0x72A590
 bool CWeather::ForecastWeather(eWeatherType weatherType, int32 numSteps) {
-    return plugin::CallAndReturn<bool, 0x72A590, int32, int32>(weatherType, numSteps);
+    if (numSteps < 0) {
+        return false;
+    }
+
+    const auto* list = FindWeatherTypesList();
+    for (int32 i = 0; i <= numSteps; i++) {
+        if (list[(WeatherTypeInList + i) % 64] == weatherType) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x72A510
