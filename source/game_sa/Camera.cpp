@@ -133,6 +133,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
+    RH_ScopedInstall(IsActiveCamUnderwater, 0x50B830);
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560, { .reversed = false });
     RH_ScopedInstall(CameraColDetAndReact, 0x520190);
     RH_ScopedInstall(CamControl, 0x527FA0, { .reversed = false });
@@ -1852,6 +1853,13 @@ bool CCamera::ConeCastCollisionResolve(const CVector& pos, const CVector& lookAt
         outDist = 1.f;
         return false;
     }
+}
+
+// 0x50B830
+bool CCamera::IsActiveCamUnderwater() {
+    const auto& pos = GetActiveCam().m_vecSource;
+    float waterLevel;
+    return CWaterLevel::GetWaterLevel(pos.x, pos.y, pos.z, waterLevel, true, nullptr) && waterLevel >= pos.z;
 }
 
 // 0x51E560

@@ -354,6 +354,7 @@ public:
     void LoadPathSplines(FILE* file);
 
     bool IsTargetingActive();
+    bool IsActiveCamUnderwater();
     bool IsExtraEntityToIgnore(CEntity *entity);
     bool IsItTimeForNewCamera(int32 camSequence, int32 startTime); // IsItTimeForNewcam
     bool IsSphereVisible(const CVector& origin, float radius, RwMatrix* transformMatrix);
