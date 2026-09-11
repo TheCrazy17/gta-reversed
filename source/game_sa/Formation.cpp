@@ -164,7 +164,48 @@ void CFormation::DistributeDestinations_CoverPoints(const CPedList& pedlist, CVe
 
 // 0x69B700
 void CFormation::DistributeDestinations_PedsToAttack(const CPedList& pedList) {
-    plugin::Call<0x69B700>(&pedList);
+    m_Peds = pedList;
+    if (m_Peds.m_count == 0) {
+        return;
+    }
+
+    for (auto i = 0u; i < 8; i++) {
+        m_aPedLinkToDestinations[i] = -1;
+    }
+
+    auto quotaPerTarget = (int32)std::ceil((double)m_Peds.m_count / (double)m_DestinationPeds.m_count);
+    if (quotaPerTarget < 2) {
+        quotaPerTarget = 2;
+    }
+
+    std::array<int32, 30> quota{};
+    for (auto i = 0u; i < m_DestinationPeds.m_count; i++) {
+        quota[i] = quotaPerTarget;
+    }
+
+    for (auto numAssigned = 0u; numAssigned < m_Peds.m_count; numAssigned++) {
+        auto bestPed    = -1;
+        auto bestTarget = -1;
+        auto bestDist   = 999999.9f;
+        for (auto j = 0u; j < m_Peds.m_count; j++) {
+            if (m_aPedLinkToDestinations[j] >= 0) {
+                continue;
+            }
+            for (auto k = 0u; k < m_DestinationPeds.m_count; k++) {
+                if (quota[k] <= 0) {
+                    continue;
+                }
+                const auto dist = DistanceBetweenPoints2D(m_Peds.m_peds[j]->GetPosition(), m_DestinationPeds.m_peds[k]->GetPosition());
+                if (dist < bestDist) {
+                    bestPed    = j;
+                    bestTarget = k;
+                    bestDist   = dist;
+                }
+            }
+        }
+        m_aPedLinkToDestinations[bestPed] = bestTarget;
+        quota[bestTarget]--;
+    }
 }
 
 // 0x69B860
@@ -183,6 +224,6 @@ void CFormation::InjectHooks() {
     RH_ScopedGlobalInstall(GenerateGatherDestinations_AroundCar, 0x69A770, { .reversed = false });
     RH_ScopedGlobalInstall(DistributeDestinations, 0x69B240, { .reversed = false });
     RH_ScopedGlobalInstall(DistributeDestinations_CoverPoints, 0x69B5B0);
-    RH_ScopedGlobalInstall(DistributeDestinations_PedsToAttack, 0x69B700, { .reversed = false });
+    RH_ScopedGlobalInstall(DistributeDestinations_PedsToAttack, 0x69B700);
     RH_ScopedGlobalInstall(FindCoverPoints, 0x69B860, { .reversed = false });
 }
