@@ -38,7 +38,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawAfterFade, 0x58D490);
     RH_ScopedInstall(DrawAreaName, 0x58AA50);
     RH_ScopedInstall(DrawBustedWastedMessage, 0x58CA50);
-    RH_ScopedInstall(DrawCrossHairs, 0x58E020, { .reversed = false }); // -
+    RH_ScopedInstall(DrawCrossHairs, 0x58E020);
     RH_ScopedInstall(DrawFadeState, 0x58D580);
     RH_ScopedInstall(DrawHelpText, 0x58B6E0, { .reversed = false });
     RH_ScopedInstall(DrawMissionTimers, 0x58B180, { .reversed = false });
@@ -593,10 +593,6 @@ void CHud::ResetWastedText() {
 
 // 0x58E020
 void CHud::DrawCrossHairs() {
-    return plugin::Call<0x58E020>();
-
-    plugin::Call<0x58E020>(); // for test purposes
-
     struct RestoreRenderState {
         ~RestoreRenderState() {
             RwRenderStateSet(rwRENDERSTATESRCBLEND,     RWRSTATE(rwBLENDSRCALPHA));
@@ -663,7 +659,7 @@ void CHud::DrawCrossHairs() {
         return;
 
     CRect rect;
-    const CRGBA black = CRGBA(255, 0, 0, 255); // TODO: RED FOR TES PURPOSES. OG : CRGBA(255, 255, 255, 255);
+    const CRGBA black = CRGBA(255, 255, 255, 255);
     if (bDrawCircleCrossHair) { // 0x58E1E1
         RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, RWRSTATE(rwFILTERLINEAR));
         RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,  RWRSTATE(FALSE));
