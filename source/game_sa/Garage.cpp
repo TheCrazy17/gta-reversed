@@ -33,13 +33,13 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(CalcDistToGarageRectangleSquared, 0x447D80);
     RH_ScopedInstall(SlideDoorOpen, 0x44A660);
     RH_ScopedInstall(SlideDoorClosed, 0x44A750);
-    RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0, { .reversed = false });
+    RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0);
     RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
-    RH_ScopedInstall(CenterCarInGarage, 0x449220, { .reversed = false });
+    RH_ScopedInstall(CenterCarInGarage, 0x449220);
     RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
-    RH_ScopedInstall(IsAnyCarBlockingDoor, 0x156D610, { .reversed = false });
-    RH_ScopedInstall(IsAnyOtherCarTouchingGarage, 0x1566680, { .reversed = false });
-    RH_ScopedInstall(RightModTypeForThisGarage, 0x1565260, { .reversed = false });
+    RH_ScopedInstall(IsAnyCarBlockingDoor, 0x156D610);
+    RH_ScopedInstall(IsAnyOtherCarTouchingGarage, 0x1566680);
+    RH_ScopedInstall(RightModTypeForThisGarage, 0x1565260);
     RH_ScopedInstall(Update, 0x44AA50);
 }
 
@@ -479,7 +479,43 @@ bool CGarage::SlideDoorClosed() {
 
 // 0x449FF0
 void CGarage::FindDoorsWithGarage(CObject** ppFirstDoor, CObject** ppSecondDoor) {
-    plugin::CallMethod<0x449FF0, CGarage*, CObject**, CObject**>(this, ppFirstDoor, ppSecondDoor);
+    *ppFirstDoor = nullptr;
+    *ppSecondDoor = nullptr;
+
+    const auto centerX = m_vPosn.x + (m_vDirectionA.x * m_fWidth + m_vDirectionB.x * m_fHeight) * 0.5f;
+    const auto centerY = m_vPosn.y + (m_vDirectionA.y * m_fWidth + m_vDirectionB.y * m_fHeight) * 0.5f;
+
+    const auto garageIndex = static_cast<int8>(this - &CGarages::aGarages[0]);
+
+    auto bestDist   = 99999.9f; // first-door distance
+    auto secondDist = 99999.9f; // second-door distance
+
+    auto* const pool = GetObjectPool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const door = pool->GetAt(i - 1);
+        if (!door || door->m_nGarageDoorGarageIndex != garageIndex) {
+            continue;
+        }
+
+        const auto& pos = door->GetPosition();
+        const auto dx = centerX - pos.x;
+        const auto dy = centerY - pos.y;
+        const auto dist = std::sqrt(dx * dx + dy * dy);
+
+        if (*ppFirstDoor) {
+            if (bestDist <= dist) {
+                if (!*ppSecondDoor || dist < secondDist) {
+                    *ppSecondDoor = door;
+                    secondDist = dist;
+                }
+                continue;
+            }
+            *ppSecondDoor = *ppFirstDoor;
+            secondDist = bestDist;
+        }
+        *ppFirstDoor = door;
+        bestDist = dist;
+    }
 }
 
 // 0x448330
@@ -510,38 +546,86 @@ void CGarage::NeatlyLineUpStoredCars(CStoredCar* car) {
     }
 }
 
-// 0x449220
+// 0x449220 -> tail-jmp chain through an obfuscated `EBP = GetVehiclePool()` load (SecuROM-style
+// split-dword-sum trick applied to a data load rather than a return address) -> real body 0x44922B.
 void CGarage::CenterCarInGarage(CVehicle* vehicle) {
-    plugin::CallMethod<0x449220, CGarage*, CVehicle*>(this, vehicle);
+    static constexpr auto PUSH_FORCE = 0.02f;
+
+    const auto centerX = (m_fLeftCoord + m_fRightCoord) * 0.5f;
+    const auto centerY = (m_fFrontCoord + m_fBackCoord) * 0.5f;
+
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const otherVehicle = pool->GetAt(i - 1);
+        if (!otherVehicle || otherVehicle == vehicle || !IsEntityTouching3D(otherVehicle)) {
+            continue;
+        }
+
+        for (const auto& sphere : otherVehicle->GetColModel()->GetData()->GetSpheres()) {
+            const auto worldCenter = otherVehicle->GetMatrix().TransformPoint(sphere.m_vecCenter);
+            if (IsPointInsideGarage(worldCenter, 0.0f)) { // NOTSA: radius forced to 0.0f here, NOT sphere.m_fRadius (confirmed via raw disasm)
+                continue;
+            }
+
+            const auto& pos = otherVehicle->GetPosition();
+            const auto push = Normalized(CVector{ pos.x - centerX, pos.y - centerY, 0.0f }) * PUSH_FORCE * CTimer::ms_fTimeStep;
+            otherVehicle->GetMoveSpeed() += push;
+            break; // only the first out-of-bounds sphere per vehicle triggers a push
+        }
+    }
 }
 
 // 0x156D610
-// NOTSA: real body walks the vehicle pool for anything touching this garage (via the already-
-// reversed IsEntityTouching3D), then transforms every sphere of that vehicle's CColModel into
-// world space (via the already-reversed CEntity::GetColModel/MultiplyMatrixWithVector) and tests
-// each against IsPointInsideGarage - true as soon as one sphere lands outside (car is straddling
-// the doorway, not cleanly stored). CColModel's sphere-array layout isn't mapped in this codebase
-// yet, so forwarding raw for now rather than guessing at it - see garage_update_progress.md.
 bool CGarage::IsAnyCarBlockingDoor() {
-    return plugin::CallMethodAndReturn<bool, 0x156D610, CGarage*>(this);
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const vehicle = pool->GetAt(i - 1);
+        if (!vehicle || !IsEntityTouching3D(vehicle)) {
+            continue;
+        }
+        for (const auto& sphere : vehicle->GetColModel()->GetData()->GetSpheres()) {
+            const auto worldCenter = vehicle->GetMatrix().TransformPoint(sphere.m_vecCenter);
+            if (!IsPointInsideGarage(worldCenter, sphere.m_fRadius)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // 0x1566680
-// NOTSA: same vehicle-pool-walk/CColModel-sphere shape as IsAnyCarBlockingDoor above (same
-// unmapped internals), but with inverted semantics (true as soon as a sphere lands INSIDE the
-// garage, not outside) and an extra STATUS_WRECKED exclusion - i.e. "is some other, non-wrecked
-// car already sitting inside this garage". Forwarding raw for the same reason as above.
 bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
-    return plugin::CallMethodAndReturn<bool, 0x1566680, CGarage*, CVehicle*>(this, ignoredVehicle);
+    auto* const pool = GetVehiclePool();
+    for (auto i = pool->GetSize(); i; i--) {
+        auto* const vehicle = pool->GetAt(i - 1);
+        if (!vehicle || vehicle == ignoredVehicle || vehicle->GetStatus() == STATUS_WRECKED || !IsEntityTouching3D(vehicle)) {
+            continue;
+        }
+        for (const auto& sphere : vehicle->GetColModel()->GetData()->GetSpheres()) {
+            const auto worldCenter = vehicle->GetMatrix().TransformPoint(sphere.m_vecCenter);
+            if (IsPointInsideGarage(worldCenter, sphere.m_fRadius)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // 0x1565260
-// NOTSA: checks whether `vehicle`'s model supports this garage's specific tuning-shop category
-// (m_nType == TUNING_LOCO_LOW_CO/WHEEL_ARCH_ANGELS/TRANSFENDER), via a per-model mod-support
-// bitmask (DAT_00a9b0c8/DAT_00c2baac, stride 0xE0) that isn't mapped anywhere else in this
-// codebase yet - a genuine new CVehicleModelInfo struct-mapping task, forwarding raw for now.
 bool CGarage::RightModTypeForThisGarage(CVehicle* vehicle) {
-    return plugin::CallMethodAndReturn<bool, 0x1565260, CGarage*, CVehicle*>(this, vehicle);
+    if (!vehicle) {
+        return false;
+    }
+    switch (m_nType) {
+    case TUNING_LOCO_LOW_CO:
+        return vehicle->m_pHandlingData->m_bLowRider;
+    case TUNING_WHEEL_ARCH_ANGELS:
+        return vehicle->m_pHandlingData->m_bStreetRacer;
+    case TUNING_TRANSFENDER:
+        return !vehicle->m_pHandlingData->m_bLowRider && !vehicle->m_pHandlingData->m_bStreetRacer;
+    default:
+        return false;
+    }
 }
 
 // 0x447D80
