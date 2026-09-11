@@ -5,6 +5,7 @@
 #include "TaskSimpleGangDriveBy.h"
 #include "TaskSimpleHoldEntity.h"
 #include "TaskSimpleDuck.h"
+#include "TaskSimpleSwim.h"
 #include "Hud.h"
 
 auto& TheCamera = StaticRef<CCamera>(0xB6F028);
@@ -25,6 +26,7 @@ auto& gColDetLastVehMinSphereZ = StaticRef<float>(0xB700EC); // cached min(spher
 auto& gColDetLastPosValid = StaticRef<int32>(0xB700E8);       // bit 0: whether gColDetLastSourcePos has been initialized
 auto& gColDetLastSourcePos = StaticRef<CVector>(0xB700DC);    // camera source pos as of the last time gCurDistForCam was smoothed (not snapped)
 auto& gNearClipPedCollisionRefDist = StaticRef<float>(0xB6EC68); // NOTSA: exact meaning/setter not identified; used as a divisor in SetNearClipBasedOnPedCollision
+auto& gUnknownB6F0F0 = StaticRef<int32>(0xB6F0F0); // NOTSA: exact field/meaning not identified; compared to 1 in ImproveNearClip's swim sub-branch
 
 CCam& CCamera::GetActiveCamera() {
     return TheCamera.m_aCams[TheCamera.m_nActiveCam];
@@ -127,7 +129,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(CalculateGroundHeight, 0x514B80);
     RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60);
     RH_ScopedInstall(CalculateDerivedValues, 0x5150E0);
-    RH_ScopedInstall(ImproveNearClip, 0x516B20, { .reversed = false });
+    RH_ScopedInstall(ImproveNearClip, 0x516B20);
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
@@ -1735,7 +1737,88 @@ void CCamera::CalculateDerivedValues(bool bForMirror, bool bOriented) {
 
 // 0x516B20
 void CCamera::ImproveNearClip(CVehicle* vehicle, CPed* ped, CVector* source, CVector* targPosn) {
-    return plugin::CallMethod<0x516B20, CCamera*, CVehicle*, CPed*, CVector*, CVector*>(this, vehicle, ped, source, targPosn);
+    // Global safety widen: if source/target are far apart, make sure the near clip isn't left too tight.
+    if (CVector::Dist(*source, *targPosn) > 10.0f) {
+        if (const auto candidate = 1.0f * gCurDistForCam; candidate > RwCameraGetNearClipPlane(m_pRwCamera)) {
+            RwCameraSetNearClipPlane(m_pRwCamera, candidate);
+        }
+    }
+
+    if (!vehicle) {
+        if (ped) {
+            if (!ped->bIsStanding) {
+                // Ped is airborne / mid-task (swimming, parachuting, jetpacking).
+                auto* intel = ped->GetIntelligence();
+                const bool usingParachute = intel->GetUsingParachute();
+                if (auto* swimTask = intel->GetTaskSwim()) {
+                    if (float waterLevel{}; CWaterLevel::GetWaterLevel(source->x, source->y, source->z, waterLevel, false, nullptr)) {
+                        if (std::fabs(waterLevel - source->z) < 0.3f) {
+                            RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
+                        } else if (swimTask->m_nSwimState == SWIM_UNDERWATER_SPRINTING && gUnknownB6F0F0 == 1) {
+                            RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
+                        }
+                    }
+                } else if (usingParachute || intel->GetTaskJetPack()) {
+                    if (GetRoughDistanceToGround() > 10.0f) {
+                        const auto candidate = std::min(CVector::Dist(*source, *targPosn) * 0.3f, 2.0f * gCurDistForCam);
+                        if (candidate > RwCameraGetNearClipPlane(m_pRwCamera)) {
+                            RwCameraSetNearClipPlane(m_pRwCamera, candidate);
+                        }
+                    }
+                }
+            } else {
+                // Ped standing (e.g. by a vehicle door) - near-clip vs. the ped's animated hit-col spheres.
+                auto* modelInfo = ped->GetPedModelInfo();
+                modelInfo->AnimatePedColModelSkinnedWorld(ped->GetRpClump());
+
+                auto& activeCam = GetActiveCamera();
+                const auto planeD = DotProduct(activeCam.m_vecFront, activeCam.m_vecSource);
+
+                float margin = 999999.0f;
+                for (auto& sphere : modelInfo->m_pHitColModel->m_pColData->GetSpheres()) {
+                    auto m = DotProduct(sphere.m_vecCenter, activeCam.m_vecFront) - planeD - sphere.m_fRadius;
+                    if (sphere.m_Surface.m_nPiece == PED_PIECE_HEAD) {
+                        m -= 1.0f * sphere.m_fRadius;
+                    }
+                    margin = std::min(margin, m);
+                }
+
+                const auto lastCollisionRadiusTerm = std::sin((90.0f - activeCam.m_fFOV * 0.5f) * DEG_TO_RAD)
+                                                    * gLastRadiusUsedInCollisionPreventionOfCamera;
+
+                margin = std::min(margin, lastCollisionRadiusTerm);
+                margin = std::max(margin, 0.02f);
+                margin = std::min(margin, 0.3f);
+
+                // Quantize to increments of 0.01 (round ties away from zero).
+                const auto quantized = static_cast<float>(std::lround(margin * 100.0f)) * 0.01f;
+                RwCameraSetNearClipPlane(m_pRwCamera, quantized);
+            }
+        }
+    } else {
+        // NOTSA: `vehicle + 0x594`'s exact field/meaning hasn't been identified project-wide yet.
+        const auto vehicleField594 = *reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594);
+        if (vehicleField594 == 3 || vehicleField594 == 4) {
+            if (gCurDistForCam <= 0.3f) {
+                if (vehicleField594 == 3) {
+                    RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
+                }
+            } else {
+                const auto groundHeight = CalculateGroundHeight(eGroundHeightType::ENTITY_BB_BOTTOM);
+                if (GetActiveCamera().m_vecSource.z - groundHeight > 10.0f) {
+                    const auto candidate = std::min(5.0f * gCurDistForCam, CVector::Dist(*source, *targPosn) * 0.1f);
+                    if (candidate > RwCameraGetNearClipPlane(m_pRwCamera)) {
+                        RwCameraSetNearClipPlane(m_pRwCamera, candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // Always hide any peds that are clipping through the camera's near plane.
+    CVector unusedNormal{};
+    float unusedNearest{};
+    CCollision::CheckPeds(*source, unusedNormal, unusedNearest);
 }
 
 static auto& preMirrorMat = StaticRef<CMatrix>(0xB6FE40);
