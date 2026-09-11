@@ -16,8 +16,14 @@ class CMatrix;
 
 class CFormation {
 public:
-    static inline auto& m_aFinalPedLinkToDestinations = StaticRef<std::array<int32, TOTAL_PED_GROUP_MEMBERS>>(0xC1A4DC);
-    static inline auto& m_aPedLinkToDestinations      = StaticRef<std::array<int32, TOTAL_PED_GROUP_MEMBERS>>(0xC1A2C0);
+    // NOTSA: was `TOTAL_PED_GROUP_MEMBERS` (8) - confirmed wrong via raw disasm of `ReturnDestinationForPed`,
+    // which walks both arrays up to index 23; 24 also matches `m_Destinations` (a CPointList, 24-slot capacity)
+    // that `m_aPedLinkToDestinations` indexes into. CFormation tracks peds/destinations across the whole game,
+    // not one group's membership, so `TOTAL_PED_GROUP_MEMBERS` was never the right constant here.
+    static constexpr auto NUM_FORMATION_LINKS = 24;
+
+    static inline auto& m_aFinalPedLinkToDestinations = StaticRef<std::array<int32, NUM_FORMATION_LINKS>>(0xC1A4DC);
+    static inline auto& m_aPedLinkToDestinations      = StaticRef<std::array<int32, NUM_FORMATION_LINKS>>(0xC1A2C0);
     static inline auto& m_Destinations                = StaticRef<CPointList>(0xC1A318);
     static inline auto& m_DestinationPeds             = StaticRef<CPedList>(0xC1A458);
     static inline auto& m_Peds                        = StaticRef<CPedList>(0xC1A4D8);
