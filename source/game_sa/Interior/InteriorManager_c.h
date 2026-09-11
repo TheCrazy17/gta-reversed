@@ -71,6 +71,16 @@ public:
         }
     }
 
+    // Records a placed stealable object (matches Interior_c::PlaceObject).
+    // NOTSA: no bounds check against m_Objects' capacity - matches the original binary exactly, which
+    // doesn't check either.
+    void AddStealableObject(CEntity* entity, int32 modelId, int32 interiorId, const CVector& pos) {
+        m_Objects[m_ObjectCount++] = { entity, modelId, interiorId, pos, false };
+    }
+
+    // Mutable access to a tracked stealable-object record by index (see Interior_c::PlaceObject).
+    InteriorObject& GetObjectAt(int32 idx) { return m_Objects[idx]; }
+
 private:
     Interior_c               m_Interiors[8]{};               // 0x0
     TList_c<Interior_c>      m_InteriorPool{};               // 0x3CA0

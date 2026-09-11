@@ -5,6 +5,10 @@
 #include "ModelIndices.h"
 #include "InteriorGroup_c.h"
 #include "InteriorManager_c.h"
+#include "Matrix.h"
+#include "Entity/Object/Object.h"
+#include "Models/ModelInfo.h"
+#include "World.h"
 
 // One-shot flag: has the rare/special office filler item already been placed this game session?
 // Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
@@ -59,7 +63,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(GetBoundingBox, 0x593DB0);
     RH_ScopedInstall(Init, 0x593BF0);
     RH_ScopedInstall(ResetTiles, 0x593910);
-    RH_ScopedInstall(PlaceObject, 0x5934E0, { .reversed = false });
+    RH_ScopedInstall(PlaceObject, 0x5934E0);
     RH_ScopedInstall(GetFurnitureEntity, 0x5913B0);
     RH_ScopedInstall(IsPtInside, 0x5913E0);
     RH_ScopedInstall(CalcMatrix, 0x5914D0);
@@ -1466,8 +1470,78 @@ void Interior_c::ResetTiles() {
 
 // 0x5934E0
 CObject* Interior_c::PlaceObject(uint8 isStealable, Furniture_c* furniture, float offsetX, float offsetY, float offsetZ, float rotationZ) {
-    return plugin::CallMethodAndReturn<CObject*, 0x5934E0, Interior_c*, uint8, Furniture_c*, float, float, float, float>(this, isStealable, furniture, offsetX, offsetY, offsetZ,
-                                                                                                                         rotationZ);
+    // Convert the box-center-relative input offsets into box-corner-relative ones. The Z offset is
+    // additionally grounded at the furniture model's own collision bounding-box minimum (its base),
+    // rather than at the model's origin.
+    offsetX -= m_box->m_width * 0.5f;
+    offsetY -= m_box->m_depth * 0.5f;
+    const auto placedZ = (offsetZ - m_box->m_height * 0.5f)
+        - CModelInfo::GetModelInfo(furniture->m_nModelId)->GetColModel()->GetBoundingBox().m_vecMin.z;
+
+    if (g_furnitureEntityFreeList.GetNumItems() <= 0) {
+        return nullptr;
+    }
+
+    // Build the furniture piece's world matrix: a local Z-rotation + box-corner-relative translation,
+    // composed onto the interior box's own current world matrix.
+    CMatrix boxMatrix(&m_matrix, false);
+    CMatrix localMatrix;
+    localMatrix.SetUnity();
+    localMatrix.RotateZ(rotationZ * DEG_TO_RAD);
+    localMatrix.GetPosition() = CVector(offsetX, offsetY, placedZ);
+    CMatrix finalMatrix = boxMatrix * localMatrix;
+
+    auto* const furn = g_furnitureEntityFreeList.RemoveHead();
+    if (!furn) {
+        return nullptr;
+    }
+
+    auto* const newObject = new CObject(furniture->m_nModelId, false);
+    furn->m_entity = newObject;
+
+    newObject->SetMatrix(finalMatrix);
+    newObject->SetAreaCode((eAreaCodes)m_areaCode);
+    newObject->m_bDontCastShadowsOn = true;
+    newObject->m_nObjectType = eObjectType::OBJECT_TYPE_DECORATION;
+    newObject->SetIsStatic(true);
+
+    CWorld::Add(newObject);
+
+    furn->m_tileX = (uint16)std::lround(offsetX);
+    furn->m_tileY = (uint16)std::lround(offsetY);
+
+    m_list.AddItem(furn);
+
+    if (!isStealable) {
+        return newObject;
+    }
+
+    newObject->objectFlags.bIsLiftable = true;
+
+    if (!g_interiorMan.HasInteriorHadStealDataSetup(this)) {
+        // First time this interior's steal-data gets populated - just append.
+        g_interiorMan.AddStealableObject(newObject, furniture->m_nModelId, m_interiorId, CVector(offsetX, offsetY, placedZ));
+        return newObject;
+    }
+
+    const auto idx = g_interiorMan.FindStealableObjectId(m_interiorId, furniture->m_nModelId, CVector(offsetX, offsetY, placedZ));
+    if (idx < 0 || !g_interiorMan.GetObjectAt(idx).wasStolen) {
+        // No existing record, or one that hasn't been stolen yet - if a record was found, just point it
+        // at the freshly (re)created object.
+        if (idx >= 0) {
+            g_interiorMan.GetObjectAt(idx).entity = newObject;
+        }
+        return newObject;
+    }
+
+    // The tracked record for this exact (interior, model, position) was already marked stolen by the
+    // player - don't let it respawn: undo everything and return null.
+    CWorld::Remove(newObject);
+    delete newObject;
+    furn->m_entity = nullptr;
+    m_list.RemoveItem(furn);
+    g_furnitureEntityFreeList.AddItem(furn);
+    return nullptr;
 }
 
 // 0x5913B0
