@@ -128,7 +128,7 @@ void CAEPoliceScannerAudioEntity::FinishedPlayingScannerDialogue() {
 
 // 0x4E6F60
 void CAEPoliceScannerAudioEntity::PlayLoadedDialogue() {
-    return plugin::CallMethod<0x4E6F60, CAEPoliceScannerAudioEntity*>(this);
+    static constexpr float clickVolume = +0.0f; // 0xB61D54, same constant Service() uses under that name
 
     int16 i;
     for (i = 0; i < NUM_POLICE_SCANNER_SLOTS; ++i) {
@@ -144,7 +144,7 @@ void CAEPoliceScannerAudioEntity::PlayLoadedDialogue() {
 
     if (i >= NUM_POLICE_SCANNER_SLOTS) {
     LABEL_9:
-        auto volumeChange = s_fVolumeOffset /* + flt_B61D54 */;
+        auto volumeChange = s_fVolumeOffset + clickVolume;
         AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_SCANNER_CLICK, volumeChange);
         AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_SCANNER_NOISE_STOP);
         if (s_nSectionPlaying) {
@@ -162,7 +162,7 @@ void CAEPoliceScannerAudioEntity::PlayLoadedDialogue() {
                 --v4;
             } while (v4);
             s_nPlaybackStartTime = 0;
-            // s_nAbortPlaybackTime = *(_DWORD*)&gSpeechContextLookup[366][0] + CTimer::GetTimeInMS();
+            s_nAbortPlaybackTime = CTimer::GetTimeInMS() + 5000; // matches the constant PlayPoliceScannerDialogue() already uses here
             s_nScannerPlaybackState = TWO;
         }
     } else {
@@ -322,17 +322,17 @@ void CAEPoliceScannerAudioEntity::InjectHooks() {
     RH_ScopedInstall(Reset, 0x4E6E90);
     RH_ScopedInstall(AddAudioEvent, 0x4E71E0, { .reversed = false });
     RH_ScopedInstall(PrepSlots, 0x4E6BC0);
-    RH_ScopedInstall(LoadSlots, 0x4E6CD0, { .reversed = false });
+    RH_ScopedInstall(LoadSlots, 0x4E6CD0);
     RH_ScopedInstall(EnableScanner, 0x4E6DB0);
     RH_ScopedInstall(DisableScanner, 0x4E71B0);
     RH_ScopedInstall(StopScanner, 0x4E6DC0);
     RH_ScopedInstall(FinishedPlayingScannerDialogue, 0x4E6C30);
-    RH_ScopedInstall(PlayLoadedDialogue, 0x4E6F60, { .reversed = false });
+    RH_ScopedInstall(PlayLoadedDialogue, 0x4E6F60);
     RH_ScopedInstall(PopulateScannerDialogueLists, 0x4E6B60);
     RH_ScopedInstall(CanWePlayNewScannerDialogue, 0x4E6C00);
     RH_ScopedInstall(PlayPoliceScannerDialogue, 0x4E6ED0);
     RH_ScopedVMTInstall(UpdateParameters, 0x4E7590);
-    RH_ScopedInstall(Service, 0x4E7630, { .reversed = false });
+    RH_ScopedInstall(Service, 0x4E7630);
 }
 
 CAEPoliceScannerAudioEntity* CAEPoliceScannerAudioEntity::Constructor() {
