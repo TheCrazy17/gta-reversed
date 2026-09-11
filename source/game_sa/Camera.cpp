@@ -133,11 +133,11 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(LoadPathSplines, 0x5B24D0, { .reversed = false });
     RH_ScopedInstall(Init, 0x5BC520);
 
-    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "0", 0x50D350, void(CCamera::*)(float), { .reversed = false });
-    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "1", 0x516440, void(CCamera::*)(), {.reversed = false});
-    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "0", 0x50D430, void(CCamera::*)(float), { .reversed = false });
-    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "1", 0x5164A0, void(CCamera::*)(), { .reversed = false });
-    RH_ScopedOverloadedInstall(ProcessFOVLerp, "0", 0x50D510, void(CCamera::*)(float), { .reversed = false });
+    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "0", 0x50D350, void(CCamera::*)(float));
+    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "1", 0x516440, void(CCamera::*)());
+    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "0", 0x50D430, void(CCamera::*)(float));
+    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "1", 0x5164A0, void(CCamera::*)());
+    RH_ScopedOverloadedInstall(ProcessFOVLerp, "0", 0x50D510, void(CCamera::*)(float));
     RH_ScopedOverloadedInstall(ProcessFOVLerp, "1", 0x516500, void(CCamera::*)());
     //RH_ScopedOverloadedInstall(ProcessJiggle, "0", 0x516560, { .reversed = false });
 
@@ -1436,12 +1436,22 @@ void CCamera::ProcessWideScreenOn() {
 
 // 0x516440
 void CCamera::ProcessVectorTrackLinear() {
-    plugin::CallMethod<0x516440, CCamera*>(this);
+    if (const auto now = static_cast<float>(CTimer::GetTimeInMS()); now <= m_fTrackLinearEndTime) {
+        ProcessVectorTrackLinear(invLerp(m_fTrackLinearStartTime, m_fTrackLinearEndTime, now));
+    } else if (m_bCameraPersistTrack) {
+        m_bVecTrackLinearProcessed = true;
+    }
 }
 
 // 0x50D350
 void CCamera::ProcessVectorTrackLinear(float ratio) {
-    plugin::CallMethod<0x50D350, CCamera*, float>(this, ratio);
+    m_bVecTrackLinearProcessed = true;
+
+    const auto t = m_bTrackLinearWithEase
+        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+        : ratio;
+
+    m_vecTrackLinear = (m_vecTrackLinearEndPoint - m_vecTrackLinearStartPoint) * t + m_vecTrackLinearStartPoint;
 }
 
 //
@@ -1461,7 +1471,13 @@ void CCamera::ProcessObbeCinemaCameraHeli() {
 
 // 0x50D430
 void CCamera::ProcessVectorMoveLinear(float ratio) {
-    plugin::CallMethod<0x50D430, CCamera*, float>(this, ratio);
+    m_bVecMoveLinearProcessed = true;
+
+    const auto t = m_bMoveLinearWithEase
+        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+        : ratio;
+
+    m_vecMoveLinear = (m_vecMoveLinearPosnEnd - m_vecMoveLinearPosnStart) * t + m_vecMoveLinearPosnStart;
 }
 
 // 0x516500
@@ -1475,12 +1491,22 @@ void CCamera::ProcessFOVLerp() {
 
 // 0x50D510
 void CCamera::ProcessFOVLerp(float ratio) {
-    plugin::CallMethod<0x50D510, CCamera*, float>(this, ratio);
+    m_bFOVLerpProcessed = true;
+
+    const auto t = m_nZoomMode // TODO: Rename (see LerpFOV) - acts as the "with ease" flag here
+        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+        : ratio;
+
+    m_fFOVNew = (m_fZoomOutFactor - m_fZoomInFactor) * t + m_fZoomInFactor;
 }
 
 // 0x5164A0
 void CCamera::ProcessVectorMoveLinear() {
-    plugin::CallMethod<0x5164A0, CCamera*>(this);
+    if (const auto now = static_cast<float>(CTimer::GetTimeInMS()); now <= m_fMoveLinearEndTime) {
+        ProcessVectorMoveLinear(invLerp(m_fMoveLinearStartTime, m_fMoveLinearEndTime, now));
+    } else if (m_bCameraPersistPosition) {
+        m_bVecMoveLinearProcessed = true;
+    }
 }
 
 // unused
