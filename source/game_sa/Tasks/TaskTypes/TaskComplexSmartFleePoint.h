@@ -29,7 +29,7 @@ public:
     CTaskComplexSmartFleePoint(CVector const& fleePos, bool doScream, float safeDist, int32 fleeTimeMs);
     CTaskComplexSmartFleePoint(const CTaskComplexSmartFleePoint& o); // NOTSA
 
-    int8 SetDefaultTaskWanderDir(CPed* ped);
+    void SetDefaultTaskWanderDir(CPed* ped);
     uint32 ComputeFleeDir(CPed*);
     CTask* CreateSubTask(eTaskType taskType, CPed* ped);
     void SetFleePosition(CVector const& fleePos, float safeDist, bool scream);

@@ -28,6 +28,7 @@ void CTaskComplexWander::InjectHooks() {
     RH_ScopedVMTInstall(UpdateDir, 0x669DA0);
     RH_ScopedVMTInstall(UpdatePathNodes, 0x669ED0);
     RH_ScopedInstall(CreateSubTask, 0x671CB0);
+    RH_ScopedInstall(CopyDirAndPathNodesFrom, 0x669D50);
     RH_ScopedInstall(ComputeTargetPos, 0x669F60);
     RH_ScopedInstall(ComputeTargetHeading, 0x66F530);
     RH_ScopedInstall(ValidNodes, 0x669F30);
@@ -223,6 +224,16 @@ void CTaskComplexWander::UpdatePathNodes(const CPed* ped, uint8 dir, CNodeAddres
     targetNode.m_wAreaId = (uint16)-1;
     const CVector& pos = ped->GetPosition();
     ThePaths.FindNextNodeWandering(PATH_TYPE_PED, pos, &originNode, &targetNode, dir, &outDir);
+}
+
+// 0x669D50 - OG name unknown
+void CTaskComplexWander::CopyDirAndPathNodesFrom(CTaskComplexWander* other) {
+    if (m_LastNode != other->m_LastNode || m_NextNode != other->m_NextNode) {
+        m_LastNode = other->m_LastNode;
+        m_NextNode = other->m_NextNode;
+        m_nDir = other->m_nDir;
+        m_bNewNodes = true;
+    }
 }
 
 // 0x671CB0

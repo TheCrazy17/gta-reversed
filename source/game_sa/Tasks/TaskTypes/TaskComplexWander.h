@@ -59,6 +59,10 @@ public:
     virtual void UpdatePathNodes(const CPed* ped, uint8 dir, CNodeAddress& originNode, CNodeAddress& targetNode, uint8& outDir);
 
     CTask* CreateSubTask(CPed* ped, eTaskType taskType);
+
+    // OG name unknown. Copies `other`'s dir/path-nodes into this task (if they differ) and flags new nodes for a re-scan.
+    void CopyDirAndPathNodesFrom(CTaskComplexWander* other); // 0x669D50
+
     void ComputeTargetPos(const CPed* ped, CVector& outTargetPos, const CNodeAddress& targetNodeAddress);
     float ComputeTargetHeading(CPed* ped);
     [[nodiscard]] bool ValidNodes() const;
