@@ -83,7 +83,34 @@ void CFormation::FindCoverPointsBehindBox(
 
 // 0x69A620
 void CFormation::GenerateGatherDestinations(CPedList& pedList, CPed* ped) {
-    plugin::Call<0x69A620, CPedList&, CPed*>(pedList, ped);
+    m_Destinations.m_Count = 0;
+    rng::fill(m_Destinations.m_PointHasBeenClaimed, false);
+
+    const auto count   = pedList.m_count;
+    const auto heading = ped->m_fCurrentRotation;
+
+    float radius;
+    switch (count) {
+    case 1:  radius = 1.25f;  break;
+    case 2:  radius = 1.5f;   break;
+    case 3:  radius = 1.75f;  break;
+    case 4:  radius = 2.125f; break;
+    default: radius = 2.5f;   break;
+    }
+
+    const auto& pos = ped->GetPosition();
+    for (auto i = 0u; i < count; i++) {
+        const auto angle = count < 2
+            ? heading + HALF_PI
+            : PI / (float)count + ((float)i / (float)count) * TWO_PI - heading;
+
+        if (m_Destinations.m_Count < m_Destinations.m_Points.size()) {
+            auto& pt = m_Destinations.m_Points[m_Destinations.m_Count++];
+            pt.x = std::sin(angle) * radius + pos.x;
+            pt.y = std::cos(angle) * radius + pos.y;
+            pt.z = pos.z;
+        }
+    }
 }
 
 // 0x69A770
@@ -118,7 +145,7 @@ void CFormation::InjectHooks() {
     RH_ScopedGlobalInstall(ReturnTargetPedForPed, 0x699F50);
     RH_ScopedGlobalInstall(ReturnDestinationForPed, 0x699FA0);
     RH_ScopedGlobalInstall(FindCoverPointsBehindBox, 0x699FF0);
-    RH_ScopedGlobalInstall(GenerateGatherDestinations, 0x69A620, { .reversed = false });
+    RH_ScopedGlobalInstall(GenerateGatherDestinations, 0x69A620);
     RH_ScopedGlobalInstall(GenerateGatherDestinations_AroundCar, 0x69A770, { .reversed = false });
     RH_ScopedGlobalInstall(DistributeDestinations, 0x69B240, { .reversed = false });
     RH_ScopedGlobalInstall(DistributeDestinations_CoverPoints, 0x69B5B0, { .reversed = false });
