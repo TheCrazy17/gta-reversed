@@ -125,7 +125,41 @@ void CFormation::DistributeDestinations(CPedList& pedList) {
 
 // 0x69B5B0
 void CFormation::DistributeDestinations_CoverPoints(const CPedList& pedlist, CVector pos) {
-    return plugin::Call<0x69B5B0, const CPedList&, CVector>(pedlist, pos);
+    m_Peds = pedlist;
+    if (m_Peds.m_count == 0) {
+        return;
+    }
+
+    for (auto i = 0u; i < 8; i++) {
+        m_aPedLinkToDestinations[i] = -1;
+    }
+
+    for (auto i = 0u; i < m_Destinations.m_Count; i++) {
+        const auto& destPos = m_Destinations.m_Points[i];
+        const auto distDestToPos = DistanceBetweenPoints2D(destPos, pos);
+
+        auto bestPed   = -1;
+        auto bestScore = 0.4f;
+        for (auto j = 0u; j < m_Peds.m_count; j++) {
+            if (m_aPedLinkToDestinations[j] >= 0) {
+                continue;
+            }
+            const auto& pedPos      = m_Peds.m_peds[j]->GetPosition();
+            const auto  distPedToPos = DistanceBetweenPoints2D(pedPos, pos);
+            if (distDestToPos > 1.0f + distPedToPos) {
+                continue;
+            }
+            const auto distPedToDest = DistanceBetweenPoints2D(pedPos, destPos);
+            const auto score = 1.0f - ((distPedToDest + distDestToPos) - distPedToPos) / distPedToPos;
+            if (bestScore < score) {
+                bestPed   = j;
+                bestScore = score;
+            }
+        }
+        if (bestPed >= 0) {
+            m_aPedLinkToDestinations[bestPed] = i;
+        }
+    }
 }
 
 // 0x69B700
@@ -148,7 +182,7 @@ void CFormation::InjectHooks() {
     RH_ScopedGlobalInstall(GenerateGatherDestinations, 0x69A620);
     RH_ScopedGlobalInstall(GenerateGatherDestinations_AroundCar, 0x69A770, { .reversed = false });
     RH_ScopedGlobalInstall(DistributeDestinations, 0x69B240, { .reversed = false });
-    RH_ScopedGlobalInstall(DistributeDestinations_CoverPoints, 0x69B5B0, { .reversed = false });
+    RH_ScopedGlobalInstall(DistributeDestinations_CoverPoints, 0x69B5B0);
     RH_ScopedGlobalInstall(DistributeDestinations_PedsToAttack, 0x69B700, { .reversed = false });
     RH_ScopedGlobalInstall(FindCoverPoints, 0x69B860, { .reversed = false });
 }
