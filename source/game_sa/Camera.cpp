@@ -130,7 +130,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(CamControl, 0x527FA0, { .reversed = false });
     RH_ScopedInstall(Process, 0x52B730, { .reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
-    RH_ScopedInstall(LoadPathSplines, 0x5B24D0, { .reversed = false });
+    RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
     RH_ScopedInstall(Init, 0x5BC520);
 
     RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "0", 0x50D350, void(CCamera::*)(float));
@@ -1748,7 +1748,49 @@ void CCamera::DeleteCutSceneCamDataMemory() {
 
 // 0x5B24D0
 void CCamera::LoadPathSplines(FILE* file) {
-    plugin::CallMethod<0x5B24D0, CCamera*>(this);
+    char lineBuf[0x200];
+    int32 sectionIndex   = -1;
+    bool  expectingCount = true;
+    int32 remainingLines = 0;
+    float* writePtr       = nullptr;
+
+    while (std::fgets(lineBuf, sizeof(lineBuf), file)) {
+        for (auto* p = lineBuf; *p; p++) {
+            if ((uint8)*p < 0x20 || *p == ',') {
+                *p = ' ';
+            }
+        }
+
+        auto* line = lineBuf;
+        while (*line != '\0' && (uint8)*line <= 0x20) {
+            line++;
+        }
+        if (*line == '#' || *line == '\0') {
+            continue;
+        }
+
+        if (remainingLines == 0) {
+            if (expectingCount) {
+                if (++sectionIndex > 3) {
+                    return;
+                }
+                std::sscanf(line, "%d", &remainingLines);
+                const auto floatsPerEntry = (sectionIndex == 0 || sectionIndex == 1) ? 4 : 10;
+                auto* data = new float[1 + remainingLines * floatsPerEntry];
+                m_aPathArray[sectionIndex].m_pArrPathData = data;
+                data[0]  = static_cast<float>(remainingLines);
+                writePtr = data + 1;
+                expectingCount = false;
+            } else if (*line == ';') {
+                expectingCount = true;
+            }
+        } else {
+            --remainingLines;
+            for (auto* tok = std::strtok(line, ", \t"); tok; tok = std::strtok(nullptr, ", \t")) {
+                *writePtr++ = static_cast<float>(std::atof(tok));
+            }
+        }
+    }
 }
 
 // 0x50AB50
