@@ -119,7 +119,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(DrawBordersForWideScreen, 0x514860);
     RH_ScopedInstall(Find3rdPersonCamTargetVector, 0x514970);
     RH_ScopedInstall(CalculateGroundHeight, 0x514B80);
-    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60, { .reversed = false });
+    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60);
     RH_ScopedInstall(CalculateDerivedValues, 0x5150E0, { .reversed = false });
     RH_ScopedInstall(ImproveNearClip, 0x516B20, { .reversed = false });
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
@@ -1677,7 +1677,28 @@ float CCamera::CalculateGroundHeight(eGroundHeightType type) {
 
 // 0x514D60
 void CCamera::CalculateFrustumPlanes(bool bForMirror) {
-    plugin::CallMethod<0x514D60, CCamera*, bool>(this, bForMirror);
+    constexpr auto FOV_TO_HALF_RAD = 3.1415f / 360.0f; // NOTSA: original binary's own imprecise inline Pi literal, NOT DEG_TO_RAD/2 (bit-exact match confirmed against the raw constant)
+    const auto cos = std::cos(CDraw::ms_fFOV * FOV_TO_HALF_RAD);
+    const auto sin = std::sin(CDraw::ms_fFOV * FOV_TO_HALF_RAD);
+
+    m_avecFrustumNormals[0] = CVector(cos, -sin, 0.0f);
+    m_avecFrustumNormals[1] = CVector(-cos, -sin, 0.0f);
+
+    const auto aspect    = (float)RsGlobal.maximumHeight / (float)RsGlobal.maximumWidth;
+    const auto aspectCos = aspect * cos;
+    const auto aspectSin = aspect * sin;
+    m_avecFrustumNormals[2] = CVector(0.0f, -aspectSin, -aspectCos);
+    m_avecFrustumNormals[3] = CVector(0.0f, -aspectSin, aspectCos);
+
+    auto& worldNormals = bForMirror ? m_avecFrustumWorldNormals_Mirror : m_avecFrustumWorldNormals;
+    auto& offsets       = bForMirror ? m_fFrustumPlaneOffsets_Mirror : m_fFrustumPlaneOffsets;
+
+    TransformVectors(worldNormals.data(), 4, m_mCameraMatrix, m_avecFrustumNormals.data());
+
+    const auto& pos = GetPosition();
+    for (auto i = 0; i < 4; i++) {
+        offsets[i] = DotProduct(worldNormals[i], pos);
+    }
 }
 
 // 0x5150E0
