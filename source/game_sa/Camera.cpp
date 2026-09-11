@@ -24,6 +24,7 @@ auto& gColDetLastVehModelIndex = StaticRef<int32>(0xB700F0); // model index gCol
 auto& gColDetLastVehMinSphereZ = StaticRef<float>(0xB700EC); // cached min(sphere.m_vecCenter.z - sphere.m_fRadius) over target vehicle's CCollisionData spheres
 auto& gColDetLastPosValid = StaticRef<int32>(0xB700E8);       // bit 0: whether gColDetLastSourcePos has been initialized
 auto& gColDetLastSourcePos = StaticRef<CVector>(0xB700DC);    // camera source pos as of the last time gCurDistForCam was smoothed (not snapped)
+auto& gNearClipPedCollisionRefDist = StaticRef<float>(0xB6EC68); // NOTSA: exact meaning/setter not identified; used as a divisor in SetNearClipBasedOnPedCollision
 
 CCam& CCamera::GetActiveCamera() {
     return TheCamera.m_aCams[TheCamera.m_nActiveCam];
@@ -103,7 +104,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(TakeControlAttachToEntity, 0x50C910);
     RH_ScopedInstall(TakeControlWithSpline, 0x50CAE0);
     RH_ScopedInstall(SetCamCollisionVarDataSet, 0x50CB60);
-    RH_ScopedInstall(SetNearClipBasedOnPedCollision, 0x50CB90, { .reversed = false });
+    RH_ScopedInstall(SetNearClipBasedOnPedCollision, 0x50CB90);
     RH_ScopedInstall(SetColVarsPed, 0x50CC50);
     RH_ScopedInstall(SetColVarsVehicle, 0x50CCA0);
     RH_ScopedInstall(StartTransitionWhenNotFinishedInter, 0x515BC0);
@@ -1127,7 +1128,10 @@ void CCamera::UpdateSoundDistances() {
 // unused
 // 0x50CB90
 void CCamera::SetNearClipBasedOnPedCollision(float arg2) {
-    plugin::CallMethod<0x50CB90, CCamera*, float>(this, arg2);
+    const auto farClipVar = gpCamColVars[4];
+    auto nearClip = (0.3f - farClipVar) * (std::sqrt(arg2) / gNearClipPedCollisionRefDist) * 0.25f + farClipVar;
+    nearClip = std::max(nearClip, farClipVar);
+    RwCameraSetNearClipPlane(Scene.m_pRwCamera, nearClip);
 }
 
 // TODO: eAimingType
@@ -1832,7 +1836,7 @@ bool CCamera::CameraColDetAndReact(CVector* source, CVector* target) {
     const bool didCollide = ConeCastCollisionResolve(origSource, *target, coneDest, radius, minDist, outDist);
 
     if (didCollide && outDist <= gpCamColVars[3]) {
-        RwCameraSetFarClipPlane(Scene.m_pRwCamera, gpCamColVars[4]);
+        RwCameraSetNearClipPlane(Scene.m_pRwCamera, gpCamColVars[4]);
     }
 
     if (gCurDistForCam <= outDist) {
@@ -1854,7 +1858,7 @@ bool CCamera::CameraColDetAndReact(CVector* source, CVector* target) {
     *source = *target + (origSource - *target) * gCurDistForCam;
 
     if (isBike && gCurDistForCam < 0.5f) {
-        RwCameraSetFarClipPlane(Scene.m_pRwCamera, 0.05f);
+        RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.05f);
     }
 
     return didCollide;
