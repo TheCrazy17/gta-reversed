@@ -19,6 +19,11 @@ auto& gCurCamColVars = StaticRef<uint8>(0x8CCB80);
 auto& gCurDistForCam = StaticRef<float>(0x8CCB84);
 auto& gpCamColVars = StaticRef<float*>(0xB6FE88);
 auto& gCamColVars = StaticRef<float[28][6]>(0x8CC8E0);
+auto& gLastRadiusUsedInCollisionPreventionOfCamera = StaticRef<float>(0xB6EC6C);
+auto& gColDetLastVehModelIndex = StaticRef<int32>(0xB700F0); // model index gColDetLastVehMinSphereZ was cached for
+auto& gColDetLastVehMinSphereZ = StaticRef<float>(0xB700EC); // cached min(sphere.m_vecCenter.z - sphere.m_fRadius) over target vehicle's CCollisionData spheres
+auto& gColDetLastPosValid = StaticRef<int32>(0xB700E8);       // bit 0: whether gColDetLastSourcePos has been initialized
+auto& gColDetLastSourcePos = StaticRef<CVector>(0xB700DC);    // camera source pos as of the last time gCurDistForCam was smoothed (not snapped)
 
 CCam& CCamera::GetActiveCamera() {
     return TheCamera.m_aCams[TheCamera.m_nActiveCam];
@@ -126,7 +131,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560, { .reversed = false });
-    RH_ScopedInstall(CameraColDetAndReact, 0x520190, { .reversed = false });
+    RH_ScopedInstall(CameraColDetAndReact, 0x520190);
     RH_ScopedInstall(CamControl, 0x527FA0, { .reversed = false });
     RH_ScopedInstall(Process, 0x52B730, { .reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
@@ -1768,8 +1773,91 @@ bool CCamera::TryToStartNewCamMode(int32 camSequence) {
 }
 
 // 0x520190
-void CCamera::CameraColDetAndReact(CVector* source, CVector* target) {
-    plugin::CallMethod<0x520190, CCamera*, CVector*, CVector*>(this, source, target);
+bool CCamera::CameraColDetAndReact(CVector* source, CVector* target) {
+    const CVector origSource = *source;
+
+    // Raw (uncollided) test radius, scaled from the source<->target distance.
+    float radius = (origSource - *target).Magnitude() * gpCamColVars[0] * 0.2939f;
+
+    if (gCurCamColVars > 9 && CWorld::pIgnoreEntity) {
+        auto* ent = CWorld::pIgnoreEntity;
+
+        float targetExtent;
+        if (ent->GetIsTypeVehicle() && ent->AsVehicle()->IsSubAutomobile()) {
+            // Cache (per target model) the lowest point reached by any of the vehicle's collision spheres.
+            if ((int32)ent->GetModelIndex() != gColDetLastVehModelIndex) {
+                gColDetLastVehMinSphereZ = 100.0f;
+                if (auto* colData = ent->GetColModel()->m_pColData) {
+                    for (auto& sphere : colData->GetSpheres()) {
+                        gColDetLastVehMinSphereZ = std::min(gColDetLastVehMinSphereZ, sphere.m_vecCenter.z - sphere.m_fRadius);
+                    }
+                }
+                gColDetLastVehModelIndex = (int32)ent->GetModelIndex();
+            }
+
+            const auto& mat = ent->GetMatrix();
+            targetExtent = (*target - mat.GetPosition()).Dot(mat.GetUp()) - gColDetLastVehMinSphereZ;
+            targetExtent = std::max(targetExtent, 0.2f);
+        } else {
+            const auto& bbox = CModelInfo::GetModelInfo(ent->GetModelIndex())->GetColModel()->GetBoundingBox();
+            const CVector halfSize = bbox.GetSize() * 0.5f;
+            targetExtent = std::min({ halfSize.x, halfSize.y, halfSize.z });
+        }
+
+        radius = targetExtent > gpCamColVars[1]
+            ? std::min(radius, gpCamColVars[1])
+            : std::min(targetExtent, radius);
+    }
+
+    radius = std::min(radius, gpCamColVars[1]);
+    radius = std::max(radius, 0.65f);
+
+    float minDist = gpCamColVars[2];
+    if (gCurCamColVars < 10) {
+        minDist = (gCurCamColVars < 4 ? 0.18f : 0.3f) / (origSource - *target).Magnitude();
+    }
+
+    bool isBike = false;
+    if (gCurCamColVars > 9 && CWorld::pIgnoreEntity
+        && CWorld::pIgnoreEntity->GetIsTypeVehicle()
+        && CWorld::pIgnoreEntity->AsVehicle()->IsBike()) {
+        isBike  = true;
+        minDist = 0.05f;
+    }
+
+    gLastRadiusUsedInCollisionPreventionOfCamera = radius;
+
+    CVector coneDest{};
+    float   outDist{};
+    const bool didCollide = ConeCastCollisionResolve(origSource, *target, coneDest, radius, minDist, outDist);
+
+    if (didCollide && outDist <= gpCamColVars[3]) {
+        RwCameraSetFarClipPlane(Scene.m_pRwCamera, gpCamColVars[4]);
+    }
+
+    if (gCurDistForCam <= outDist) {
+        if (!gColDetLastPosValid) {
+            gColDetLastPosValid  = 1;
+            gColDetLastSourcePos = CVector{};
+        }
+        if (sq(0.01f) < (origSource - gColDetLastSourcePos).SquaredMagnitude()) {
+            const float step = (outDist - gCurDistForCam) * CTimer::GetTimeStep() * gpCamColVars[5];
+            gCurDistForCam += std::min(step, 0.05f);
+        }
+        gColDetLastSourcePos = origSource;
+    } else {
+        gCurDistForCam = outDist;
+    }
+
+    gCurDistForCam = std::min(gCurDistForCam, 1.0f);
+
+    *source = *target + (origSource - *target) * gCurDistForCam;
+
+    if (isBike && gCurDistForCam < 0.5f) {
+        RwCameraSetFarClipPlane(Scene.m_pRwCamera, 0.05f);
+    }
+
+    return didCollide;
 }
 
 // 0x527FA0
