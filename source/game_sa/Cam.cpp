@@ -182,7 +182,7 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Process, 0x526FC0, { .Reversed = false });
     RH_ScopedInstall(ProcessArrestCamOne, 0x518500, { .Reversed = false });
     RH_ScopedInstall(ProcessPedsDeadBaby, 0x519250, { .Reversed = false });
-    RH_ScopedInstall(Process_1rstPersonPedOnPC, 0x50EB70, { .Reversed = false });
+    RH_ScopedInstall(Process_1rstPersonPedOnPC, 0x50EB70);
     RH_ScopedInstall(Process_1stPerson, 0x517EA0);
     RH_ScopedInstall(Process_AimWeapon, 0x521500);
     RH_ScopedInstall(Process_AttachedCam, 0x512B10);
@@ -629,112 +629,137 @@ void CCam::ProcessPedsDeadBaby() {
 
 // 0x50EB70
 void CCam::Process_1rstPersonPedOnPC(const CVector& target, float orientation, float speedVar, float speedVarWanted) {
-    static auto& v3d_8CCC54   = StaticRef<CVector>(0x8CCC54);
-    static auto& byte_B6FFDC  = StaticRef<bool>(0xB6FFDC);
-    static auto& v3d_B6FFC4   = StaticRef<CVector>(0xB6FFC4);
-    static auto& v3d_B6FFD0   = StaticRef<CVector>(0xB6FFD0);
+    static auto& v3d_8CCC54  = StaticRef<CVector>(0x8CCC54); // head point, local to the spine bone
+    static auto& byte_B6FFDC = StaticRef<bool>(0xB6FFDC);
+    static auto& v3d_B6FFC4  = StaticRef<CVector>(0xB6FFC4);
+    static auto& v3d_B6FFD0  = StaticRef<CVector>(0xB6FFD0);
 
     if (m_nMode != MODE_SNIPER_RUNABOUT) {
         m_fFOV = 70.0f;
     }
 
+    TheCamera.m_b1rstPersonRunCloseToAWall = false;
     if (!m_pCamTargetEntity->GetRwObject()) {
         return;
     }
 
-    if (!m_pCamTargetEntity->GetIsTypePed()) {
-        m_bResetStatics = false;
-        RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.05f);
-        return;
-    }
+    if (m_pCamTargetEntity->GetIsTypePed()) {
+        auto* const targetPed = m_pCamTargetEntity->AsPed();
 
-    const auto hier = GetAnimHierarchyFromSkinClump(m_pCamTargetEntity->GetRpClump());
-    const auto aIdx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(2)); // todo: enum
-    auto&      aMat = RpHAnimHierarchyGetMatrixArray(hier)[aIdx];
-    auto*      targetPed = m_pCamTargetEntity->AsPed();
+        const auto hier = GetAnimHierarchyFromSkinClump(m_pCamTargetEntity->GetRpClump());
+        const auto aIdx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(2)); // todo: enum
+        auto&      aMat = RpHAnimHierarchyGetMatrixArray(hier)[aIdx];
 
-    CVector pointIn = v3d_8CCC54;
-    RwV3dTransformPoint(&pointIn, &pointIn, &aMat);
-    RwV3d v3dZero{ 0.0f };
-    RwMatrixScale(&aMat, &v3dZero, rwCOMBINEPRECONCAT);
+        CVector pointIn = v3d_8CCC54;
+        RwV3dTransformPoint(&pointIn, &pointIn, &aMat);
+        RwV3d v3dZero{ 0.0f };
+        RwMatrixScale(&aMat, &v3dZero, rwCOMBINEPRECONCAT); // hide the head
 
-    if (m_bResetStatics) {
-        // unnecessary entity ped check
-        m_fVerticalAngle = 0.0f;
-        byte_B6FFDC      = false;
-        v3d_B6FFD0.Reset();
-        m_fHorizontalAngle            = targetPed->m_fCurrentRotation + DegreesToRadians(90.0f);
-        m_bCollisionChecksOn          = true;
-        m_fInitialPlayerOrientation   = m_fHorizontalAngle;
-        m_vecBufferedPlayerBodyOffset = v3d_B6FFC4 = pointIn;
-    }
-    m_vecBufferedPlayerBodyOffset.y = pointIn.y;
+        if (m_bResetStatics) {
+            m_fHorizontalAngle          = targetPed->m_fCurrentRotation + DegreesToRadians(90.0f);
+            m_fVerticalAngle            = 0.0f;
+            m_fInitialPlayerOrientation = m_fHorizontalAngle;
+            byte_B6FFDC                 = false;
+            v3d_B6FFD0.Reset();
+            m_bCollisionChecksOn          = true;
+            m_vecBufferedPlayerBodyOffset = v3d_B6FFC4 = pointIn;
+        }
+        m_vecBufferedPlayerBodyOffset.y = pointIn.y;
 
-    if (TheCamera.m_bHeadBob) {
-        m_vecBufferedPlayerBodyOffset.x = lerp(
-            pointIn.x,
-            m_vecBufferedPlayerBodyOffset.x,
-            TheCamera.m_fScriptPercentageInterToCatchUp
-        );
-
-        m_vecBufferedPlayerBodyOffset.z = lerp(
-            pointIn.z,
-            m_vecBufferedPlayerBodyOffset.z,
-            TheCamera.m_fScriptPercentageInterToCatchUp
-        );
-
-        m_vecSource = targetPed->GetMatrix().TransformPoint(m_vecBufferedPlayerBodyOffset);
-    } else {
-        const auto targetFwd = targetPed->GetForward().Normalized();
-        const auto mag       = (pointIn - v3d_B6FFC4).Magnitude2D();
-
-        m_vecSource = targetFwd * mag * 1.23f + targetPed->GetPosition() + CVector{ 0.0f, 0.0f, 0.59f };
-    }
-
-    CVector spinePos{};
-    targetPed->GetTransformedBonePosition(spinePos, BONE_SPINE1, true);
-
-    // TODO: Put in a function name e.g. 'HandleFreeMouseControl'?
-    auto*      pad1   = CPad::GetPad(0);
-    const auto fov    = m_fFOV / 80.0f;
-    const auto amountMouseMoved = pad1->NewMouseControllerState.GetAmountMouseMoved();
-
-    if (!amountMouseMoved.IsZero()) {
-        m_fHorizontalAngle += -3.0f * amountMouseMoved.x * fov * CCamera::m_fMouseAccelHorzntl;
-        m_fVerticalAngle += +4.0f * amountMouseMoved.y * fov * CCamera::m_fMouseAccelVertical;
-    } else {
-        const auto hv = (float)-pad1->LookAroundLeftRight(targetPed);
-        const auto vv = (float)pad1->LookAroundUpDown(targetPed);
-
-        m_fHorizontalAngle += sq(hv) / 10000.0f * fov / 17.5f * CTimer::GetTimeStep() * (hv < 0.0f ? -1.0f : 1.0f);
-        m_fVerticalAngle += sq(vv) / 22500.0f * fov / 14.0f * CTimer::GetTimeStep() * (vv < 0.0f ? -1.0f : 1.0f);
-    }
-    ClipBeta();
-    ClipAlpha();
-
-    if (const auto* a = targetPed->m_pAttachedTo; targetPed->IsPlayer() && a) {
-        // enum?
-        switch (targetPed->m_fTurretAngleA) {
-        case 0u:
-            m_fHorizontalAngle -= a->GetHeading() + DegreesToRadians(90.0f);
-            break;
-        case 1u:
-            m_fHorizontalAngle -= a->GetHeading() + DegreesToRadians(180.0f);
-            break;
-        case 2u:
-            m_fHorizontalAngle -= a->GetHeading() + DegreesToRadians(-90.0f);
-            break;
-        case 3u:
-            m_fHorizontalAngle -= a->GetHeading();
-            break;
-        default:
-            // NOTE(yukani): If this is fired, gimme a call. 0x50F0ED
-            NOTSA_UNREACHABLE();
-            break;
+        if (TheCamera.m_bHeadBob) {
+            const auto catchUp = TheCamera.m_fScriptPercentageInterToStopMoving; // 0xB6FC48
+            m_vecBufferedPlayerBodyOffset.x = catchUp * m_vecBufferedPlayerBodyOffset.x + (1.0f - catchUp) * pointIn.x;
+            m_vecBufferedPlayerBodyOffset.z = catchUp * m_vecBufferedPlayerBodyOffset.z + (1.0f - catchUp) * pointIn.z;
+            m_vecSource = targetPed->GetMatrix().TransformPoint(m_vecBufferedPlayerBodyOffset);
+        } else {
+            auto forward = targetPed->GetMatrix().GetForward();
+            forward.z    = 0.0f;
+            forward.Normalise();
+            const auto mag = (pointIn - v3d_B6FFC4).Magnitude2D();
+            m_vecSource    = forward * mag * 1.23f + targetPed->GetPosition() + CVector{ 0.0f, 0.0f, 0.59f };
         }
 
-        // ...
+        CVector spinePos{};
+        targetPed->GetTransformedBonePosition(spinePos, BONE_SPINE1, true);
+
+        auto*      pad   = CPad::GetPad(0);
+        const auto fov   = m_fFOV * 0.0125f;
+        const auto mouse = pad->NewMouseControllerState.GetAmountMouseMoved();
+        if (mouse.IsZero()) {
+            const auto h = (float)-pad->LookAroundLeftRightOnPC();
+            const auto v = (float)pad->LookAroundUpDownOnPC();
+            m_fHorizontalAngle += fov * 0.057142857f * h * h * 0.0001f * (h < 0.0f ? -1.0f : 1.0f) * CTimer::GetTimeStep();
+            m_fVerticalAngle += fov * 0.071428575f * v * v * 4.4444445e-05f * (v < 0.0f ? -1.0f : 1.0f) * CTimer::GetTimeStep();
+        } else {
+            m_fHorizontalAngle += fov * CCamera::m_fMouseAccelHorzntl * mouse.x * -3.0f;
+            m_fVerticalAngle += fov * CCamera::m_fMouseAccelVertical * (mouse.y * 4.0f);
+        }
+        ClipBeta();
+        // Inline clamp (upper bound first), not `ClipAlpha`: the range differs.
+        m_fVerticalAngle = m_fVerticalAngle > DegreesToRadians(60.0f)
+            ? DegreesToRadians(60.0f)
+            : (m_fVerticalAngle < DegreesToRadians(-89.5f) ? DegreesToRadians(-89.5f) : m_fVerticalAngle);
+
+        if (const auto* attached = targetPed->m_pAttachedTo; attached && targetPed->IsPlayer()) {
+            float reference;
+            switch (targetPed->m_fTurretAngleA) {
+            case 0:  reference = attached->GetHeading() + HALF_PI; break;
+            case 1:  reference = attached->GetHeading() + PI;      break;
+            case 2:  reference = attached->GetHeading() - HALF_PI; break;
+            case 3:  reference = attached->GetHeading();           break;
+            default: reference = orientation;                      break;
+            }
+            auto delta = m_fHorizontalAngle - reference;
+            if (delta > PI) {
+                delta -= TWO_PI;
+            } else if (delta < -PI) {
+                delta += TWO_PI;
+            }
+            const auto limit = targetPed->m_fTurretAngleB;
+            delta = delta > limit ? limit : (delta < -limit ? -limit : delta);
+            m_fHorizontalAngle = delta + reference;
+        }
+
+        m_vecFront = CVector{
+            std::cos(m_fHorizontalAngle) * std::cos(m_fVerticalAngle) * 3.0f,
+            std::sin(m_fHorizontalAngle) * std::cos(m_fVerticalAngle) * 3.0f,
+            std::sin(m_fVerticalAngle) * 3.0f
+        };
+        m_vecFront.Normalise();
+        m_vecSource += m_vecFront * 0.4f;
+        StaticRef<float>(0xB6F174) = m_fVerticalAngle;
+        GetVectorsReadyForRW();
+
+        auto* const player = TheCamera.m_pTargetEntity->AsPed();
+        player->m_fCurrentRotation = player->m_fAimingRotation = std::atan2(-m_vecFront.x, m_vecFront.y);
+        player->SetHeading(player->m_fCurrentRotation);
+        if (player->GetRwObject()) {
+            player->UpdateRwMatrix();
+        }
+
+        if (m_nMode == MODE_SNIPER_RUNABOUT) {
+            const auto zoomFactor = (CTimer::GetTimeStep() * 255.0f + 10000.0f) * 0.0001f;
+            if (pad->SniperZoomOut()) {
+                m_fFOV = zoomFactor * m_fFOV;
+            } else if (pad->SniperZoomIn()) {
+                m_fFOV = m_fFOV / zoomFactor;
+            }
+            TheCamera.m_nBlurBlue   = 180;
+            TheCamera.m_nBlurGreen  = 255;
+            TheCamera.m_nBlurRed    = 180;
+            TheCamera.m_nBlurType   = eMotionBlurType::SNIPER;
+            TheCamera.m_nMotionBlur = 120;
+            if (m_fFOV > 70.0f) {
+                m_fFOV = 70.0f;
+            }
+            if (m_fFOV < 15.0f) {
+                m_fFOV = 15.0f;
+            }
+        }
     }
+
+    m_bResetStatics = false;
+    RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.05f);
 }
 
 // 0x517EA0
