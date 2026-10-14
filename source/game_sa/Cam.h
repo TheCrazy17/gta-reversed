@@ -196,3 +196,5 @@ VALIDATE_SIZE(CCam, 0x238);
 
 int32 ConvertPedNode2BoneTag(int32 simpleId);
 bool  IsLampPost(eModelID modelId);
+
+void WellBufferMe(float target, float& valueToChange, float& speedSoFar, float topSpeed, float speedStep, bool isAnAngle); // 0x509AE0

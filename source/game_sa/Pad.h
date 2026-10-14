@@ -366,6 +366,7 @@ public:
     static bool GetAnaloguePadRight();
     static bool GetAnaloguePadDown();
     bool sub_540530() const noexcept;
+    bool CycleCameraModeJustDown() const; // 0x5404A0
     bool sub_5404F0() const noexcept { return Mode != 1 ? 0 : IsDPadDownPressed(); } // 0x5404F0
     bool IsPhaseEqual11() const noexcept { return Phase == 11; } // 0x53FB60
 

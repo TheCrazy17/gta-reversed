@@ -104,6 +104,7 @@ void CPad::InjectHooks() {
     RH_ScopedInstall(GroupControlBackJustDown, 0x541260);
     RH_ScopedInstall(LookAroundLeftRight, 0x540BD0);
     RH_ScopedInstall(LookAroundUpDown, 0x540CC0);
+    RH_ScopedInstall(CycleCameraModeJustDown, 0x5404A0);
     RH_ScopedInstall(LookAroundLeftRightOnPC, 0x540E80);
     RH_ScopedInstall(LookAroundUpDownOnPC, 0x540F80);
     RH_ScopedInstall(GetAnaloguePadUp, 0x540950);
@@ -1274,6 +1275,20 @@ int16 CPad::LookAroundUpDown(CPed* ped) noexcept {
 
     constexpr auto UNK = 1.3763441f;
     return static_cast<int16>((static_cast<float>(s1) + (s1 < 0 ? 35.0f : -35.0f)) * UNK);
+}
+
+// 0x5404A0
+bool CPad::CycleCameraModeJustDown() const {
+    switch (Mode) {
+    case 0:
+    case 2:
+    case 3:
+        return NewState.Select && !OldState.Select;
+    case 1:
+        return NewState.DPadUp && !OldState.DPadUp;
+    default:
+        return false;
+    }
 }
 
 // 0x540E80
