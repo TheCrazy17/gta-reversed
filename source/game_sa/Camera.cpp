@@ -129,12 +129,12 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(CalculateGroundHeight, 0x514B80);
     RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60, { .Reversed = false });
     RH_ScopedInstall(CalculateDerivedValues, 0x5150E0, { .Reversed = false });
-    RH_ScopedInstall(ImproveNearClip, 0x516B20, { .Reversed = false });
+    RH_ScopedInstall(ImproveNearClip, 0x516B20);
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560, { .Reversed = false });
-    RH_ScopedInstall(CameraColDetAndReact, 0x520190, { .Reversed = false });
+    RH_ScopedInstall(CameraColDetAndReact, 0x520190);
     RH_ScopedInstall(CamControl, 0x527FA0, { .Reversed = false });
     RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
@@ -1749,12 +1749,12 @@ void CCamera::ImproveNearClip(CVehicle* vehicle, CPed* ped, CVector* source, CVe
                 auto* intel = ped->GetIntelligence();
                 const bool usingParachute = intel->GetUsingParachute();
                 if (auto* swimTask = intel->GetTaskSwim()) {
-                    if (float waterLevel{}; CWaterLevel::GetWaterLevel(source->x, source->y, source->z, waterLevel, false, nullptr)) {
-                        if (std::fabs(waterLevel - source->z) < 0.3f) {
-                            RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
-                        } else if (swimTask->m_nSwimState == SWIM_UNDERWATER_SPRINTING && gUnknownB6F0F0 == 1) {
-                            RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
-                        }
+                    float waterLevel{};
+                    const auto isNearWaterSurface = CWaterLevel::GetWaterLevel(source->x, source->y, source->z, waterLevel, false, nullptr)
+                        && std::fabs(waterLevel - source->z) < 0.3f;
+                    // The underwater-sprint case applies whether or not a water level was found.
+                    if (isNearWaterSurface || (swimTask->m_nSwimState == SWIM_UNDERWATER_SPRINTING && gUnknownB6F0F0 == 1)) {
+                        RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
                     }
                 } else if (usingParachute || intel->GetTaskJetPack()) {
                     if (GetRoughDistanceToGround() > 10.0f) {
@@ -1788,17 +1788,16 @@ void CCamera::ImproveNearClip(CVehicle* vehicle, CPed* ped, CVector* source, CVe
                 margin = std::max(margin, 0.02f);
                 margin = std::min(margin, 0.3f);
 
-                // Quantize to increments of 0.01 (round ties away from zero).
-                const auto quantized = static_cast<float>(std::lround(margin * 100.0f)) * 0.01f;
+                // Quantize to increments of 0.01. The original truncates (`__ftol`), it does not round.
+                const auto quantized = static_cast<float>(static_cast<int32>(margin * 100.0f)) * 0.01f;
                 RwCameraSetNearClipPlane(m_pRwCamera, quantized);
             }
         }
     } else {
-        // NOTSA: `vehicle + 0x594`'s exact field/meaning hasn't been identified project-wide yet.
-        const auto vehicleField594 = *reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594);
-        if (vehicleField594 == 3 || vehicleField594 == 4) {
+        const auto subType = vehicle->m_nVehicleSubType;
+        if (subType == VEHICLE_TYPE_HELI || subType == VEHICLE_TYPE_PLANE) {
             if (gCurDistForCam <= 0.3f) {
-                if (vehicleField594 == 3) {
+                if (subType == VEHICLE_TYPE_HELI) {
                     RwCameraSetNearClipPlane(m_pRwCamera, 0.1f);
                 }
             } else {
@@ -1814,9 +1813,8 @@ void CCamera::ImproveNearClip(CVehicle* vehicle, CPed* ped, CVector* source, CVe
     }
 
     // Always hide any peds that are clipping through the camera's near plane.
-    CVector unusedNormal{};
-    float unusedNearest{};
-    CCollision::CheckPeds(*source, unusedNormal, unusedNearest);
+    float nearest = 1'000'000.0f;
+    CCollision::CheckPeds(*source, GetActiveCamera().m_vecFront, nearest);
 }
 
 static auto& preMirrorMat = StaticRef<CMatrix>(0xB6FE40);
