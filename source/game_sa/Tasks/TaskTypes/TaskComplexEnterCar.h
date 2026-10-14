@@ -28,6 +28,7 @@ public:
     CTask*         CreateSubTask(eTaskType type, CPed* ped);
     CVector        GetTargetPos() const;
     CVehicle*      GetCameraAvoidVehicle();
+    void           GetCameraStickModifier(CPed* ped, float distance, float& alpha, float& beta, float& vertical, float& horizontal);
 
     auto GetTargetCar() const { return m_Car; }
     void SetMoveState(eMoveState ms) { m_MoveState = ms; }

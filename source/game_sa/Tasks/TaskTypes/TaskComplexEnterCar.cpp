@@ -47,6 +47,7 @@ void CTaskComplexEnterCar::InjectHooks() {
     RH_ScopedInstall(CreateTaskUtilityLineUpPedWithCar, 0x63ACC0);
     RH_ScopedInstall(GetTargetPos, 0x63A300);
     RH_ScopedInstall(GetCameraAvoidVehicle, 0x63A690);
+    RH_ScopedInstall(GetCameraStickModifier, 0x63A380);
     RH_ScopedInstall(SetVehicleFlags, 0x63AB90);
     RH_ScopedInstall(CreateSubTask, 0x63E040);
 
@@ -820,6 +821,80 @@ CVector CTaskComplexEnterCar::GetTargetPos() const {
         return tGoTo->GetTargetPt();
     }
     return {};
+}
+
+// 0x63A380
+// Lets the on-foot camera follow the target vehicle while the ped walks up to it and gets in.
+void CTaskComplexEnterCar::GetCameraStickModifier(CPed* ped, float distance, float& alpha, float& beta, float& vertical, float& horizontal) {
+    if (!m_Car || m_Car->m_nVehicleSubType == VEHICLE_TYPE_HELI) {
+        return;
+    }
+
+    auto* const pad = CPad::GetPad(ped->m_nPedType == PED_TYPE_PLAYER2 ? 1 : 0);
+
+    const auto* const subTask = GetSubTask();
+    if (!subTask) {
+        return;
+    }
+    switch (subTask->GetTaskType()) {
+    case TASK_SIMPLE_CAR_OPEN_DOOR_FROM_OUTSIDE:
+    case TASK_SIMPLE_BIKE_PICK_UP:
+    case TASK_SIMPLE_CAR_SLOW_DRAG_PED_OUT:
+    case TASK_SIMPLE_CAR_GET_IN:
+    case TASK_SIMPLE_CAR_SHUFFLE:
+        break;
+    default:
+        return;
+    }
+
+    // 1 = braking, 2 = accelerating, 3 = the player is moving the camera by hand (no modification)
+    if (std::abs((float)pad->AimWeaponLeftRight(ped)) > 20.0f || std::abs((float)pad->AimWeaponUpDown(ped)) > 20.0f) {
+        m_CamMovementChoice = 3;
+    } else if (pad->GetAccelerate() != 0) {
+        m_CamMovementChoice = 2;
+    } else if (pad->GetBrake() != 0) {
+        m_CamMovementChoice = 1;
+    }
+    if (m_CamMovementChoice == 3) {
+        return;
+    }
+
+    constexpr float STICK_SCALE[] = { 0.1f, 0.2f, 0.2f }; // 0x86E678
+    constexpr float STICK_LIMIT[] = { 0.1f, 0.2f, 0.2f }; // 0x86E684
+
+    const auto vehicleHeading = m_Car->GetHeading();
+    const auto lateralOffset  = (ped->GetPosition() - m_Car->GetPosition()).Dot(m_Car->GetMatrix().GetRight());
+    const auto sideAngle      = std::atan2(lateralOffset, distance) * 0.7f;
+
+    auto delta = sideAngle;
+    if (distance < -m_Car->GetColModel()->GetBoundingBox().m_vecMin.y) {
+        delta = sideAngle > 0.0f ? -DegreesToRadians(8.0f) : DegreesToRadians(8.0f);
+    }
+    if (m_CamMovementChoice == 1) {
+        delta = (vehicleHeading - HALF_PI) + PI + delta;
+    } else {
+        delta = (vehicleHeading - HALF_PI) - delta;
+    }
+
+    if (delta > beta + PI) {
+        delta -= TWO_PI;
+    } else if (delta < beta - PI) {
+        delta += TWO_PI;
+    }
+    delta -= beta;
+
+    const auto keepSign = ((lateralOffset <= 0.0f) == (m_CamMovementChoice == 1)) ? delta < HALF_PI : delta > -HALF_PI;
+    if (!keepSign) {
+        delta = -delta;
+    }
+
+    const auto limit = STICK_LIMIT[m_CamMovementChoice];
+    delta = delta > limit ? limit : (delta < -limit ? -limit : delta);
+
+    horizontal += delta * STICK_SCALE[m_CamMovementChoice];
+    if (alpha > -DegreesToRadians(10.0f)) {
+        vertical -= STICK_SCALE[m_CamMovementChoice] * STICK_LIMIT[m_CamMovementChoice];
+    }
 }
 
 // 0x63A690

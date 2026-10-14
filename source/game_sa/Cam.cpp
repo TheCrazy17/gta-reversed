@@ -14,6 +14,7 @@
 #include "TaskSimpleSwim.h"
 #include "TaskSimpleClimb.h"
 #include "TaskComplexProstituteSolicit.h"
+#include "TaskComplexEnterCar.h"
 
 auto& gbFirstPersonRunThisFrame = StaticRef<bool>(0xB6EC20);
 auto& gLastFrameProcessedDWCineyCam = StaticRef<uint32>(0x8CCB9C);
@@ -68,6 +69,73 @@ static void WrapAngle(float& angle) {
     }
 }
 
+// 0x5B2330
+static void FindSplinePathPositionFloat(float* output, const float* spline, float time, uint32* marker) {
+    static auto& minimumSegmentTime = StaticRef<float>(0x8D0F80);
+    const auto count = (uint32)spline[0];
+    const float duration = (spline[*marker] - spline[*marker - 4]) * 1000.0f;
+    const float endTime = spline[(count - 1) * 4 + 1] * 1000.0f;
+    if (time < endTime) {
+        if ((*marker - 1) / 4 > count) {
+            *marker = (count - 1) * 4 + 1;
+        } else if (duration <= minimumSegmentTime) {
+            *marker += 4;
+            if ((*marker - 1) / 4 > count) {
+                *marker = (count - 1) * 4 + 1;
+            }
+        }
+    }
+    const auto index = *marker;
+    float t = std::clamp((time - spline[index - 4] * 1000.0f) / ((spline[index] - spline[index - 4]) * 1000.0f), 0.0f, 1.0f);
+    if (time > endTime) {
+        t = 1.0f;
+    }
+    const float start = spline[index - 3];
+    const float control = spline[index - 1];
+    const float end = spline[index + 1];
+    if (control == start) {
+        *output = (end - start) * t + start;
+    } else {
+        const float s = 1.0f - t;
+        *output = s * s * s * start + (control * s * s * 3.0f + (spline[index + 2] * s * 3.0f + end * t) * t) * t;
+    }
+}
+
+// 0x5B2090
+static void FindSplinePathPositionVector(CVector* output, const float* spline, float time, uint32* marker) {
+    static auto& minimumSegmentTime = StaticRef<float>(0x8D0F80);
+    const auto count = (uint32)spline[0];
+    const float duration = (spline[*marker] - spline[*marker - 10]) * 1000.0f;
+    const float endTime = spline[(count - 1) * 10 + 1] * 1000.0f;
+    if (time < endTime) {
+        if ((*marker - 1) / 10 > count) {
+            *marker = (count - 1) * 10 + 1;
+        } else if (duration <= minimumSegmentTime) {
+            *marker += 10;
+            if ((*marker - 1) / 10 > count) {
+                *marker = (count - 1) * 10 + 1;
+            }
+        }
+    }
+    const auto index = *marker;
+    // The vector evaluator retains the duration from before advancing the marker.
+    float t = std::clamp((time - spline[index - 10] * 1000.0f) / duration, 0.0f, 1.0f);
+    if (time > endTime) {
+        t = 1.0f;
+    }
+    const CVector start{spline[index - 9], spline[index - 8], spline[index - 7]};
+    const CVector end{spline[index + 1], spline[index + 2], spline[index + 3]};
+    const CVector control1{spline[index - 3], spline[index - 2], spline[index - 1]};
+    const CVector control2{spline[index + 4], spline[index + 5], spline[index + 6]};
+    if (control1 == start) {
+        *output = (end - start) * t + start;
+    } else {
+        const float s = 1.0f - t;
+        *output = start * (s * s * s) + end * (t * t * t) + (control1 * (t * s * s) + control2 * (s * t * t)) * 3.0f;
+    }
+    *output += TheCamera.m_vecCutSceneOffset;
+}
+
 // NOTSA: camera front vector for the given horizontal (beta) and vertical (alpha) angles.
 static CVector CamFrontVector(float beta, float alpha) {
     return {-std::cos(beta) * std::cos(alpha), -std::sin(beta) * std::cos(alpha), std::sin(alpha)};
@@ -117,7 +185,7 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Process_1rstPersonPedOnPC, 0x50EB70, { .Reversed = false });
     RH_ScopedInstall(Process_1stPerson, 0x517EA0);
     RH_ScopedInstall(Process_AimWeapon, 0x521500);
-    RH_ScopedInstall(Process_AttachedCam, 0x512B10, { .Reversed = false });
+    RH_ScopedInstall(Process_AttachedCam, 0x512B10);
     RH_ScopedInstall(Process_Cam_TwoPlayer, 0x525E50, { .Reversed = false });
     RH_ScopedInstall(Process_Cam_TwoPlayer_InCarAndShooting, 0x519810, { .Reversed = false });
     RH_ScopedInstall(Process_Cam_TwoPlayer_Separate_Cars, 0x513510, { .Reversed = false });
@@ -131,7 +199,7 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Process_DW_PlaneSpotterCam, 0x51C250, { .Reversed = false });
     RH_ScopedInstall(Process_Editor, 0x50F3F0);
     RH_ScopedInstall(Process_Fixed, 0x51D470);
-    RH_ScopedInstall(Process_FlyBy, 0x5B25F0, { .Reversed = false });
+    RH_ScopedInstall(Process_FlyBy, 0x5B25F0);
     RH_ScopedInstall(Process_FollowCar_SA, 0x5245B0);
     RH_ScopedInstall(Process_FollowPedWithMouse, 0x50F970);
     RH_ScopedInstall(Process_FollowPed_SA, 0x522D40);
@@ -1152,7 +1220,24 @@ void CCam::Process_AimWeapon(const CVector& target, float, float, float) {
 
 // 0x512B10
 void CCam::Process_AttachedCam() {
-    NOTSA_UNREACHABLE();
+    m_fFOV = 70.0f;
+    const float tilt = DegreesToRadians(TheCamera.m_fAttachedCamAngle);
+    auto* attached = TheCamera.m_pAttachedEntity;
+    m_vecSource = attached->GetMatrix().TransformVector(TheCamera.m_vecAttachedCamOffset) + attached->GetPosition();
+    if (TheCamera.m_bLookingAtVector) {
+        m_vecFront = attached->GetMatrix().TransformVector(TheCamera.m_vecAttachedCamLookAt) + attached->GetPosition() - m_vecSource;
+    } else {
+        m_vecFront = TheCamera.m_pTargetEntity->GetPosition() - m_vecSource;
+    }
+    m_vecFront.Normalise();
+    const auto right = m_vecFront.Cross(CVector{0.0f, 0.0f, 1.0f}).Normalized();
+    const auto up = right.Cross(m_vecFront).Normalized();
+
+    if (float waterLevel{}; CWaterLevel::GetWaterLevel(m_vecSource, waterLevel, true) && m_vecSource.z < waterLevel - 0.3f) {
+        ApplyUnderwaterMotionBlur();
+    }
+    m_vecUp = up * std::cos(tilt) + right * std::sin(tilt);
+    CWorld::pIgnoreEntity = nullptr;
 }
 
 // 0x525E50
@@ -1359,7 +1444,77 @@ void CCam::Process_Fixed(const CVector& target, float orientation, float speedVa
 
 // 0x5B25F0
 void CCam::Process_FlyBy(const CVector&, float, float, float) {
-    NOTSA_UNREACHABLE();
+    static auto& fov = StaticRef<float>(0xBC4074);
+    static auto& firstFov = StaticRef<float>(0xBC4078);
+    static auto& targetMarker = StaticRef<uint32>(0xBC407C);
+    static auto& sourceMarker = StaticRef<uint32>(0xBC4080);
+    static auto& fovMarker = StaticRef<uint32>(0xBC4084);
+    static auto& upMarker = StaticRef<uint32>(0xBC4088);
+
+    if (TheCamera.m_bCutsceneFinished) {
+        return;
+    }
+    const auto* fovPath = TheCamera.m_aPathArray[0].m_pArrPathData;
+    const auto* upPath = TheCamera.m_aPathArray[1].m_pArrPathData;
+    const auto* sourcePath = TheCamera.m_aPathArray[2].m_pArrPathData;
+    const auto* targetPath = TheCamera.m_aPathArray[3].m_pArrPathData;
+    m_vecUp = CVector{0.0f, 0.0f, 1.0f};
+    if (!TheCamera.m_bStartingSpline) {
+        m_fTimeElapsedFloat = 0.0f;
+        m_nFinishTime = (uint32)(sourcePath[((int32)sourcePath[0] - 1) * 10 + 1] * 1000.0f);
+        upMarker = fovMarker = 5;
+        sourceMarker = targetMarker = 11;
+        TheCamera.m_bStartingSpline = true;
+        firstFov = fov = fovPath[2];
+    } else {
+        m_fTimeElapsedFloat += CTimer::GetTimeStepNonClipped() * 0.02f * 1000.0f;
+    }
+    const float time = (float)(uint32)m_fTimeElapsedFloat;
+    const bool finished = time >= (float)m_nFinishTime;
+    if (finished) {
+        sourceMarker = ((uint32)sourcePath[0] - 1) * 10 + 1;
+        targetMarker = ((uint32)targetPath[0] - 1) * 10 + 1;
+        upMarker = ((uint32)upPath[0] - 1) * 4 + 1;
+        fovMarker = ((uint32)fovPath[0] - 1) * 4 + 1;
+    } else {
+        TheCamera.m_fPositionAlongSpline = time / (float)m_nFinishTime;
+        while (time >= (sourcePath[sourceMarker] - sourcePath[1]) * 1000.0f) {
+            sourceMarker += 10;
+        }
+    }
+    FindSplinePathPositionVector(&m_vecSource, sourcePath, time, &sourceMarker);
+    if (!finished) {
+        while (time >= (targetPath[targetMarker] - targetPath[1]) * 1000.0f) {
+            targetMarker += 10;
+        }
+    }
+    FindSplinePathPositionVector(&m_vecFront, targetPath, time, &targetMarker);
+    if (!finished) {
+        while (time >= (upPath[upMarker] - upPath[1]) * 1000.0f) {
+            upMarker += 4;
+        }
+    }
+    float upAngle{};
+    FindSplinePathPositionFloat(&upAngle, upPath, time, &upMarker);
+    upAngle = DegreesToRadians(upAngle) + HALF_PI;
+    m_vecUp.x = std::cos(upAngle);
+    m_vecUp.z = std::sin(upAngle);
+    if (!finished) {
+        while (time >= (fovPath[fovMarker] - fovPath[1]) * 1000.0f) {
+            fovMarker += 4;
+        }
+    }
+    FindSplinePathPositionFloat(&fov, fovPath, time, &fovMarker);
+    if (finished) {
+        TheCamera.m_fPositionAlongSpline = 1.0f;
+        sourceMarker = targetMarker = upMarker = fovMarker = 0;
+    }
+    m_vecTargetCoorsForFudgeInter = m_vecFront;
+    m_vecFront -= m_vecSource;
+    m_vecFront.Normalise();
+    const auto left = m_vecUp.Cross(m_vecFront);
+    m_vecUp = m_vecFront.Cross(left).Normalized();
+    m_fFOV = fov;
 }
 
 namespace {
@@ -2105,8 +2260,7 @@ void CCam::Process_FollowPed_SA(const CVector& target, float, float, float, bool
     if (auto* climb = intelligence->GetTaskClimb()) {
         climb->GetCameraStickModifier(ped, m_fVerticalAngle, m_fHorizontalAngle, vertical, horizontal);
     } else if (auto* task = ped->GetTaskManager().GetActiveTask(); task && task->GetTaskType() == TASK_COMPLEX_ENTER_CAR_AS_DRIVER) {
-        // CTaskComplexEnterCar::GetCameraStickModifier is not yet exposed by the task class.
-        plugin::CallMethod<0x63A380, CTask*, CPed*, float, float*, float*, float*, float*>(task, ped, distance, &m_fVerticalAngle, &m_fHorizontalAngle, &vertical, &horizontal);
+        static_cast<CTaskComplexEnterCar*>(task)->GetCameraStickModifier(ped, distance, m_fVerticalAngle, m_fHorizontalAngle, vertical, horizontal);
     }
     const auto damping = std::pow(settings[8], timeStep);
     m_fBetaSpeed = damping * m_fBetaSpeed + (1.0f - damping) * std::clamp(horizontal + headingVelocity, -settings[9], settings[9]);
