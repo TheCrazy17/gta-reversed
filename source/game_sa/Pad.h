@@ -354,6 +354,8 @@ public:
 
     int16 LookAroundLeftRight(CPed* entity) noexcept;
     int16 LookAroundUpDown(CPed* ped) noexcept;
+    int16 LookAroundLeftRightOnPC() const; // 0x540E80
+    int16 LookAroundUpDownOnPC() const;    // 0x540F80
 
     int32 sub_541320() { return AverageWeapon / AverageEntries; } // 0x541320
     int32 sub_541290();
