@@ -16,6 +16,7 @@
 #include "TaskComplexProstituteSolicit.h"
 #include "TaskComplexEnterCar.h"
 #include "ControllerConfigManager.h"
+#include "TaskSimpleHoldEntity.h"
 
 auto& gbFirstPersonRunThisFrame = StaticRef<bool>(0xB6EC20);
 auto& gLastFrameProcessedDWCineyCam = StaticRef<uint32>(0x8CCB9C);
@@ -176,8 +177,9 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Get_TwoPlayer_AimVector, 0x513E40);
     RH_ScopedInstall(IsTimeToExitThisDWCineyCamMode, 0x517400);
     RH_ScopedInstall(KeepTrackOfTheSpeed, 0x509DF0);
-    RH_ScopedInstall(LookBehind, 0x520690, { .Reversed = false });
-    RH_ScopedInstall(LookRight, 0x520E40, { .Reversed = false });
+    RH_ScopedInstall(GetBoatHandlingCamHeight, 0x509CA0);
+    RH_ScopedInstall(LookBehind, 0x520690);
+    RH_ScopedInstall(LookRight, 0x520E40);
     RH_ScopedInstall(RotCamIfInFrontCar, 0x50A4F0);
     RH_ScopedInstall(Using3rdPersonMouseCam, 0x50A850);
     RH_ScopedInstall(Process, 0x526FC0, { .Reversed = false });
@@ -515,13 +517,246 @@ void CCam::KeepTrackOfTheSpeed(const CVector& source, const CVector& target, con
 }
 
 // 0x520690
-void CCam::LookBehind() {
-    NOTSA_UNREACHABLE();
+// 0x509CA0
+bool CCam::GetBoatHandlingCamHeight(float* outCamHeight) {
+    if (!m_pCamTargetEntity) {
+        return false;
+    }
+    const auto* const boatHandling = gHandlingDataMgr.GetBoatPointer(
+        static_cast<uint8>(CModelInfo::GetVehicleModelInfo(m_pCamTargetEntity->m_nModelIndex)->m_nHandlingId)
+    );
+    if (!boatHandling) {
+        return false;
+    }
+    *outCamHeight = boatHandling->m_fLookLRBehindCamHeight;
+    return true;
+}
+
+// 0x520690
+bool CCam::LookBehind() {
+    static auto& gStoredTargetPos = StaticRef<CVector>(0xB6F018);
+
+    auto* const entity     = m_pCamTargetEntity;
+    const auto  entityType = entity->GetType();
+
+    const bool isBehindCamVehicle = (m_nMode == MODE_CAM_ON_A_STRING || m_nMode == MODE_BEHINDBOAT || m_nMode == MODE_BEHINDCAR)
+        && entityType == ENTITY_TYPE_VEHICLE;
+    const bool isFirstPersonVehicle = m_nMode == MODE_1STPERSON && entityType == ENTITY_TYPE_VEHICLE;
+
+    if (!isBehindCamVehicle && !isFirstPersonVehicle && entityType != ENTITY_TYPE_PED) {
+        return false;
+    }
+
+    const auto entityPos = entity->GetPosition();
+    m_vecFront           = entityPos - m_vecSource;
+
+    if (isBehindCamVehicle) {
+        auto target      = gStoredTargetPos;
+        m_bLookingBehind = true;
+
+        const auto distAway = m_nMode == MODE_CAM_ON_A_STRING ? m_fCaMaxDistance : 15.5f;
+
+        const auto& forward = entity->GetMatrix().GetForward();
+        m_vecSource         = target + CVector{ forward.x, forward.y, forward.z + 0.2f } * distAway;
+
+        CWorld::pIgnoreEntity = entity;
+        TheCamera.m_nExtraEntitiesCount = 0;
+        TheCamera.CameraVehicleModeSpecialCases(entity->AsVehicle());
+        TheCamera.CameraColDetAndReact(&m_vecSource, &target);
+
+        m_vecFront = entity->GetPosition() - m_vecSource;
+        GetVectorsReadyForRW();
+        TheCamera.ImproveNearClip(entity->AsVehicle(), nullptr, &m_vecSource, &target);
+        CWorld::pIgnoreEntity = nullptr;
+    }
+
+    if (isFirstPersonVehicle) {
+        auto* const vehicle = entity->AsVehicle();
+        m_bLookingBehind    = true;
+        RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.05f);
+
+        m_vecFront = entity->GetMatrix().GetForward();
+        m_vecFront.Normalise();
+
+        if (vehicle->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+            m_vecSource.z -= 0.5f;
+        }
+
+        const auto appearance = vehicle->GetVehicleAppearance();
+        if (appearance == VEHICLE_APPEARANCE_BIKE) {
+            m_vecSource += m_vecFront * 2.3f;
+            m_vecFront = -m_vecFront;
+            GetVectorsReadyForRW();
+        } else if (appearance == VEHICLE_APPEARANCE_HELI) {
+            m_vecFront = entity->GetMatrix().GetUp() * -1.0f;
+            m_vecUp    = entity->GetMatrix().GetForward();
+            m_vecSource += m_vecFront * 0.25f;
+        } else {
+            m_vecSource += m_vecFront * 0.25f;
+            m_vecFront = -m_vecFront;
+        }
+    }
+
+    if (entityType == ENTITY_TYPE_PED) {
+        // Indexed by the ped zoom level (0x8CCE40 + 4 * zoom, ...): the tables start one entry before these addresses.
+        static auto& zoomAddSourceZ         = StaticRef<std::array<float, 4>>(0x8CCE3C);
+        static auto& zoomAddTargetZ         = StaticRef<std::array<float, 4>>(0x8CCE30);
+        static auto& zoomLerpSwim           = StaticRef<std::array<float, 4>>(0x8CCE24);
+        static auto& zoomAddSourceZSwim     = StaticRef<std::array<float, 4>>(0x8CCE18);
+
+        auto* const ped    = entity->AsPed();
+        const auto  zoom   = TheCamera.m_nPedZoom;
+        auto        target = entityPos;
+
+        m_vecSource   = CVector{ -std::cos(m_fHorizontalAngle), -std::sin(m_fHorizontalAngle), 0.0f };
+        m_vecSource.z = 0.3f - m_vecSource.Dot(ped->field_578);
+        m_vecSource.Normalise();
+
+        const auto distance = std::max(0.6f, StaticRef<float>(0x8CCE4C) + TheCamera.m_fPedZoomSmoothed);
+        m_vecSource         = target + m_vecSource * distance;
+
+        if (ped->GetIntelligence()->GetTaskSwim()) {
+            m_vecSource = target + (target - m_vecSource) * zoomLerpSwim[zoom];
+            m_vecSource.z += zoomAddSourceZSwim[zoom];
+        }
+        m_vecSource.z += zoomAddSourceZ[zoom];
+        target.z += zoomAddTargetZ[zoom];
+
+        TheCamera.HandleCameraMotionForDucking(ped, &m_vecSource, &target, false);
+
+        TheCamera.m_nExtraEntitiesCount = 0;
+        if (auto* const hold = ped->GetIntelligence()->GetTaskHold(false); hold && hold->m_pEntityToHold) {
+            TheCamera.m_pExtraEntity[TheCamera.m_nExtraEntitiesCount++] = hold->m_pEntityToHold;
+        }
+
+        CCollision::bCamCollideWithVehicles = true;
+        CCollision::bCamCollideWithObjects  = true;
+        CCollision::bCamCollideWithPeds     = true;
+
+        TheCamera.CameraColDetAndReact(&m_vecSource, &target);
+        m_vecFront = target - m_vecSource;
+        GetVectorsReadyForRW();
+        TheCamera.ImproveNearClip(nullptr, ped, &m_vecSource, &target);
+
+        if (zoom == 1 && RwCameraGetNearClipPlane(Scene.m_pRwCamera) > 0.05f) {
+            RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.05f);
+        }
+    }
+
+    GetVectorsReadyForRW();
+    return true;
 }
 
 // 0x520E40
-void CCam::LookRight(bool bLookRight) {
-    NOTSA_UNREACHABLE();
+bool CCam::LookRight(bool bLookRight) {
+    auto* const entity     = m_pCamTargetEntity;
+    const auto  entityType = entity->GetType();
+
+    const bool isBehindCamVehicle = (m_nMode == MODE_CAM_ON_A_STRING || m_nMode == MODE_BEHINDBOAT || m_nMode == MODE_BEHINDCAR)
+        && entityType == ENTITY_TYPE_VEHICLE;
+    const bool isFirstPersonVehicle = m_nMode == MODE_1STPERSON && entityType == ENTITY_TYPE_VEHICLE;
+
+    float sideSign = 1.0f;
+    if (!bLookRight) {
+        m_bLookingLeft = true;
+        sideSign       = -1.0f;
+    } else {
+        m_bLookingRight = true;
+    }
+
+    if (isBehindCamVehicle) {
+        auto targetPos = entity->GetPosition();
+
+        float distance = 9.0f;
+        if (m_nMode == MODE_CAM_ON_A_STRING) {
+            distance = m_fCaMaxDistance;
+        } else if (m_nMode == MODE_BEHINDBOAT) {
+            float boatCamHeight = 0.0f;
+            if (GetBoatHandlingCamHeight(&boatCamHeight) && !CCullZones::Cam1stPersonForPlayer()) {
+                m_vecSource.z = targetPos.z + boatCamHeight;
+            }
+        }
+
+        auto forward = entity->GetMatrix().GetForward();
+        forward.Normalise();
+
+        const auto angle = CGeneral::GetATanOfXY(forward.x, forward.y) + sideSign * HALF_PI;
+        m_vecSource.x    = std::cos(angle) * distance + targetPos.x;
+        m_vecSource.y    = std::sin(angle) * distance + targetPos.y;
+
+        const auto& bounds              = entity->GetColModel()->GetBoundingBox();
+        const auto  sourceZBeforeColDet = m_vecSource.z;
+
+        CWorld::pIgnoreEntity           = entity;
+        TheCamera.m_nExtraEntitiesCount = 0;
+        TheCamera.CameraVehicleModeSpecialCases(entity->AsVehicle());
+        TheCamera.CameraColDetAndReact(&m_vecSource, &targetPos);
+        CWorld::pIgnoreEntity = nullptr;
+
+        targetPos = entity->GetPosition();
+
+        const auto& matrix = entity->GetMatrix();
+        const auto  sideZ  = !bLookRight
+            ? bounds.m_vecMax.x * matrix.GetRight().z
+            : matrix.GetRight().z * bounds.m_vecMin.x;
+        const auto minZ = bounds.m_vecMax.z * matrix.GetUp().z + (targetPos.z + sideZ);
+
+        const auto clampedMinZ = std::max(minZ, m_vecTargetCoorsForFudgeInter.z);
+        auto       newZ        = sourceZBeforeColDet;
+        if (clampedMinZ + 0.1f <= sourceZBeforeColDet) {
+            newZ = clampedMinZ + 0.1f;
+        }
+        m_vecSource.z = std::max(newZ, m_vecSource.z);
+
+        m_vecFront = targetPos - m_vecSource;
+        m_vecFront.z += 1.1f;
+        if (m_nMode == MODE_BEHINDBOAT) {
+            m_vecFront.z += 1.2f;
+        }
+        GetVectorsReadyForRW();
+        return true;
+    }
+
+    if (isFirstPersonVehicle) {
+        auto* const vehicle = entity->AsVehicle();
+        RwCameraSetNearClipPlane(Scene.m_pRwCamera, StaticRef<float>(0x8CCE50));
+
+        if (vehicle->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+            if (auto* const driver = vehicle->m_pDriver) {
+                CVector neckPos{};
+                driver->SetPedPositionInCar();
+                driver->UpdateRwMatrix();
+                driver->UpdateRwFrame();
+                driver->UpdateRpHAnim();
+                driver->GetBonePosition(&neckPos, BONE_NECK, true);
+                neckPos += vehicle->GetMatrix().GetRight() * (bLookRight ? StaticRef<float>(0x8CC498) : StaticRef<float>(0x8CC49C));
+                neckPos += vehicle->GetMatrix().GetUp() * StaticRef<float>(0x8CC494);
+                m_vecSource = neckPos;
+            } else {
+                m_vecSource.z -= 0.5f;
+            }
+        }
+
+        if (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
+            m_vecSource -= vehicle->GetMatrix().GetRight() * 0.35f;
+        }
+
+        m_vecUp = vehicle->GetMatrix().GetUp();
+        m_vecUp.Normalise();
+
+        m_vecFront = vehicle->GetMatrix().GetForward();
+        m_vecFront.Normalise();
+
+        m_vecFront = !bLookRight ? m_vecUp.Cross(m_vecFront) : m_vecFront.Cross(m_vecUp);
+        m_vecFront.Normalise();
+
+        if (vehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_BIKE) {
+            m_vecSource -= m_vecFront * 1.45f;
+        }
+        return true;
+    }
+
+    return entityType == ENTITY_TYPE_PED;
 }
 
 // 0x50A4F0
