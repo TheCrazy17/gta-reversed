@@ -211,7 +211,7 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Process_M16_1stPerson, 0x5105C0);
     RH_ScopedInstall(Process_Rocket, 0x511B50);
     RH_ScopedInstall(Process_SpecialFixedForSyphon, 0x517500, { .Reversed = false });
-    RH_ScopedInstall(Process_WheelCam, 0x512110, { .Reversed = false });
+    RH_ScopedInstall(Process_WheelCam, 0x512110);
 
     RH_ScopedGlobalInstall(WellBufferMe, 0x509AE0);
     RH_ScopedGlobalInstall(WrapAngle, 0x509BE0);
@@ -3932,8 +3932,100 @@ void CCam::Process_SpecialFixedForSyphon(const CVector&, float, float, float) {
 
 // 0x512110
 bool CCam::Process_WheelCam(const CVector&, float, float, float) {
-    NOTSA_UNREACHABLE();
-    return false;
+    auto* const entity = m_pCamTargetEntity;
+    m_fFOV             = 70.0f;
+
+    // The camera's right and up directions, before the sway is applied.
+    CVector right{}, up{};
+
+    CVector sourceOffset{ -0.3f, -0.5f, 0.1f };
+    if (entity->GetIsTypePed()) {
+        m_vecSource = entity->GetMatrix().TransformVector(sourceOffset) + entity->GetPosition();
+        m_vecFront  = CVector{ 1.0f, 0.0f, 0.0f };
+    } else {
+        sourceOffset = CVector{ entity->GetColModel()->GetBoundingBox().m_vecMin.x - 0.33f, -2.3f, 0.3f }; // 0x8CC7DC
+        m_vecSource  = entity->GetMatrix().TransformPoint(sourceOffset);
+        m_vecFront   = entity->GetMatrix().GetForward();
+    }
+
+    auto* const vehicle = entity->GetIsTypeVehicle() ? entity->AsVehicle() : nullptr;
+    const auto  appearance = vehicle ? vehicle->GetVehicleAppearance() : VEHICLE_APPEARANCE_NONE;
+
+    const auto SetRightAndUpFromFront = [&] {
+        right = m_vecFront.Cross(CVector{ 0.0f, 0.0f, 1.0f });
+        right.Normalise();
+        up = right.Cross(m_vecFront);
+        up.Normalise();
+    };
+
+    if (vehicle && (appearance == VEHICLE_APPEARANCE_HELI || appearance == VEHICLE_APPEARANCE_PLANE)) {
+        const auto& matrix = vehicle->GetMatrix();
+        right              = matrix.GetRight();
+        up                 = matrix.GetUp();
+        m_vecSource        = matrix.TransformPoint(CVector{ -1.55f, sourceOffset.y, sourceOffset.z });
+    } else {
+        bool handled = false;
+        if (vehicle) {
+            const auto& matrix = vehicle->GetMatrix();
+            if (vehicle->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+                SetRightAndUpFromFront();
+                if (auto* const driver = vehicle->m_pDriver) {
+                    CVector headPos{};
+                    driver->GetBonePosition(&headPos, BONE_HEAD, true);
+                    headPos += right * -0.5f + vehicle->GetMoveSpeed() * CTimer::GetTimeStep(); // 0x8CCC60
+                    headPos += matrix.GetForward() * -0.8f;                                     // 0x8CCC64
+                    headPos.z += 0.3f;                                                          // 0x8CCC68
+                    if (vehicle->m_nModelIndex == MODEL_PREDATOR) {
+                        headPos += right * 0.2f; // 0x8CCC6C
+                        const auto back = (matrix.GetForward() * -1.0f) * -0.2f; // 0x8CCCA4, 0x8CCC70
+                        headPos.x += back.x;
+                        headPos.y += back.y;
+                        headPos.z = 1.0f * -0.3f + headPos.z + back.z; // 0x8CCCA0 * 0x8CCC74
+                    }
+                    m_vecSource = headPos;
+                } else {
+                    m_vecSource.z += 0.3f + 0.3f;
+                }
+                handled = true;
+            } else if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+                right = matrix.GetRight();
+                up    = CVector{ 0.0f, 0.0f, 1.0f };
+                m_vecFront = m_vecUp.Cross(right);
+                m_vecFront.Normalise();
+                const auto sideOffset = (0.33f - 0.2f) + sourceOffset.x; // (0x8CC7DC - 0x8CC7E0) + offset
+                m_vecSource           = vehicle->GetPosition();
+                m_vecSource += right * sideOffset;
+                m_vecSource += m_vecFront * sourceOffset.y;
+                m_vecSource += m_vecUp * sourceOffset.z;
+                handled = true;
+            } else if (vehicle->m_nVehicleType == VEHICLE_TYPE_TRAIN && vehicle->GetMoveSpeed().Dot(m_vecFront) < 0.0f) {
+                m_vecFront = -m_vecFront;
+            }
+        }
+        if (!handled) {
+            SetRightAndUpFromFront();
+        }
+    }
+
+    // Underwater tint
+    if (float waterLevel{}; CWaterLevel::GetWaterLevel(m_vecSource, waterLevel, true) && m_vecSource.z < waterLevel - 0.3f) {
+        ApplyUnderwaterMotionBlur();
+    }
+
+    // Slow roll sway around the view direction
+    const auto swayPhase = std::cos((float)(CTimer::GetTimeInMS() & 0x1FFFF) * 4.79369e-05f);
+    const auto sine      = std::sin(swayPhase * 0.4f);
+    const auto cosine    = std::cos(swayPhase * 0.4f);
+    m_vecUp              = up * cosine + right * sine;
+    m_vecUp.Normalise();
+    m_vecFront.Normalise();
+
+    CWorld::pIgnoreEntity = entity;
+    CColPoint  colPoint{};
+    CEntity*   hitEntity{};
+    const auto blocked = CWorld::ProcessLineOfSight(m_vecSource, entity->GetPosition(), colPoint, hitEntity, true, false, false, true, false, false, true, false);
+    CWorld::pIgnoreEntity = nullptr;
+    return !blocked;
 }
 
 // based on 0x51847C - 0x5184EC
