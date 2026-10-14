@@ -110,7 +110,7 @@ bool CRopes::RegisterRope(uint32 ropeID, uint32 ropeType, CVector startPos, bool
     if (holder) {
         CEntity::RegisterReference(rope.m_pRopeHolder);
     }
-    rope.m_nTime = bExpires ? CTimer::m_snTimeInMilliseconds + timeExpire : 0;
+    rope.m_nTime = bExpires ? CTimer::GetTimeInMS() + timeExpire : 0;
 
     switch (rope.m_nType) {
     case eRopeType::MAGNET:

@@ -80,5 +80,5 @@ void CTaskSimpleChoking::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x623220);
     RH_ScopedVMTInstall(GetTaskType, 0x620360);
     RH_ScopedVMTInstall(MakeAbortable, 0x6203F0);
-    RH_ScopedVMTInstall(ProcessPed, 0x620490, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessPed, 0x620490, { .Reversed = false });
 }

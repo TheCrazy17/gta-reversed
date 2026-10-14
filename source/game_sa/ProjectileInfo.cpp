@@ -28,7 +28,7 @@ void CProjectileInfo::InjectHooks() {
     RH_ScopedInstall(Shutdown, 0x737BC0);
     RH_ScopedInstall(GetProjectileInfo, 0x737BF0);
     RH_ScopedInstall(RemoveNotAdd, 0x737C00);
-    RH_ScopedInstall(AddProjectile, 0x737C80, { .reversed = false });
+    RH_ScopedInstall(AddProjectile, 0x737C80, { .Reversed = false });
     RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860);
     RH_ScopedInstall(RemoveProjectile, 0x7388F0);
     RH_ScopedInstall(Update, 0x738B20);
@@ -175,7 +175,7 @@ void CProjectileInfo::Update() {
 
             // Tear gas periodically makes nearby peds choke, starting a bit after it lands
             if (info.m_nWeaponType == WEAPON_TEARGAS
-                && info.m_nDestroyTime - 0x445Cu < CTimer::m_snTimeInMilliseconds
+                && info.m_nDestroyTime - 0x445Cu < CTimer::GetTimeInMS()
                 && CGeneral::GetRandomNumberInRange(0, 100) < 10) {
                 const auto pos = proj->GetPosition();
                 CWorld::SetPedsChoking(pos.x, pos.y, pos.z, 6.0f, info.m_pCreator);
@@ -186,7 +186,7 @@ void CProjectileInfo::Update() {
         if (info.m_nWeaponType == WEAPON_ROCKET || info.m_nWeaponType == WEAPON_ROCKET_HS) {
             static const FxPrtMult_c mult{ 0.3f, 0.3f, 0.3f, 0.3f, 0.5f, 1.0f, 0.08f };
 
-            const auto moveDelta = proj->m_vecMoveSpeed * CTimer::ms_fTimeStep;
+            const auto moveDelta = proj->m_vecMoveSpeed * CTimer::GetTimeStep();
             const auto numParticles = std::max(1L, std::lround(moveDelta.Magnitude()));
             for (auto j = 0L; j < numParticles; j++) {
                 const auto t = 1.0f - (float)j / (float)numParticles;
@@ -233,7 +233,7 @@ void CProjectileInfo::Update() {
             return true;
         };
 
-        if (info.m_nDestroyTime != 0 && (uint32)info.m_nDestroyTime < CTimer::m_snTimeInMilliseconds) {
+        if (info.m_nDestroyTime != 0 && (uint32)info.m_nDestroyTime < CTimer::GetTimeInMS()) {
             // Expired - remove it, unless it's a detonator charge (those don't expire on their own)
             if (info.m_nWeaponType == WEAPON_REMOTE_SATCHEL_CHARGE) {
                 if (info.m_pCreator && info.m_pCreator->GetIsTypePed() && info.m_pCreator->AsPed()->IsPlayer()) {
@@ -249,7 +249,7 @@ void CProjectileInfo::Update() {
         } else {
             switch (info.m_nWeaponType) {
             case WEAPON_ROCKET: {
-                proj->m_vecMoveSpeed += proj->m_matrix->GetForward() * (CTimer::ms_fTimeStep * GAME_GRAVITY);
+                proj->m_vecMoveSpeed += proj->m_matrix->GetForward() * (CTimer::GetTimeStep() * GAME_GRAVITY);
                 if (const auto speed = proj->m_vecMoveSpeed.Magnitude(); speed > 9.9f) {
                     proj->m_vecMoveSpeed *= 9.9f / speed;
                 }
@@ -347,13 +347,13 @@ void CProjectileInfo::Update() {
                     turnRate *= 1.2f;
                 }
                 if (isPlayerVsPlane) {
-                    velDamping = std::pow(0.95f, CTimer::ms_fTimeStep);
+                    velDamping = std::pow(0.95f, CTimer::GetTimeStep());
                     turnRate   = 0.15f;
                 }
 
                 const auto oldVel  = proj->m_vecMoveSpeed;
                 proj->m_vecMoveSpeed *= velDamping;
-                proj->m_vecMoveSpeed += desiredDir * (turnRate * CTimer::ms_fTimeStep);
+                proj->m_vecMoveSpeed += desiredDir * (turnRate * CTimer::GetTimeStep());
                 if (const auto speed = proj->m_vecMoveSpeed.Magnitude(); speed > 9.9f) {
                     proj->m_vecMoveSpeed *= 9.9f / speed;
                 }

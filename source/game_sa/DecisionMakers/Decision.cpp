@@ -9,10 +9,10 @@ void CDecision::InjectHooks() {
 
     RH_ScopedInstall(SetDefault, 0x600530);
     RH_ScopedInstall(Set, 0x600570);
-    //RH_ScopedInstall(Add, 0x600600, { .reversed = false });
+    //RH_ScopedInstall(Add, 0x600600, { .Reversed = false });
     RH_ScopedInstall(From, 0x6006B0);
-    //RH_ScopedInstall(HasResponse, 0x600710, { .reversed = false });
-    //RH_ScopedInstall(MakeDecision, 0x6040D0, { .reversed = false });
+    //RH_ScopedInstall(HasResponse, 0x600710, { .Reversed = false });
+    //RH_ScopedInstall(MakeDecision, 0x6040D0, { .Reversed = false });
 }
 
 // 0x6040C0

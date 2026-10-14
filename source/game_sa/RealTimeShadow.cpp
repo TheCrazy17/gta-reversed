@@ -15,7 +15,7 @@ void CRealTimeShadow::InjectHooks() {
     RH_ScopedInstall(Create, 0x706460);
     RH_ScopedInstall(Update, 0x706600);
     RH_ScopedInstall(Destroy, 0x705990);
-    RH_ScopedInstall(SetupForThisEntity, 0x706520, { .reversed = false });
+    RH_ScopedInstall(SetupForThisEntity, 0x706520, { .Reversed = false });
 }
 
 CRealTimeShadow::~CRealTimeShadow() {
@@ -49,6 +49,8 @@ RwTexture* CRealTimeShadow::GetShadowRwTexture() {
 
 // 0x705990
 void CRealTimeShadow::Destroy() {
+    m_camera.Destroy();
+    m_blurCamera.Destroy();
     m_pOwner = nullptr;
     m_nRwObjectType = (uint32)-1;
     if (m_pLight) {

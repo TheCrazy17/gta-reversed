@@ -15,10 +15,8 @@ void CTaskComplexHitPedWithCar::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x653A30);
 
     RH_ScopedGlobalInstall(ComputeEvasiveStepMoveDir, 0x653B40);
-
     RH_ScopedInstall(HitHurtsPed, 0x653AE0);
     RH_ScopedInstall(CreateSubTask, 0x6560E0);
-
     RH_ScopedVMTInstall(Clone, 0x6559B0);
     RH_ScopedVMTInstall(GetTaskType, 0x653A20);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x657AF0);

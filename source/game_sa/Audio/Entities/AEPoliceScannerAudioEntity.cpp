@@ -320,7 +320,7 @@ void CAEPoliceScannerAudioEntity::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4E6E00);
     RH_ScopedInstall(StaticInitialise, 0x5B9C30);
     RH_ScopedInstall(Reset, 0x4E6E90);
-    RH_ScopedInstall(AddAudioEvent, 0x4E71E0, { .reversed = false });
+    RH_ScopedInstall(AddAudioEvent, 0x4E71E0, { .Reversed = false });
     RH_ScopedInstall(PrepSlots, 0x4E6BC0);
     RH_ScopedInstall(LoadSlots, 0x4E6CD0);
     RH_ScopedInstall(EnableScanner, 0x4E6DB0);

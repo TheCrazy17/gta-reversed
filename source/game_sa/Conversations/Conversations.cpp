@@ -206,7 +206,7 @@ void CConversations::DoneSettingUpConversation(bool bSuppressSubtitles) {
     conv.m_CurrentNode = m_aTempNodes[0].m_FinalSlot;
     conv.m_pPed        = m_SettingUpConversationPed;
     m_SettingUpConversationPed->RegisterReference(conv.m_pPed);
-    conv.m_LastChange                = CTimer::m_snTimeInMilliseconds;
+    conv.m_LastChange                = CTimer::GetTimeInMS();
     conv.m_LastTimeWeWereCloseEnough = 0;
     conv.m_Status                    = CConversationForPed::INACTIVE;
     conv.m_Enabled                   = true;

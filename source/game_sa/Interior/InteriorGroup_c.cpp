@@ -29,15 +29,15 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedClass(InteriorGroup_c);
     RH_ScopedCategory("Interior");
 
-    //RH_ScopedInstall(Constructor, 0x597FE0, { .reversed = false });
-    //RH_ScopedInstall(Destructor, 0x597FF0, { .reversed = false });
+    //RH_ScopedInstall(Constructor, 0x597FE0, { .Reversed = false });
+    //RH_ScopedInstall(Destructor, 0x597FF0, { .Reversed = false });
 
     RH_ScopedInstall(Init, 0x5947E0);
     RH_ScopedInstall(Update, 0x5968E0);
     RH_ScopedInstall(SetupPeds, 0x596890);
     RH_ScopedInstall(UpdatePeds, 0x596830);
-    RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .reversed = false });
-    RH_ScopedInstall(SetupPaths, 0x595590, { .reversed = false });
+    RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .Reversed = false });
+    RH_ScopedInstall(SetupPaths, 0x595590, { .Reversed = false });
     RH_ScopedInstall(ArePathsLoaded, 0x595380);
     RH_ScopedInstall(Setup, 0x595320);
     RH_ScopedInstall(Exit, 0x595290);

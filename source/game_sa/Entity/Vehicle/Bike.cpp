@@ -39,8 +39,8 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(DoSoftGroundResistance, 0x6B6D40);
     RH_ScopedInstall(PlayHornIfNecessary, 0x6B7130);
     RH_ScopedInstall(CalculateLeanMatrix, 0x6B7150);
-    RH_ScopedInstall(ProcessRiderAnims, 0x6B7280, { .reversed = false });
-    RH_ScopedInstall(FixHandsToBars, 0x6B7F90, { .reversed = false });
+    RH_ScopedInstall(ProcessRiderAnims, 0x6B7280, { .Reversed = false });
+    RH_ScopedInstall(FixHandsToBars, 0x6B7F90, { .Reversed = false });
     RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0);
     RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230);
     RH_ScopedVMTInstall(Fix, 0x6B7050);
@@ -48,13 +48,14 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
     RH_ScopedVMTInstall(BurstTyre, 0x6BEB20);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310);
+    RH_ScopedVMTInstall(ProcessAI, 0x6BC930, { .Reversed = false });
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6BDEA0);
     RH_ScopedVMTInstall(Render, 0x6BDE20);
-    RH_ScopedVMTInstall(PreRender, 0x6BD090, { .reversed = false });
+    RH_ScopedVMTInstall(PreRender, 0x6BD090, { .Reversed = false });
     RH_ScopedVMTInstall(Teleport, 0x6BCFC0);
-    RH_ScopedVMTInstall(ProcessControl, 0x6B9250, { .reversed = false });
+    RH_ScopedVMTInstall(ProcessControl, 0x6B9250, { .Reversed = false });
     RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0);
-    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0, { .reversed = false });
+    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0, { .Reversed = false });
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
     RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
     RH_ScopedVMTInstall(SetupDamageAfterLoad, 0x6B7070);
@@ -413,7 +414,7 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
 
                     if (m_BrakePedal < 0.0f || m_nNoOfContactWheels == 0) {
                         const auto ratio = std::max(speedFrac / 0.1f, m_BrakePedal);
-                        const auto force = -(CTimer::ms_fTimeStep * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_BrakePedal) * 0.5f);
+                        const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_BrakePedal) * 0.5f);
                         ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
                     }
                 } else {
@@ -421,7 +422,7 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
 
                     if ((m_BrakePedal == 0.0f && !vehicleFlags.bIsHandbrakeOn) || m_nNoOfContactWheels == 0) {
                         const auto ratio = std::max(speedFrac / 0.1f, m_GasPedal);
-                        const auto force = -(CTimer::ms_fTimeStep * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_GasPedal) * 0.5f);
+                        const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_GasPedal) * 0.5f);
                         ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
                     }
                 }
@@ -455,8 +456,8 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
         m_pHandlingData->GetTransmission().CalculateGearForSimpleCar(simpleSpeed, m_nCurrentGear);
 
         auto* const mi = GetVehicleModelInfo();
-        m_aWheelPitchAngles[0] += ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), GetMoveSpeed(), mi->m_fWheelSizeFront * 0.5f) * CTimer::ms_fTimeStep;
-        m_aWheelPitchAngles[1] += ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), GetMoveSpeed(), mi->m_fWheelSizeRear * 0.5f) * CTimer::ms_fTimeStep;
+        m_aWheelPitchAngles[0] += ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), GetMoveSpeed(), mi->m_fWheelSizeFront * 0.5f) * CTimer::GetTimeStep();
+        m_aWheelPitchAngles[1] += ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), GetMoveSpeed(), mi->m_fWheelSizeRear * 0.5f) * CTimer::GetTimeStep();
 
         PlayHornIfNecessary();
         ReduceHornCounter();
@@ -1064,7 +1065,7 @@ void CBike::Render() {
 
     if (m_renderLights.m_bRightFront) {
         CalculateLeanMatrix();
-        CVehicle::DoHeadLightBeam(DUMMY_LIGHT_FRONT_MAIN, m_mLeanMatrix, true);
+        CVehicle::DoHeadLightBeam(eVehicleLightId::MAIN, m_mLeanMatrix, true);
     }
 
     RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, RWRSTATE(savedRef));

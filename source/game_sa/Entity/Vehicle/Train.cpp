@@ -30,9 +30,9 @@ void CTrain::InjectHooks() {
     RH_ScopedVirtualClass(CTrain, 0x872370, 66);
     RH_ScopedCategory("Vehicle");
 
-    RH_ScopedInstall(Constructor, 0x6F6030, { .reversed = false });
+    RH_ScopedInstall(Constructor, 0x6F6030, { .Reversed = false });
     RH_ScopedInstall(InitTrains, 0x6F7440);
-    RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0, { .reversed = false });
+    RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0, { .Reversed = false });
     RH_ScopedInstall(Shutdown, 0x6F58D0);
     RH_ScopedInstall(UpdateTrains, 0x6F5900);
     RH_ScopedInstall(FindCoorsFromPositionOnTrack, 0x6F59E0);
@@ -52,19 +52,19 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(FindSideStationIsOn, 0x6F5EF0);
     RH_ScopedInstall(FindNextStationPositionInDirection, 0x6F5F00);
     RH_ScopedInstall(IsInTunnel, 0x6F6320);
-    RH_ScopedInstall(RemoveRandomPassenger, 0x6F6850, { .reversed = false });
+    RH_ScopedInstall(RemoveRandomPassenger, 0x6F6850, { .Reversed = false });
     RH_ScopedInstall(RemoveMissionTrains, 0x6F6A20);
     RH_ScopedInstall(RemoveAllTrains, 0x6F6AA0);
     RH_ScopedInstall(ReleaseMissionTrains, 0x6F6B60);
     RH_ScopedInstall(FindClosestTrackNode, 0x6F6BD0);
-    RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .reversed = false });
+    RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .Reversed = false });
     RH_ScopedInstall(FindNearestTrain, 0x6F7090);
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
     RH_ScopedInstall(IsNextStationAllowed, 0x6F7260);
     RH_ScopedInstall(SkipToNextAllowedStation, 0x6F72F0);
-    RH_ScopedInstall(CreateMissionTrain, 0x6F7550, { .reversed = false });
-    RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900, { .reversed = false });
-    RH_ScopedInstall(AddNearbyPedAsRandomPassenger, 0x6F8170, { .reversed = false });
+    RH_ScopedInstall(CreateMissionTrain, 0x6F7550, { .Reversed = false });
+    RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900, { .Reversed = false });
+    RH_ScopedInstall(AddNearbyPedAsRandomPassenger, 0x6F8170, { .Reversed = false });
     RH_ScopedVMTInstall(ProcessControl, 0x6F86A0);
 
     RH_ScopedGlobalInstall(ProcessTrainAnnouncements, 0x6F5910);

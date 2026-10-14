@@ -12,7 +12,6 @@ void CMonsterTruck::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x6C8D60);
 
     RH_ScopedInstall(ExtendSuspension, 0x6C7D80);
-
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6C8AE0);
     RH_ScopedVMTInstall(ProcessSuspension, 0x6C83A0);
     RH_ScopedVMTInstall(ProcessControlCollisionCheck, 0x6C8330);

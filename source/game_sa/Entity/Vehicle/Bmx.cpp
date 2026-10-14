@@ -475,7 +475,7 @@ void CBmx::PreRender() {
         const auto pointVel   = GetSpeed(contactPos);
         const auto rot        = ProcessWheelRotation(WHEEL_STATE_NORMAL, rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeRear * 0.5f);
         m_aWheelAngularVelocity[0] = rot;
-        m_aWheelPitchAngles[0] += rot * CTimer::ms_fTimeStep;
+        m_aWheelPitchAngles[0] += rot * CTimer::GetTimeStep();
     }
     if (m_WheelCounts[2] > 0.0f || m_WheelCounts[3] > 0.0f) {
         const auto ratio      = std::min(m_aRatioHistory[2], m_aRatioHistory[3]);
@@ -483,7 +483,7 @@ void CBmx::PreRender() {
         const auto pointVel   = GetSpeed(contactPos);
         const auto rot        = ProcessWheelRotation(m_WheelStates[1], rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeFront * 0.5f);
         m_aWheelAngularVelocity[1] = rot;
-        m_aWheelPitchAngles[1] += rot * CTimer::ms_fTimeStep;
+        m_aWheelPitchAngles[1] += rot * CTimer::GetTimeStep();
     }
 
     m_bLeanMatrixCalculated = false;
@@ -656,7 +656,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
 
             if (m_BrakePedal < 0.0f || m_nNoOfContactWheels == 0) {
                 const auto speed     = std::min(GetMoveSpeed().Magnitude(), 0.1f);
-                const auto force     = -(CTimer::ms_fTimeStep * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * speed * m_RideAnimData.LeanFwd);
+                const auto force     = -(CTimer::GetTimeStep() * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * speed * m_RideAnimData.LeanFwd);
                 ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
             }
         } else {
@@ -667,7 +667,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
                 const auto leanMult = GetModelId() == MODEL_SANCHEZ
                     ? m_GasPedal * 0.7f + 0.3f
                     : (m_GasPedal + 1.0f) * 0.5f;
-                const auto force = -(CTimer::ms_fTimeStep * leanMult * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speed);
+                const auto force = -(CTimer::GetTimeStep() * leanMult * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speed);
                 ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
             }
         }
@@ -681,7 +681,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         if (m_aWheelRatios[0] == 1.0f && m_aWheelRatios[1] == 1.0f && m_aWheelRatios[2] == 1.0f && m_aWheelRatios[3] == 1.0f) {
             const auto turnDot = DotProduct(m_vecTurnSpeed, GetUp());
             if ((turnDot < 0.04f && pad->GetSteeringLeftRight() < 0) || (-0.04f < turnDot && pad->GetSteeringLeftRight() > 0)) {
-                const auto steer = (float)pad->GetSteeringLeftRight() * 0.007813f * m_fTurnMass * CTimer::ms_fTimeStep * 0.002f;
+                const auto steer = (float)pad->GetSteeringLeftRight() * 0.007813f * m_fTurnMass * CTimer::GetTimeStep() * 0.002f;
                 ApplyTurnForce(steer * GetUp(), GetForward());
             }
         }
@@ -762,7 +762,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         }
 
         if (0.0f < m_fControlPedaling) {
-            auto decay = m_fControlPedaling <= 5.0f ? CTimer::ms_fTimeStep * 0.01f : CTimer::ms_fTimeStep * 0.02f;
+            auto decay = m_fControlPedaling <= 5.0f ? CTimer::GetTimeStep() * 0.01f : CTimer::GetTimeStep() * 0.02f;
             if (m_fControlPedaling <= 5.0f && vehicleFlags.bUseCarCheats) {
                 decay += decay;
             }
@@ -858,7 +858,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
             propulsion *= 1.25f;
         }
 
-        propulsion *= CTimer::ms_fTimeStep * m_fMass * 0.3f * 0.008f;
+        propulsion *= CTimer::GetTimeStep() * m_fMass * 0.3f * 0.008f;
         ApplyMoveForce(propulsion * GetForward());
     }
 

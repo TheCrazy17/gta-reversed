@@ -14,7 +14,7 @@ void C_PcSave::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(SetSaveDirectory, 0x619040);
-    RH_ScopedInstall(GenerateGameFilename, 0x6190A0);
+    RH_ScopedInstall(GenerateGameFilename, 0x6190A0); // bad
     RH_ScopedInstall(PopulateSlotInfo, 0x619140);
     RH_ScopedInstall(SaveSlot, 0x619060);
     RH_ScopedInstall(DeleteSlot, 0x6190D0);

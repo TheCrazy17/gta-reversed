@@ -34,8 +34,8 @@ void Interior_c::InjectHooks() {
     RH_ScopedClass(Interior_c);
     RH_ScopedCategory("Interior");
 
-    //RH_ScopedInstall(Constructor, 0x5921D0, { .reversed = false });
-    //RH_ScopedInstall(Destructor, 0x591360, { .reversed = false });
+    //RH_ScopedInstall(Constructor, 0x5921D0, { .Reversed = false });
+    //RH_ScopedInstall(Destructor, 0x591360, { .Reversed = false });
 
     RH_ScopedInstall(Bedroom_AddTableItem, 0x593F10);
     RH_ScopedInstall(FurnishBedroom, 0x593FC0);
@@ -82,11 +82,11 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(AddPickups, 0x591F90);
     RH_ScopedInstall(Exit, 0x592230);
     RH_ScopedInstall(FindBoundingBox, 0x5922C0);
-    RH_ScopedInstall(CalcExitPts, 0x5924A0, { .reversed = false });
+    RH_ScopedInstall(CalcExitPts, 0x5924A0, { .Reversed = false });
     RH_ScopedInstall(IsVisible, 0x5929F0);
-    RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .reversed = false });
-    RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .reversed = false });
-    RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .reversed = false });
+    RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .Reversed = false });
+    RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .Reversed = false });
+    RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .Reversed = false });
     RH_ScopedInstall(FindEmptyTiles, 0x591C50);
     RH_ScopedInstall(FurnishShop, 0x59A790);
 }
@@ -1892,7 +1892,7 @@ bool Interior_c::AddInteriorInfo(int32 actionType, float offsetX, float offsetY,
 
 // 0x591F90
 void Interior_c::AddPickups() {
-    if (CTimer::m_snTimeInMilliseconds - s_nPickupSpawnGateTime <= 179999u) { // 180000ms = 3 minutes
+    if (CTimer::GetTimeInMS() - s_nPickupSpawnGateTime <= 179999u) { // 180000ms = 3 minutes
         return;
     }
 

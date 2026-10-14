@@ -433,7 +433,7 @@ bool CGarage::IsPointInsideGarage(CVector point, float radius) {
 
 // 0x44A660
 bool CGarage::SlideDoorOpen() {
-    const auto speed = CTimer::ms_fTimeStep * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0011f : 0.011f);
+    const auto speed = CTimer::GetTimeStep() * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0011f : 0.011f);
     m_fDoorPosition += speed;
 
     CObject* door1{};
@@ -456,7 +456,7 @@ bool CGarage::SlideDoorOpen() {
 
 // 0x44A750
 bool CGarage::SlideDoorClosed() {
-    const auto speed = CTimer::ms_fTimeStep * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0013f : 0.013f);
+    const auto speed = CTimer::GetTimeStep() * (m_nType == HANGAR_AT400 || m_nType == HANGAR_ABANDONED_AIRPORT ? 0.0013f : 0.013f);
     m_fDoorPosition -= speed;
 
     CObject* door1{};
@@ -568,7 +568,7 @@ void CGarage::CenterCarInGarage(CVehicle* vehicle) {
             }
 
             const auto& pos = otherVehicle->GetPosition();
-            const auto push = Normalized(CVector{ pos.x - centerX, pos.y - centerY, 0.0f }) * PUSH_FORCE * CTimer::ms_fTimeStep;
+            const auto push = Normalized(CVector{ pos.x - centerX, pos.y - centerY, 0.0f }) * PUSH_FORCE * CTimer::GetTimeStep();
             otherVehicle->GetMoveSpeed() += push;
             break; // only the first out-of-bounds sphere per vehicle triggers a push
         }
@@ -725,7 +725,7 @@ void CGarage::Update(int32 garageId) {
                 }
                 return;
             }
-            if ((CTimer::m_FrameCounter & 0x1f) != 0) {
+            if ((CTimer::GetFrameCounter() & 0x1f) != 0) {
                 return;
             }
             if (m_pTargetCar && IsEntityTouching3D(m_pTargetCar)) {
@@ -770,7 +770,7 @@ void CGarage::Update(int32 garageId) {
     case BOMBSHOP_REMOTE:
         switch (m_nDoorState) {
         case GARAGE_DOOR_CLOSED: {
-            if (CTimer::m_snTimeInMilliseconds <= m_nTimeToOpen) {
+            if (CTimer::GetTimeInMS() <= m_nTimeToOpen) {
                 return;
             }
             if (m_nType == BOMBSHOP_REMOTE /* NOTSA: && !DAT_008e6940-equivalent model-ready flag, not yet mapped */) {
@@ -866,7 +866,7 @@ void CGarage::Update(int32 garageId) {
             }
             if (SlideDoorClosed()) {
                 m_nDoorState = GARAGE_DOOR_CLOSED;
-                m_nTimeToOpen = CTimer::m_snTimeInMilliseconds + 2000;
+                m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
             }
             if (m_nType != BOMBSHOP_REMOTE) {
                 break;
@@ -961,7 +961,7 @@ void CGarage::Update(int32 garageId) {
             if (!m_b0x1) {
                 if (m_pTargetCar) {
                     m_nDoorState = GARAGE_DOOR_CLOSED_DROPPED_CAR;
-                    m_nTimeToOpen = CTimer::m_snTimeInMilliseconds + 2000;
+                    m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
                     m_pTargetCar = nullptr;
                 } else {
                     m_nDoorState = GARAGE_DOOR_CLOSED;
@@ -978,7 +978,7 @@ void CGarage::Update(int32 garageId) {
             // Only meaningful for OPEN_FOR_TARGET_FREEZE_PLAYER specifically (CLOSE_WITH_CAR_DONT_
             // OPEN_AGAIN never reopens on its own, matching its name) - waits out the same 2000ms
             // timer set above, then reopens.
-            if (m_nType == OPEN_FOR_TARGET_FREEZE_PLAYER && CTimer::m_snTimeInMilliseconds >= m_nTimeToOpen) {
+            if (m_nType == OPEN_FOR_TARGET_FREEZE_PLAYER && CTimer::GetTimeInMS() >= m_nTimeToOpen) {
                 m_nDoorState = GARAGE_DOOR_OPENING;
                 return;
             }
@@ -1052,11 +1052,11 @@ void CGarage::Update(int32 garageId) {
                 };
 
                 if (isNearDoor(door1) || isNearDoor(door2)) {
-                    if (CTimer::m_snTimeInMilliseconds - CGarages::LastTimeHelpMessage >= 0x4651) { // 18001ms
+                    if (CTimer::GetTimeInMS() - CGarages::LastTimeHelpMessage >= 0x4651) { // 18001ms
                         const auto appearance = playerVehicle->GetVehicleAppearance();
                         if (appearance != VEHICLE_APPEARANCE_HELI && appearance != VEHICLE_APPEARANCE_PLANE) {
                             CHud::SetHelpMessage(TheText.Get("GA_21"));
-                            CGarages::LastTimeHelpMessage = CTimer::m_snTimeInMilliseconds;
+                            CGarages::LastTimeHelpMessage = CTimer::GetTimeInMS();
                         }
                     }
                 }
@@ -1236,7 +1236,7 @@ void CGarage::Update(int32 garageId) {
             if (CGarages::NoResprays) {
                 return;
             }
-            if (CTimer::m_snTimeInMilliseconds <= m_nTimeToOpen) {
+            if (CTimer::GetTimeInMS() <= m_nTimeToOpen) {
                 break; // falls to TAIL #1
             }
             m_nDoorState = GARAGE_DOOR_OPENING;
@@ -1382,7 +1382,7 @@ void CGarage::Update(int32 garageId) {
             if (SlideDoorClosed()) {
                 m_nDoorState = GARAGE_DOOR_CLOSED;
                 AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0x10, 0, 1.0f);
-                m_nTimeToOpen = CTimer::m_snTimeInMilliseconds + 2000;
+                m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
                 const auto kills = CStats::GetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT);
                 CStats::IncrementStat(STAT_TOTAL_LEGITIMATE_KILLS, kills);
                 CStats::SetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT, 0.f);
@@ -1440,7 +1440,7 @@ void CGarage::Update(int32 garageId) {
             if (dx * dx + dy * dy <= 900.0f) { // 30^2, player still near the garage - stay open
                 return;
             }
-            if ((CTimer::m_FrameCounter & 0x1f) != 0) { // throttle to once every 32 frames
+            if ((CTimer::GetFrameCounter() & 0x1f) != 0) { // throttle to once every 32 frames
                 return;
             }
             auto* const playerVehicle = FindPlayerVehicle(-1, false);

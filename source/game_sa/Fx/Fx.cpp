@@ -241,15 +241,15 @@ void Fx_c::AddWood(const CVector& pos, const CVector& direction, int32 amount, f
 // 0x49F040 (real body at 0x49F045)
 void Fx_c::AddSparks(const CVector& origin, const CVector& direction, float force, int32 amount, CVector across, eSparkType sparksType, float spread, float life) {
     const auto distSq = CVector::DistSqr(TheCamera.GetPosition(), origin);
-    if (distSq > 22500.0f || (distSq > 225.0f && (CTimer::m_FrameCounter & 1) != 0)) {
+    if (distSq > 22500.0f || (distSq > 225.0f && (CTimer::GetFrameCounter() & 1) != 0)) {
         return;
     }
 
     const FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, life * 0.8f };
 
-    across.x *= CTimer::ms_fTimeStep;
-    across.y *= CTimer::ms_fTimeStep;
-    across.z *= CTimer::ms_fTimeStep;
+    across.x *= CTimer::GetTimeStep();
+    across.y *= CTimer::GetTimeStep();
+    across.z *= CTimer::GetTimeStep();
 
     auto* const system = sparksType == SPARK_PARTICLE_SPARK ? m_Spark : m_Spark2;
 

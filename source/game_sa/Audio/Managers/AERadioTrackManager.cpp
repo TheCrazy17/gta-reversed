@@ -53,14 +53,14 @@ void CAERadioTrackManager::InjectHooks() {
     RH_ScopedInstall(GetRadioStationNameKey, 0x4E8380);
     RH_ScopedInstall(HasRadioRetuneJustStarted, 0x4E8370);
     RH_ScopedInstall(StopRadio, 0x4E9820);
-    RH_ScopedInstall(IsRadioOn, 0x4E8350, { .reversed = true });
+    RH_ScopedInstall(IsRadioOn, 0x4E8350);
     RH_ScopedInstall(InitialiseRadioStationID, 0x4E8330);
     RH_ScopedInstall(SetBassEnhanceOnOff, 0x4E9DB0);
     RH_ScopedInstall(SetBassSetting, 0x4E82F0);
     RH_ScopedInstall(SetRadioAutoRetuneOnOff, 0x4E82E0);
-    RH_ScopedInstall(RetuneRadio, 0x4E8290, { .reversed = true });
+    RH_ScopedInstall(RetuneRadio, 0x4E8290, { .Reversed = true });
     RH_ScopedInstall(ResetStatistics, 0x4E8200);
-    RH_ScopedInstall(Reset, 0x4E7F80, { .reversed = true });
+    RH_ScopedInstall(Reset, 0x4E7F80, { .Reversed = true });
 }
 
 // Code from 0x5B9390

@@ -101,7 +101,7 @@ CTask* CTaskComplexGotoDoorAndOpen::CreateFirstSubTask(CPed* ped) {
     CEventAreaCodes eventAreaCodes{ ped };
     GetEventGlobalGroup()->Add(&eventAreaCodes, false);
 
-    m_nStartTime  = CTimer::m_snTimeInMilliseconds;
+    m_nStartTime  = CTimer::GetTimeInMS();
     m_nOffsetTime = 1000;
     byte30        = 1;
 
@@ -142,10 +142,10 @@ CTask* CTaskComplexGotoDoorAndOpen::CreateFirstSubTask(CPed* ped) {
 CTask* CTaskComplexGotoDoorAndOpen::ControlSubTask(CPed* ped) {
     if (byte30) {
         if (m_bRefreshTime) {
-            m_nStartTime   = CTimer::m_snTimeInMilliseconds;
+            m_nStartTime   = CTimer::GetTimeInMS();
             m_bRefreshTime = false;
         }
-        if (CTimer::m_snTimeInMilliseconds < m_nStartTime + m_nOffsetTime) {
+        if (CTimer::GetTimeInMS() < m_nStartTime + m_nOffsetTime) {
             if (m_Object || (m_nFlags & 1) == 0) {
                 return m_pSubTask;
             }

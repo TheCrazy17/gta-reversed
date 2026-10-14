@@ -13,7 +13,6 @@ void CTaskComplexLeaveCarAndWander::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x63BE50);
 
     RH_ScopedInstall(CreateSubTask, 0x63BEC0);
-
     RH_ScopedVMTInstall(Clone, 0x63DAD0);
     RH_ScopedVMTInstall(GetTaskType, 0x63BE40);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x6422C0);

@@ -18,13 +18,12 @@ void CTaskComplexSmartFleePoint::InjectHooks() {
     RH_ScopedInstall(ComputeFleeDir, 0x65BE40);
     RH_ScopedInstall(CreateSubTask, 0x65BE80);
     RH_ScopedInstall(SetFleePosition, 0x65C3C0);
-
     RH_ScopedVMTInstall(Clone, 0x65CED0);
     RH_ScopedVMTInstall(GetTaskType, 0x65BDA0);
     RH_ScopedVMTInstall(MakeAbortable, 0x65BDC0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x65C0C0);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x65C140);
-    RH_ScopedVMTInstall(ControlSubTask, 0x65C1E0, {.reversed = false});
+    RH_ScopedVMTInstall(ControlSubTask, 0x65C1E0, { .Reversed = false });
 }
 
 // 0x65BD20

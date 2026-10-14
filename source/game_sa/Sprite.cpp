@@ -2,7 +2,137 @@
 #include "Sprite.h"
 
 static inline auto& nSpriteBufferIndex = StaticRef<int32>(0xC6A158);
-static inline auto& s_XLUSpriteVertices = StaticRef<std::array<RwIm2DVertex, 4>>(0xC4B8E0);
+
+// NOTSA
+constexpr int32 TOTAL_BUFFERED_SPRITES = 384; // The game's sprite buffer fits exactly this many quads
+
+// NOTSA
+// Coordinates of the 4 sprite corners along one axis
+using CornerCoords1D = std::array<float, 4>;
+
+// NOTSA
+// Standard UVs of a full-texture sprite quad
+static constexpr CornerCoords1D s_SpriteUs{ 0.0f, 0.0f, 1.0f, 1.0f };
+static constexpr CornerCoords1D s_SpriteVs{ 0.0f, 1.0f, 1.0f, 0.0f };
+
+// NOTSA
+// Perspective-corrected screen Z. FP op order matches the original binary - do not re-associate.
+static float CalcSpriteScreenZ(float z, float nearZ, float farZ) {
+    return (z - CDraw::ms_fNearClipZ)
+        * (farZ - nearZ)
+        * CDraw::ms_fFarClipZ
+        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * z)
+        + nearZ;
+}
+
+// NOTSA
+// RGB premultiplied by the fixed-point intensity, packed as ARGB
+static uint32 CalcSpriteColor(uint8 r, uint8 g, uint8 b, uint8 a, int16 intensity) {
+    //  intensity is (probably) multiplied by 256, otherwise this bitshift wouldn't make sense
+    return CRGBA{
+        static_cast<uint8>((int32(r) * intensity) >> 8),
+        static_cast<uint8>((int32(g) * intensity) >> 8),
+        static_cast<uint8>((int32(b) * intensity) >> 8),
+        a
+    }.ToIntARGB();
+}
+
+// NOTSA
+// Sprite is off-screen only when all 4 corners lie beyond the same screen edge
+static bool IsSpriteOffScreen(const CornerCoords1D& xs, const CornerCoords1D& ys) {
+    const auto maxX = SCREEN_WIDTH;
+    const auto maxY = SCREEN_HEIGHT;
+    return rng::all_of(xs, [](float v) { return v < 0.0f; })
+        || rng::all_of(ys, [](float v) { return v < 0.0f; })
+        || rng::all_of(xs, [maxX](float v) { return v > maxX; })
+        || rng::all_of(ys, [maxY](float v) { return v > maxY; });
+}
+
+// NOTSA
+// Per-corner coefficients of the 4 rotated corners in the "aspect" rotation style:
+// corner.xs[i] = coeffs.xs[i] * w + pos.x; corner.ys[i] = coeffs.ys[i] * h + pos.y
+struct SpriteQuadCoeffs {
+    CornerCoords1D xs, ys;
+};
+
+// NOTSA
+static SpriteQuadCoeffs CalcSpriteQuadCoeffs(float rotation) {
+    const float fSin = std::sin(rotation);
+    const float fCos = std::cos(rotation);
+    return {
+        .xs = { -fCos - fSin, fSin - fCos, fCos + fSin, fCos - fSin },
+        .ys = { fSin - fCos, fCos + fSin, fCos - fSin, -fCos - fSin },
+    };
+}
+
+// NOTSA
+// Clamp the quad's corners to the screen, remapping UVs using the sprite's full size
+static void ClampSpriteQuadToScreen(CornerCoords1D& xs, CornerCoords1D& ys, CornerCoords1D& us, CornerCoords1D& vs, CVector2D halfSize) {
+    const auto maxX = SCREEN_WIDTH;
+    const auto maxY = SCREEN_HEIGHT;
+    for (auto&& [i, x] : rngv::enumerate(xs)) {
+        if (x < 0.0f) {
+            us[i] = x / halfSize.x * -0.5f;
+            x = 0.0f;
+        }
+        if (x > maxX) {
+            us[i] = 1.0f - (x - maxX) * 0.5f / halfSize.x;
+            x = maxX;
+        }
+        if (ys[i] < 0.0f) {
+            vs[i] = ys[i] / halfSize.y * -0.5f;
+            ys[i] = 0.0f;
+        }
+        if (ys[i] > maxY) {
+            vs[i] = 1.0f - (ys[i] - maxY) * 0.5f / halfSize.y;
+            ys[i] = maxY;
+        }
+    }
+}
+
+// NOTSA
+// Fill the 4 vertices of a sprite quad
+static void SetSpriteVertices(RwIm2DVertex* vertices, const CornerCoords1D& xs, const CornerCoords1D& ys, const CornerCoords1D& us, const CornerCoords1D& vs, float z, float rhw, const std::array<uint32, 4>& colors) {
+    for (auto&& [i, vertex] : rngv::enumerate(std::span{ vertices, 4u })) {
+        vertex = {
+            .x             = xs[i],
+            .y             = ys[i],
+            .z             = z,
+            .rhw           = rhw,
+            .emissiveColor = colors[i],
+            .u             = us[i],
+            .v             = vs[i],
+        };
+    }
+}
+
+// NOTSA
+// Same, with a single color for all 4 vertices
+static void SetSpriteVertices(RwIm2DVertex* vertices, const CornerCoords1D& xs, const CornerCoords1D& ys, const CornerCoords1D& us, const CornerCoords1D& vs, float z, float rhw, uint32 color) {
+    SetSpriteVertices(vertices, xs, ys, us, vs, z, rhw, { color, color, color, color });
+}
+
+// NOTSA
+// Same, with the standard full-texture UVs and a single color
+static void SetSpriteVertices(RwIm2DVertex* vertices, const CornerCoords1D& xs, const CornerCoords1D& ys, float z, float rhw, uint32 color) {
+    SetSpriteVertices(vertices, xs, ys, s_SpriteUs, s_SpriteVs, z, rhw, color);
+}
+
+// NOTSA
+// Emit the quad's two triangles `{ 0, 1, 2, 3, 0, 2 }`, advance the buffer and flush it when full
+static void PushSpriteQuad() {
+    const auto base    = 4 * nSpriteBufferIndex;
+    auto*      indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
+    indices[0] = base;
+    indices[1] = base + 1;
+    indices[2] = base + 2;
+    indices[3] = base + 3;
+    indices[4] = base;
+    indices[5] = base + 2;
+    if (++nSpriteBufferIndex >= TOTAL_BUFFERED_SPRITES) {
+        CSprite::FlushSpriteBuffer();
+    }
+}
 
 void CSprite::InjectHooks() {
     RH_ScopedClass(CSprite);
@@ -143,59 +273,28 @@ void CSprite::Set4Vertices2D(RwD3D9Vertex*, float, float, float, float, float, f
 
 // 0x70D000
 void CSprite::RenderOneXLUSprite(CVector pos, CVector2D halfSize, uint8 r, uint8 g, uint8 b, int16 intensity, float rhw, uint8 a, uint8 udir, uint8 vdir) {
-    std::array<float, 4> cornerX{ pos.x - halfSize.x, pos.x - halfSize.x, pos.x + halfSize.x, pos.x + halfSize.x };
-    std::array<float, 4> cornerY{ pos.y - halfSize.y, pos.y + halfSize.y, pos.y + halfSize.y, pos.y - halfSize.y };
+    CornerCoords1D x{ pos.x - halfSize.x, pos.x - halfSize.x, pos.x + halfSize.x, pos.x + halfSize.x };
+    CornerCoords1D y{ pos.y - halfSize.y, pos.y + halfSize.y, pos.y + halfSize.y, pos.y - halfSize.y };
 
-    std::array<float, 4> u{}, v{};
-    if (udir == 0) { u = { 0.f, 0.f, 1.f, 1.f }; } else { u = { 1.f, 1.f, 0.f, 0.f }; }
-    if (vdir == 0) { v = { 0.f, 1.f, 1.f, 0.f }; } else { v = { 1.f, 0.f, 0.f, 1.f }; }
+    const float flipU = udir ? 1.0f : 0.0f;
+    const float flipV = vdir ? 1.0f : 0.0f;
+    CornerCoords1D u{ flipU, flipU, 1.0f - flipU, 1.0f - flipU };
+    CornerCoords1D v{ flipV, 1.0f - flipV, 1.0f - flipV, flipV };
 
-    // Manual clip against the screen edges, shifting UVs proportionally so the texture doesn't stretch.
-    for (auto i = 0u; i < 4u; i++) {
-        if (cornerX[i] < 0.0f) {
-            u[i] = (cornerX[i] / halfSize.x) * -0.5f;
-            cornerX[i] = 0.0f;
-        }
-        if (cornerX[i] > SCREEN_WIDTH) {
-            u[i] = 1.0f - ((cornerX[i] - SCREEN_WIDTH) * 0.5f) / halfSize.x;
-            cornerX[i] = SCREEN_WIDTH;
-        }
-        if (cornerY[i] < 0.0f) {
-            v[i] = (cornerY[i] / halfSize.y) * -0.5f;
-            cornerY[i] = 0.0f;
-        }
-        if (cornerY[i] > SCREEN_HEIGHT) {
-            v[i] = 1.0f - ((cornerY[i] - SCREEN_HEIGHT) * 0.5f) / halfSize.y;
-            cornerY[i] = SCREEN_HEIGHT;
-        }
-    }
+    ClampSpriteQuadToScreen(x, y, u, v, halfSize);
 
-    const auto z = (RwIm2DGetFarScreenZ() - RwIm2DGetNearScreenZ())
-        * (pos.z - CDraw::ms_fNearClipZ)
-        * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * pos.z)
-        + RwIm2DGetNearScreenZ();
-
-    const auto emissiveColor = CRGBA{
-        static_cast<uint8>((r * intensity) >> 8),
-        static_cast<uint8>((g * intensity) >> 8),
-        static_cast<uint8>((b * intensity) >> 8),
-        a
-    }.ToIntARGB();
-
-    for (auto i = 0u; i < 4u; i++) {
-        s_XLUSpriteVertices[i] = {
-            .x = cornerX[i],
-            .y = cornerY[i],
-            .z = z,
-            .rhw = rhw,
-            .emissiveColor = emissiveColor,
-            .u = u[i],
-            .v = v[i]
-        };
-    }
-
-    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, s_XLUSpriteVertices.data(), 4);
+    std::array<RwIm2DVertex, 4> vertices;
+    SetSpriteVertices(
+        vertices.data(),
+        x,
+        y,
+        u,
+        v,
+        CalcSpriteScreenZ(pos.z, RWSRCGLOBAL(dOpenDevice).zBufferNear, RWSRCGLOBAL(dOpenDevice).zBufferFar),
+        rhw,
+        CalcSpriteColor(r, g, b, a, intensity)
+    );
+    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, vertices.data(), 4);
 }
 
 // 0x70D320
@@ -222,78 +321,65 @@ void CSprite::RenderOneXLUSprite_Triangle(CVector2D screen1, CVector2D screen2, 
         / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * screenZ)
         + RwIm2DGetNearScreenZ();
 
-    s_XLUSpriteVertices[0] = {
+    std::array<RwIm2DVertex, 3> vertices;
+    vertices[0] = {
         .x = screen1.x,
         .y = screen1.y,
         .z = z,
         .rhw = recipZ,
         .emissiveColor = emissiveColor
     };
-    s_XLUSpriteVertices[1] = {
+    vertices[1] = {
         .x = screen2.x,
         .y = screen2.y,
         .z = z,
         .rhw = recipZ,
         .emissiveColor = emissiveColor
     };
-    s_XLUSpriteVertices[2] = {
+    vertices[2] = {
         .x = screen3.x,
         .y = screen3.y,
         .z = z,
         .rhw = recipZ,
         .emissiveColor = emissiveColor
     };
-    RwIm2DRenderPrimitive(rwPRIMTYPETRILIST, s_XLUSpriteVertices.data(), 3);
+    RwIm2DRenderPrimitive(rwPRIMTYPETRILIST, vertices.data(), 3);
 }
 
 // 0x70D490
 void CSprite::RenderOneXLUSprite_Rotate_Aspect(CVector pos, CVector2D size, uint8 r, uint8 g, uint8 b, int16 intensity, float rz, float rotation, uint8 alpha) {
+    if (pos.z < 1.3f) {
+        return;
+    }
+
+    // Fade both the colour and intensity between z = 1.3 and z = 2.3.
     if (pos.z < 2.3f) {
-        if (pos.z < 1.3f) {
-            return;
-        }
-        const auto factor = static_cast<uint32>(std::lround((pos.z - 1.3f) * 255.0f));
+        const auto factor = static_cast<int32>(255.0f * (pos.z - 1.3f));
         r = static_cast<uint8>((r * factor) >> 8);
         g = static_cast<uint8>((g * factor) >> 8);
         b = static_cast<uint8>((b * factor) >> 8);
         intensity = static_cast<int16>((intensity * factor) >> 8);
     }
 
-    const auto s = std::sin(rotation);
-    const auto c = std::cos(rotation);
-
-    const auto v0x = pos.x + (-c - s) * size.x, v0y = pos.y + (s - c) * size.y;
-    const auto v1x = pos.x + (s - c) * size.x,  v1y = pos.y + (c + s) * size.y;
-    const auto v2x = pos.x + (c + s) * size.x,  v2y = pos.y + (c - s) * size.y;
-    const auto v3x = pos.x + (c - s) * size.x,  v3y = pos.y + (-c - s) * size.y;
-
-    const auto anyGE0X    = v0x >= 0.f || v1x >= 0.f || v2x >= 0.f || v3x >= 0.f;
-    const auto anyGE0Y    = v0y >= 0.f || v1y >= 0.f || v2y >= 0.f || v3y >= 0.f;
-    const auto anyLEWidth  = v0x <= SCREEN_WIDTH  || v1x <= SCREEN_WIDTH  || v2x <= SCREEN_WIDTH  || v3x <= SCREEN_WIDTH;
-    const auto anyLEHeight = v0y <= SCREEN_HEIGHT || v1y <= SCREEN_HEIGHT || v2y <= SCREEN_HEIGHT || v3y <= SCREEN_HEIGHT;
-    if (!(anyGE0X && anyGE0Y && anyLEWidth && anyLEHeight)) {
+    auto [xs, ys] = CalcSpriteQuadCoeffs(rotation);
+    for (auto&& [cx, cy] : rngv::zip(xs, ys)) {
+        cx = cx * size.x + pos.x;
+        cy = cy * size.y + pos.y;
+    }
+    if (IsSpriteOffScreen(xs, ys)) {
         return;
     }
 
-    const auto z = (RwIm2DGetFarScreenZ() - RwIm2DGetNearScreenZ())
-        * (pos.z - CDraw::ms_fNearClipZ)
-        * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * pos.z)
-        + RwIm2DGetNearScreenZ();
-
-    const auto emissiveColor = CRGBA{
-        static_cast<uint8>((r * intensity) >> 8),
-        static_cast<uint8>((g * intensity) >> 8),
-        static_cast<uint8>((b * intensity) >> 8),
-        alpha
-    }.ToIntARGB();
-
-    s_XLUSpriteVertices[0] = { .x = v0x, .y = v0y, .z = z, .rhw = rz, .emissiveColor = emissiveColor };
-    s_XLUSpriteVertices[1] = { .x = v1x, .y = v1y, .z = z, .rhw = rz, .emissiveColor = emissiveColor };
-    s_XLUSpriteVertices[2] = { .x = v2x, .y = v2y, .z = z, .rhw = rz, .emissiveColor = emissiveColor };
-    s_XLUSpriteVertices[3] = { .x = v3x, .y = v3y, .z = z, .rhw = rz, .emissiveColor = emissiveColor };
-
-    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, s_XLUSpriteVertices.data(), 4);
+    std::array<RwIm2DVertex, 4> vertices;
+    SetSpriteVertices(
+        vertices.data(),
+        xs,
+        ys,
+        CalcSpriteScreenZ(pos.z, RWSRCGLOBAL(dOpenDevice).zBufferNear, RWSRCGLOBAL(dOpenDevice).zBufferFar),
+        rz,
+        CalcSpriteColor(r, g, b, alpha, intensity)
+    );
+    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, vertices.data(), 4);
 }
 
 // Android
@@ -313,8 +399,9 @@ void CSprite::RenderOneXLUSprite2D(CVector2D screen, CVector2D size, const CRGBA
         vertsColor[i] = static_cast<uint8>((intensity * color[i]) >> 8);
     }
 
+    std::array<RwIm2DVertex, 4> vertices;
     Set4Vertices2D(
-        s_XLUSpriteVertices.data(),
+        vertices.data(),
         { screen.x - size.x, screen.y - size.y, screen.x + size.x, screen.y + size.y },
         vertsColor,
         vertsColor,
@@ -323,7 +410,7 @@ void CSprite::RenderOneXLUSprite2D(CVector2D screen, CVector2D size, const CRGBA
     );
 
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, RWRSTATE(false));
-    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, s_XLUSpriteVertices.data(), 4);
+    RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, vertices.data(), 4);
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, RWRSTATE(true));
 }
 
@@ -336,224 +423,124 @@ void CSprite::RenderOneXLUSprite2D_Rotate_Dimension(float, float, float, float, 
 /* --- Buffered XLU Sprite --- */
 
 // 0x70E4A0
-void CSprite::RenderBufferedOneXLUSprite(CVector pos, CVector2D size, uint8 r, uint8 g, uint8 b, int16 intensity, float recipNearZ, uint8 a11) {
+void CSprite::RenderBufferedOneXLUSprite(CVector pos, CVector2D size, uint8 r, uint8 g, uint8 b, int16 intensity, float recipNearZ, uint8 alpha) {
     m_bFlushSpriteBufferSwitchZTest = false;
 
-    std::array<float, 4> cornerX{ pos.x - size.x, pos.x - size.x, pos.x + size.x, pos.x + size.x };
-    std::array<float, 4> cornerY{ pos.y - size.y, pos.y + size.y, pos.y + size.y, pos.y - size.y };
-    std::array<float, 4> u{ 0.f, 0.f, 1.f, 1.f };
-    std::array<float, 4> v{ 0.f, 1.f, 1.f, 0.f };
+    CornerCoords1D x{ pos.x - size.x, pos.x - size.x, pos.x + size.x, pos.x + size.x };
+    CornerCoords1D y{ pos.y - size.y, pos.y + size.y, pos.y + size.y, pos.y - size.y };
+    auto u = s_SpriteUs;
+    auto v = s_SpriteVs;
+    ClampSpriteQuadToScreen(x, y, u, v, size);
 
-    for (auto i = 0u; i < 4u; i++) {
-        if (cornerX[i] < 0.0f) {
-            u[i] = (cornerX[i] / size.x) * -0.5f;
-            cornerX[i] = 0.0f;
-        }
-        if (cornerX[i] > SCREEN_WIDTH) {
-            u[i] = 1.0f - ((cornerX[i] - SCREEN_WIDTH) * 0.5f) / size.x;
-            cornerX[i] = SCREEN_WIDTH;
-        }
-        if (cornerY[i] < 0.0f) {
-            v[i] = (cornerY[i] / size.y) * -0.5f;
-            cornerY[i] = 0.0f;
-        }
-        if (cornerY[i] > SCREEN_HEIGHT) {
-            v[i] = 1.0f - ((cornerY[i] - SCREEN_HEIGHT) * 0.5f) / size.y;
-            cornerY[i] = SCREEN_HEIGHT;
-        }
-    }
-
-    const auto z = (pos.z - CDraw::ms_fNearClipZ) * (m_f2DFarScreenZ - m_f2DNearScreenZ) * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * pos.z)
-        + m_f2DNearScreenZ;
-
-    const auto emissiveColor = CRGBA{
-        static_cast<uint8>((r * intensity) >> 8),
-        static_cast<uint8>((g * intensity) >> 8),
-        static_cast<uint8>((b * intensity) >> 8),
-        a11
-    }.ToIntARGB();
-
-    RwD3D9Vertex* vertices = &TempBufferVertices.m_2d[4 * nSpriteBufferIndex];
-    for (auto i = 0u; i < 4u; i++) {
-        vertices[i] = { .x = cornerX[i], .y = cornerY[i], .z = z, .rhw = recipNearZ, .emissiveColor = emissiveColor, .u = u[i], .v = v[i] };
-    }
-
-    auto* indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
-    indices[0] = 4 * nSpriteBufferIndex;
-    indices[1] = 4 * nSpriteBufferIndex + 1;
-    indices[2] = 4 * nSpriteBufferIndex + 2;
-    indices[3] = 4 * nSpriteBufferIndex + 3;
-    indices[4] = 4 * nSpriteBufferIndex;
-    indices[5] = 4 * nSpriteBufferIndex + 2;
-
-    nSpriteBufferIndex++;
-    if (nSpriteBufferIndex >= 384) {
-        CSprite::FlushSpriteBuffer();
-    }
+    SetSpriteVertices(
+        &TempBufferVertices.m_2d[4 * nSpriteBufferIndex],
+        x,
+        y,
+        u,
+        v,
+        CalcSpriteScreenZ(pos.z, m_f2DNearScreenZ, m_f2DFarScreenZ),
+        recipNearZ,
+        CalcSpriteColor(r, g, b, alpha, intensity)
+    );
+    PushSpriteQuad();
 }
 
 // 0x70E780
-void CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(float x, float y, float z, float w, float h, uint8 r, uint8 g, uint8 b, int16 intensity, float recipNearZ, float angle, uint8 a12) {
+void CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(float x, float y, float z, float w, float h, uint8 r, uint8 g, uint8 b, int16 intensity, float recipNearZ, float angle, uint8 alpha) {
     m_bFlushSpriteBufferSwitchZTest = false;
 
-    const auto s = std::sin(angle);
-    const auto c = std::cos(angle);
-
-    const auto v0x = x + (-c - s) * w, v0y = y + (s - c) * h;
-    const auto v1x = x + (s - c) * w,  v1y = y + (c + s) * h;
-    const auto v2x = x + (c + s) * w,  v2y = y + (c - s) * h;
-    const auto v3x = x + (c - s) * w,  v3y = y + (-c - s) * h;
-
-    const auto anyGE0X     = v0x >= 0.f || v1x >= 0.f || v2x >= 0.f || v3x >= 0.f;
-    const auto anyGE0Y     = v0y >= 0.f || v1y >= 0.f || v2y >= 0.f || v3y >= 0.f;
-    const auto anyLEWidth  = v0x <= SCREEN_WIDTH  || v1x <= SCREEN_WIDTH  || v2x <= SCREEN_WIDTH  || v3x <= SCREEN_WIDTH;
-    const auto anyLEHeight = v0y <= SCREEN_HEIGHT || v1y <= SCREEN_HEIGHT || v2y <= SCREEN_HEIGHT || v3y <= SCREEN_HEIGHT;
-    if (!(anyGE0X && anyGE0Y && anyLEWidth && anyLEHeight)) {
+    auto [xs, ys] = CalcSpriteQuadCoeffs(angle);
+    for (auto&& [cx, cy] : rngv::zip(xs, ys)) {
+        cx = cx * w + x;
+        cy = cy * h + y;
+    }
+    if (IsSpriteOffScreen(xs, ys)) {
         return;
     }
 
-    const auto zRemap = (z - CDraw::ms_fNearClipZ) * (m_f2DFarScreenZ - m_f2DNearScreenZ) * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * z)
-        + m_f2DNearScreenZ;
-
-    const auto emissiveColor = CRGBA{
-        static_cast<uint8>((r * intensity) >> 8),
-        static_cast<uint8>((g * intensity) >> 8),
-        static_cast<uint8>((b * intensity) >> 8),
-        a12
-    }.ToIntARGB();
-
-    RwD3D9Vertex* vertices = &TempBufferVertices.m_2d[4 * nSpriteBufferIndex];
-    vertices[0] = { .x = v0x, .y = v0y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = emissiveColor };
-    vertices[1] = { .x = v1x, .y = v1y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = emissiveColor };
-    vertices[2] = { .x = v2x, .y = v2y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = emissiveColor };
-    vertices[3] = { .x = v3x, .y = v3y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = emissiveColor };
-
-    auto* indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
-    indices[0] = 4 * nSpriteBufferIndex;
-    indices[1] = 4 * nSpriteBufferIndex + 1;
-    indices[2] = 4 * nSpriteBufferIndex + 2;
-    indices[3] = 4 * nSpriteBufferIndex + 3;
-    indices[4] = 4 * nSpriteBufferIndex;
-    indices[5] = 4 * nSpriteBufferIndex + 2;
-
-    nSpriteBufferIndex++;
-    if (nSpriteBufferIndex >= 384) {
-        CSprite::FlushSpriteBuffer();
-    }
+    SetSpriteVertices(
+        &TempBufferVertices.m_2d[4 * nSpriteBufferIndex],
+        xs,
+        ys,
+        CalcSpriteScreenZ(z, m_f2DNearScreenZ, m_f2DFarScreenZ),
+        recipNearZ,
+        CalcSpriteColor(r, g, b, alpha, intensity)
+    );
+    PushSpriteQuad();
 }
 
 // 0x70EAB0
 void CSprite::RenderBufferedOneXLUSprite_Rotate_Dimension(CVector pos, CVector2D size, uint8 r, uint8 g, uint8 b, int16 intensity, float rz, float rotation, uint8 a) {
     m_bFlushSpriteBufferSwitchZTest = false;
 
-    const auto s = std::sin(rotation);
-    const auto c = std::cos(rotation);
+    const float fSin = std::sin(rotation);
+    const float fCos = std::cos(rotation);
+    const float wCos = size.x * fCos;
+    const float hSin = fSin * size.y;
+    const float hCos = size.y * fCos;
+    const float wSin = fSin * size.x;
 
-    const auto v0x = pos.x - size.x * c - size.y * s, v0y = pos.y - size.y * c + size.x * s;
-    const auto v1x = pos.x - size.x * c + size.y * s, v1y = pos.y + size.y * c + size.x * s;
-    const auto v2x = pos.x + size.x * c + size.y * s, v2y = pos.y + size.y * c - size.x * s;
-    const auto v3x = pos.x + size.x * c - size.y * s, v3y = pos.y - size.y * c - size.x * s;
-
-    const auto anyGE0X     = v0x >= 0.f || v1x >= 0.f || v2x >= 0.f || v3x >= 0.f;
-    const auto anyGE0Y     = v0y >= 0.f || v1y >= 0.f || v2y >= 0.f || v3y >= 0.f;
-    const auto anyLEWidth  = v0x <= SCREEN_WIDTH  || v1x <= SCREEN_WIDTH  || v2x <= SCREEN_WIDTH  || v3x <= SCREEN_WIDTH;
-    const auto anyLEHeight = v0y <= SCREEN_HEIGHT || v1y <= SCREEN_HEIGHT || v2y <= SCREEN_HEIGHT || v3y <= SCREEN_HEIGHT;
-    if (!(anyGE0X && anyGE0Y && anyLEWidth && anyLEHeight)) {
+    const CornerCoords1D xs{
+        (pos.x - wCos) - hSin,
+        (pos.x - wCos) + hSin,
+        hSin + wCos + pos.x,
+        (pos.x + wCos) - hSin,
+    };
+    const CornerCoords1D ys{
+        (pos.y - hCos) + wSin,
+        hCos + wSin + pos.y,
+        (hCos + pos.y) - wSin,
+        (pos.y - hCos) - wSin,
+    };
+    if (IsSpriteOffScreen(xs, ys)) {
         return;
     }
 
-    const auto zRemap = (pos.z - CDraw::ms_fNearClipZ) * (m_f2DFarScreenZ - m_f2DNearScreenZ) * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * pos.z)
-        + m_f2DNearScreenZ;
-
-    const auto emissiveColor = CRGBA{
-        static_cast<uint8>((r * intensity) >> 8),
-        static_cast<uint8>((g * intensity) >> 8),
-        static_cast<uint8>((b * intensity) >> 8),
-        a
-    }.ToIntARGB();
-
-    RwD3D9Vertex* vertices = &TempBufferVertices.m_2d[4 * nSpriteBufferIndex];
-    vertices[0] = { .x = v0x, .y = v0y, .z = zRemap, .rhw = rz, .emissiveColor = emissiveColor };
-    vertices[1] = { .x = v1x, .y = v1y, .z = zRemap, .rhw = rz, .emissiveColor = emissiveColor };
-    vertices[2] = { .x = v2x, .y = v2y, .z = zRemap, .rhw = rz, .emissiveColor = emissiveColor };
-    vertices[3] = { .x = v3x, .y = v3y, .z = zRemap, .rhw = rz, .emissiveColor = emissiveColor };
-
-    auto* indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
-    indices[0] = 4 * nSpriteBufferIndex;
-    indices[1] = 4 * nSpriteBufferIndex + 1;
-    indices[2] = 4 * nSpriteBufferIndex + 2;
-    indices[3] = 4 * nSpriteBufferIndex + 3;
-    indices[4] = 4 * nSpriteBufferIndex;
-    indices[5] = 4 * nSpriteBufferIndex + 2;
-
-    nSpriteBufferIndex++;
-    if (nSpriteBufferIndex >= 384) {
-        CSprite::FlushSpriteBuffer();
-    }
+    SetSpriteVertices(
+        &TempBufferVertices.m_2d[4 * nSpriteBufferIndex],
+        xs,
+        ys,
+        CalcSpriteScreenZ(pos.z, m_f2DNearScreenZ, m_f2DFarScreenZ),
+        rz,
+        CalcSpriteColor(r, g, b, a, intensity)
+    );
+    PushSpriteQuad();
 }
 
 // 0x70EDE0
-void CSprite::RenderBufferedOneXLUSprite_Rotate_2Colours(float x, float y, float z, float w, float h, uint8 r1, uint8 g1, uint8 b1, uint8 r2, uint8 g2, uint8 b2, float dirX, float dirY, float recipNearZ, float rotation, uint8 a) {
+void CSprite::RenderBufferedOneXLUSprite_Rotate_2Colours(float x, float y, float z, float w, float h, uint8 r1, uint8 g1, uint8 b1, uint8 r2, uint8 g2, uint8 b2, float rotFactorX, float rotFactorY, float rz, float rotation, uint8 alpha) {
     m_bFlushSpriteBufferSwitchZTest = false;
 
-    const auto s = std::sin(rotation);
-    const auto c = std::cos(rotation);
+    const auto coeffs = CalcSpriteQuadCoeffs(rotation);
+    CornerCoords1D        xs, ys;
+    std::array<uint32, 4> colors;
+    for (auto&& [i, cx] : rngv::enumerate(coeffs.xs)) {
+        xs[i] = cx * w + x;
+        ys[i] = coeffs.ys[i] * h + y;
 
-    // Same "Aspect" quad shape as RenderBufferedOneXLUSprite_Rotate_Aspect; kept as the raw unit
-    // offsets too, since they double as the per-vertex gradient-projection axis below.
-    const auto V0X = -c - s, V0Y = s - c;
-    const auto V1X = s - c,  V1Y = c + s;
-    const auto V2X = c + s,  V2Y = c - s;
-    const auto V3X = c - s,  V3Y = -c - s;
-
-    const auto v0x = x + V0X * w, v0y = y + V0Y * h;
-    const auto v1x = x + V1X * w, v1y = y + V1Y * h;
-    const auto v2x = x + V2X * w, v2y = y + V2Y * h;
-    const auto v3x = x + V3X * w, v3y = y + V3Y * h;
-
-    const auto anyGE0X     = v0x >= 0.f || v1x >= 0.f || v2x >= 0.f || v3x >= 0.f;
-    const auto anyGE0Y     = v0y >= 0.f || v1y >= 0.f || v2y >= 0.f || v3y >= 0.f;
-    const auto anyLEWidth  = v0x <= SCREEN_WIDTH  || v1x <= SCREEN_WIDTH  || v2x <= SCREEN_WIDTH  || v3x <= SCREEN_WIDTH;
-    const auto anyLEHeight = v0y <= SCREEN_HEIGHT || v1y <= SCREEN_HEIGHT || v2y <= SCREEN_HEIGHT || v3y <= SCREEN_HEIGHT;
-    if (!(anyGE0X && anyGE0Y && anyLEWidth && anyLEHeight)) {
+        const auto t = std::clamp((coeffs.ys[i] * rotFactorY + cx * rotFactorX + 1.0f) * 0.5f, 0.0f, 1.0f);
+        colors[i] = CRGBA{
+            static_cast<uint8>(r2 * (1.0f - t) + r1 * t),
+            static_cast<uint8>(g2 * (1.0f - t) + g1 * t),
+            static_cast<uint8>(b2 * (1.0f - t) + b1 * t),
+            alpha
+        }.ToIntARGB();
+    }
+    if (IsSpriteOffScreen(xs, ys)) {
         return;
     }
 
-    const auto zRemap = (z - CDraw::ms_fNearClipZ) * (m_f2DFarScreenZ - m_f2DNearScreenZ) * CDraw::ms_fFarClipZ
-        / ((CDraw::ms_fFarClipZ - CDraw::ms_fNearClipZ) * z)
-        + m_f2DNearScreenZ;
-
-    // Blend weight for this corner = how far it projects onto the (dirX, dirY) gradient axis,
-    // remapped from a [-1, 1]-ish dot product into [0, 1] and clamped.
-    const auto BlendCorner = [&](float cx, float cy, uint8 c1, uint8 c2) {
-        const auto bf = std::clamp(0.5f * (1.0f + dirX * cx + dirY * cy), 0.0f, 1.0f);
-        return static_cast<uint8>(std::lround(c2 * (1.0f - bf) + c1 * bf));
-    };
-    const auto MakeColor = [&](float cx, float cy) {
-        return CRGBA{ BlendCorner(cx, cy, r1, r2), BlendCorner(cx, cy, g1, g2), BlendCorner(cx, cy, b1, b2), a }.ToIntARGB();
-    };
-
-    RwD3D9Vertex* vertices = &TempBufferVertices.m_2d[4 * nSpriteBufferIndex];
-    vertices[0] = { .x = v0x, .y = v0y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = MakeColor(V0X, V0Y), .u = 0.0f, .v = 0.0f };
-    vertices[1] = { .x = v1x, .y = v1y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = MakeColor(V1X, V1Y), .u = 0.0f, .v = 1.0f };
-    vertices[2] = { .x = v2x, .y = v2y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = MakeColor(V2X, V2Y), .u = 1.0f, .v = 1.0f };
-    vertices[3] = { .x = v3x, .y = v3y, .z = zRemap, .rhw = recipNearZ, .emissiveColor = MakeColor(V3X, V3Y), .u = 1.0f, .v = 0.0f };
-
-    auto* indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
-    indices[0] = 4 * nSpriteBufferIndex;
-    indices[1] = 4 * nSpriteBufferIndex + 1;
-    indices[2] = 4 * nSpriteBufferIndex + 2;
-    indices[3] = 4 * nSpriteBufferIndex + 3;
-    indices[4] = 4 * nSpriteBufferIndex;
-    indices[5] = 4 * nSpriteBufferIndex + 2;
-
-    nSpriteBufferIndex++;
-    if (nSpriteBufferIndex >= 384) {
-        CSprite::FlushSpriteBuffer();
-    }
+    SetSpriteVertices(
+        &TempBufferVertices.m_2d[4 * nSpriteBufferIndex],
+        xs,
+        ys,
+        s_SpriteUs,
+        s_SpriteVs,
+        CalcSpriteScreenZ(z, m_f2DNearScreenZ, m_f2DFarScreenZ),
+        rz,
+        colors
+    );
+    PushSpriteQuad();
 }
 
 // 0x70F440
@@ -570,18 +557,7 @@ void CSprite::RenderBufferedOneXLUSprite2D(CVector2D pos, CVector2D size, const 
     Set4Vertices2D(
         vertices, rect, scaledColor, scaledColor, scaledColor, scaledColor
     );
-
-    auto* indices = &aTempBufferIndices[6 * nSpriteBufferIndex];
-    indices[0] = 4 * nSpriteBufferIndex;
-    indices[1] = 4 * nSpriteBufferIndex + 1;
-    indices[2] = 4 * nSpriteBufferIndex + 2;
-    indices[3] = 4 * nSpriteBufferIndex + 2;
-    indices[4] = 4 * nSpriteBufferIndex;
-    indices[5] = 4 * nSpriteBufferIndex + 3;
-    nSpriteBufferIndex++;
-    if (nSpriteBufferIndex >= 384) {
-        CSprite::FlushSpriteBuffer();
-    }
+    PushSpriteQuad();
 }
 
 // unused

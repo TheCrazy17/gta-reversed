@@ -17,7 +17,6 @@ void CTaskComplexPlayHandSignalAnim::InjectHooks() {
 
     RH_ScopedInstall(GetAnimIdForPed, 0x61B460);
     RH_ScopedInstall(CreateSubTask, 0x61B2F0);
-
     RH_ScopedVMTInstall(Clone, 0x61BA00);
     RH_ScopedVMTInstall(GetTaskType, 0x61B2E0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x61B570);

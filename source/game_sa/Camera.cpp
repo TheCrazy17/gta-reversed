@@ -85,7 +85,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(GetLookingLRBFirstPerson, 0x50AE60);
     RH_ScopedInstall(GetLookDirection, 0x50AE90);
     RH_ScopedInstall(GetLookingForwardFirstPerson, 0x50AED0);
-    RH_ScopedInstall(CopyCameraMatrixToRWCam, 0x50AFA0, { .reversed = false });
+    RH_ScopedInstall(CopyCameraMatrixToRWCam, 0x50AFA0, { .Reversed = false });
     RH_ScopedInstall(CalculateMirroredMatrix, 0x50B380);
     RH_ScopedInstall(DealWithMirrorBeforeConstructRenderList, 0x50B510);
     RH_ScopedInstall(ProcessFade, 0x50B5D0);
@@ -127,28 +127,27 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(DrawBordersForWideScreen, 0x514860);
     RH_ScopedInstall(Find3rdPersonCamTargetVector, 0x514970);
     RH_ScopedInstall(CalculateGroundHeight, 0x514B80);
-    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60);
-    RH_ScopedInstall(CalculateDerivedValues, 0x5150E0);
-    RH_ScopedInstall(ImproveNearClip, 0x516B20);
+    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60, { .Reversed = false });
+    RH_ScopedInstall(CalculateDerivedValues, 0x5150E0, { .Reversed = false });
+    RH_ScopedInstall(ImproveNearClip, 0x516B20, { .Reversed = false });
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
-    RH_ScopedInstall(IsActiveCamUnderwater, 0x50B830);
-    RH_ScopedInstall(TryToStartNewCamMode, 0x51E560, { .reversed = false });
-    RH_ScopedInstall(CameraColDetAndReact, 0x520190);
-    RH_ScopedInstall(CamControl, 0x527FA0, { .reversed = false });
-    RH_ScopedInstall(Process, 0x52B730, { .reversed = false });
+    RH_ScopedInstall(TryToStartNewCamMode, 0x51E560, { .Reversed = false });
+    RH_ScopedInstall(CameraColDetAndReact, 0x520190, { .Reversed = false });
+    RH_ScopedInstall(CamControl, 0x527FA0, { .Reversed = false });
+    RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
-    RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
+    RH_ScopedInstall(LoadPathSplines, 0x5B24D0, { .Reversed = false });
     RH_ScopedInstall(Init, 0x5BC520);
 
-    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "0", 0x50D350, void(CCamera::*)(float));
-    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "1", 0x516440, void(CCamera::*)());
-    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "0", 0x50D430, void(CCamera::*)(float));
-    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "1", 0x5164A0, void(CCamera::*)());
-    RH_ScopedOverloadedInstall(ProcessFOVLerp, "0", 0x50D510, void(CCamera::*)(float));
-    RH_ScopedOverloadedInstall(ProcessFOVLerp, "1", 0x516500, void(CCamera::*)());
-    //RH_ScopedOverloadedInstall(ProcessJiggle, "0", 0x516560, { .reversed = false });
+    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "with-ratio", 0x50D350, void(CCamera::*)(float));
+    RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "wo-ratio", 0x516440, void(CCamera::*)());
+    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "with-ratio", 0x50D430, void(CCamera::*)(float));
+    RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "wo-ratio", 0x5164A0, void(CCamera::*)());
+    RH_ScopedOverloadedInstall(ProcessFOVLerp, "with-ratio", 0x50D510, void(CCamera::*)(float));
+    RH_ScopedOverloadedInstall(ProcessFOVLerp, "wo-ratio", 0x516500, void(CCamera::*)());
+    //RH_ScopedOverloadedInstall(ProcessJiggle, "0", 0x516560, { .Reversed = false });
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
 }
@@ -1321,21 +1320,23 @@ void CCamera::HandleCameraMotionForDuckingDuringAim(CPed* ped, CVector* source, 
 }
 
 // 0x50D160
-void CCamera::VectorMoveLinear(CVector* to, CVector* from, float duration, bool bMoveLinearWithEase) {
-    m_fMoveLinearStartTime = static_cast<float>(CTimer::GetTimeInMS());
-    m_fMoveLinearEndTime = m_fMoveLinearStartTime + duration;
-    m_vecMoveLinearPosnStart = *from;
-    m_vecMoveLinearPosnEnd = *to;
-    m_bMoveLinearWithEase = bMoveLinearWithEase;
+void CCamera::VectorMoveLinear(CVector& to, CVector& from, float duration, bool bMoveLinearWithEase) {
+    const auto time = (float)CTimer::GetTimeInMS();
+    m_fMoveLinearStartTime   = time;
+    m_fMoveLinearEndTime     = time + duration;
+    m_vecMoveLinearPosnStart = from;
+    m_vecMoveLinearPosnEnd   = to;
+    m_bMoveLinearWithEase    = bMoveLinearWithEase;
 }
 
 // 0x50D1D0
-void CCamera::VectorTrackLinear(CVector* to, CVector* from, float duration, bool bEase) {
-    m_fTrackLinearStartTime = static_cast<float>(CTimer::GetTimeInMS());
-    m_fTrackLinearEndTime = m_fTrackLinearStartTime + duration;
-    m_vecTrackLinearEndPoint = *from;
-    m_vecTrackLinearStartPoint = *to;
-    m_bTrackLinearWithEase = bEase;
+void CCamera::VectorTrackLinear(CVector& to, CVector& from, float duration, bool bEase) {
+    const auto time = (float)CTimer::GetTimeInMS();
+    m_fTrackLinearStartTime    = time;
+    m_fTrackLinearEndTime      = time + duration;
+    m_vecTrackLinearEndPoint   = from;
+    m_vecTrackLinearStartPoint = to;
+    m_bTrackLinearWithEase     = bEase;
 }
 
 // 0x516400
@@ -1482,7 +1483,8 @@ void CCamera::ProcessWideScreenOn() {
 
 // 0x516440
 void CCamera::ProcessVectorTrackLinear() {
-    if (const auto now = static_cast<float>(CTimer::GetTimeInMS()); now <= m_fTrackLinearEndTime) {
+    const auto now = (float)CTimer::GetTimeInMS();
+    if (now <= m_fTrackLinearEndTime) {
         ProcessVectorTrackLinear(invLerp(m_fTrackLinearStartTime, m_fTrackLinearEndTime, now));
     } else if (m_bCameraPersistTrack) {
         m_bVecTrackLinearProcessed = true;
@@ -1492,12 +1494,10 @@ void CCamera::ProcessVectorTrackLinear() {
 // 0x50D350
 void CCamera::ProcessVectorTrackLinear(float ratio) {
     m_bVecTrackLinearProcessed = true;
-
-    const auto t = m_bTrackLinearWithEase
-        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+    const auto progress = m_bTrackLinearWithEase
+        ? (std::sin(DegreesToRadians(270.0f - ratio * 180.0f)) + 1.0f) * 0.5f
         : ratio;
-
-    m_vecTrackLinear = (m_vecTrackLinearEndPoint - m_vecTrackLinearStartPoint) * t + m_vecTrackLinearStartPoint;
+    m_vecTrackLinear = (m_vecTrackLinearStartPoint - m_vecTrackLinearEndPoint) * progress + m_vecTrackLinearEndPoint;
 }
 
 //
@@ -1518,12 +1518,10 @@ void CCamera::ProcessObbeCinemaCameraHeli() {
 // 0x50D430
 void CCamera::ProcessVectorMoveLinear(float ratio) {
     m_bVecMoveLinearProcessed = true;
-
-    const auto t = m_bMoveLinearWithEase
-        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+    const auto progress = m_bMoveLinearWithEase
+        ? (std::sin(DegreesToRadians(270.0f - ratio * 180.0f)) + 1.0f) * 0.5f
         : ratio;
-
-    m_vecMoveLinear = (m_vecMoveLinearPosnEnd - m_vecMoveLinearPosnStart) * t + m_vecMoveLinearPosnStart;
+    m_vecMoveLinear = (m_vecMoveLinearPosnEnd - m_vecMoveLinearPosnStart) * progress + m_vecMoveLinearPosnStart;
 }
 
 // 0x516500
@@ -1538,17 +1536,16 @@ void CCamera::ProcessFOVLerp() {
 // 0x50D510
 void CCamera::ProcessFOVLerp(float ratio) {
     m_bFOVLerpProcessed = true;
-
-    const auto t = m_nZoomMode // TODO: Rename (see LerpFOV) - acts as the "with ease" flag here
-        ? (std::sin((270.0f - ratio * 180.0f) * DEG_TO_RAD) + 1.0f) * 0.5f
+    const auto progress = m_nZoomMode != 0
+        ? (std::sin(DegreesToRadians(270.0f - ratio * 180.0f)) + 1.0f) * 0.5f
         : ratio;
-
-    m_fFOVNew = (m_fZoomOutFactor - m_fZoomInFactor) * t + m_fZoomInFactor;
+    m_fFOVNew = (m_fZoomOutFactor - m_fZoomInFactor) * progress + m_fZoomInFactor;
 }
 
 // 0x5164A0
 void CCamera::ProcessVectorMoveLinear() {
-    if (const auto now = static_cast<float>(CTimer::GetTimeInMS()); now <= m_fMoveLinearEndTime) {
+    const auto now = (float)CTimer::GetTimeInMS();
+    if (now <= m_fMoveLinearEndTime) {
         ProcessVectorMoveLinear(invLerp(m_fMoveLinearStartTime, m_fMoveLinearEndTime, now));
     } else if (m_bCameraPersistPosition) {
         m_bVecMoveLinearProcessed = true;
@@ -1596,12 +1593,12 @@ void CCamera::DrawBordersForWideScreen() {
 
 // 0x4748A0
 bool CCamera::VectorMoveRunning() const {
-    return CTimer::m_snTimeInMilliseconds <= m_fMoveLinearEndTime;
+    return CTimer::GetTimeInMS() <= m_fMoveLinearEndTime;
 }
 
 // 0x474891
 bool CCamera::VectorTrackRunning() const {
-    return CTimer::m_snTimeInMilliseconds <= m_fTrackLinearEndTime;
+    return CTimer::GetTimeInMS() <= m_fTrackLinearEndTime;
 }
 
 // 0x514950

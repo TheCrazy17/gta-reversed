@@ -22,11 +22,11 @@ void CPedAttractor::InjectHooks() {
     RH_ScopedInstall(IsAtHeadOfQueue, 0x5EB530);
     RH_ScopedInstall(GetTaskForPed, 0x5EC500);
     RH_ScopedInstall(GetQueueSlot, 0x5EB550);
-    //RH_ScopedInstall(GetNoOfRegisteredPeds, 0xdeadbeef, { .reversed = false }); // Address incorrect
+    //RH_ScopedInstall(GetNoOfRegisteredPeds, 0xdeadbeef, { .Reversed = false }); // Address incorrect
     RH_ScopedInstall(GetHeadOfQueue, 0x5EB590);
     RH_ScopedInstall(GetTailOfQueue, 0x5EB5B0);
     RH_ScopedInstall(HasEmptySlot, 0x5EAF10);
-    //RH_ScopedInstall(ComputeFreeSlot, 0x0, { .reversed = false });
+    //RH_ScopedInstall(ComputeFreeSlot, 0x0, { .Reversed = false });
     RH_ScopedInstall(ComputeDeltaPos, 0x5E9600);
     RH_ScopedInstall(ComputeDeltaHeading, 0x5E9640);
     RH_ScopedInstall(ComputeAttractTime, 0x5E95E0);

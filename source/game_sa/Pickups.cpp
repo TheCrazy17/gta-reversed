@@ -28,11 +28,11 @@ void CPickups::InjectHooks() {
     RH_ScopedInstall(DoCollectableEffects, 0x455E20);
     RH_ScopedInstall(DoMineEffects, 0x4560E0);
     RH_ScopedInstall(DoMoneyEffects, 0x454E80);
-    RH_ScopedInstall(DoPickUpEffects, 0x455720, { .reversed = false });
+    RH_ScopedInstall(DoPickUpEffects, 0x455720, { .Reversed = false });
     RH_ScopedInstall(FindPickUpForThisObject, 0x4551C0);
 
     // Cannot be hooked at all for now due to ABI fuckery, the return value is 32 bit, but causes the function to assume the calling convention of of T* Function(T*, ...)
-    //RH_ScopedInstall(GenerateNewOne, 0x456F20, { .reversed = false });
+    //RH_ScopedInstall(GenerateNewOne, 0x456F20, { .Reversed = false });
 
     RH_ScopedInstall(GenerateNewOne_WeaponType, 0x457380);
     RH_ScopedInstall(GetActualPickupIndex, 0x4552A0);
