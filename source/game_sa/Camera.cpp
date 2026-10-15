@@ -1699,9 +1699,10 @@ void CCamera::AvoidTheGeometry(const CVector* source, const CVector* target, CVe
     static auto& sphereScale = StaticRef<float>(0x8CC820);
     static auto& motionFactor = StaticRef<float>(0xB6EC38);
     static auto& motionSpeed = StaticRef<float>(0xB6EC3C);
+    static auto& tempSphereColPoints = StaticRef<std::array<CColPoint, 32>>(0xB9B250); // gaTempSphereColPoints
 
     const auto delta = *target - *source;
-    m_vecClearGeometryVec = {};
+    m_vecClearGeometryVec = CVector{};
     const auto horizontalDistance = delta.Magnitude2D();
     const auto& forward = m_mCameraMatrix.GetForward();
     const float heading = delta.x == 0.0f && delta.y == 0.0f
@@ -1742,7 +1743,7 @@ void CCamera::AvoidTheGeometry(const CVector* source, const CVector* target, CVe
     const auto sphereCenter = *output + direction * nearClip;
     float desiredMotion = 0.0f;
     if (CWorld::TestSphereAgainstWorld(sphereCenter, radius, nullptr, true, false, false, true, false, true)) {
-        const auto& point = gaTempSphereColPoints[0];
+        const auto& point = tempSphereColPoints[0];
         auto displacement = point.m_vecPoint - sphereCenter;
         const float collisionDistance = DotProduct(point.m_vecPoint - *output, direction);
         if (collisionDistance > minimumNearClip && collisionDistance < 0.9f) {
@@ -1760,7 +1761,7 @@ void CCamera::AvoidTheGeometry(const CVector* source, const CVector* target, CVe
         }
         desiredMotion = 1.0f;
         m_vecClearGeometryVec = normal * DotProduct(-displacement * penetration, normal);
-        if (m_pTargetEntity && m_pTargetEntity->IsPed() && RwCameraGetNearClipPlane(Scene.m_pRwCamera) < minimumNearClip + minimumNearClip) {
+        if (m_pTargetEntity && m_pTargetEntity->GetIsTypePed() && RwCameraGetNearClipPlane(Scene.m_pRwCamera) < minimumNearClip + minimumNearClip) {
             const float facing = DotProduct(normal, m_pTargetEntity->GetMatrix().GetForward());
             if (facing < 0.0f) {
                 m_fAvoidTheGeometryProbsTimer = std::max(m_fAvoidTheGeometryProbsTimer, 0.0f) + CTimer::GetTimeStep();

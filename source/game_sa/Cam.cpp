@@ -111,7 +111,7 @@ static bool GetArrestCameraPositionOnGround(CEntity* target, CPed* cop, const CV
     source += CrossProduct(direction, CVector{0.0f, 0.0f, 1.0f}) * StaticRef<float>(0x8CC7F4);
     source.z = lookAt.z + 5.0f;
     bool foundGround{};
-    const auto ground = CWorld::FindGroundZFor3DCoord(source.x, source.y, source.z, &foundGround, nullptr);
+    const auto ground = CWorld::FindGroundZFor3DCoord(source, &foundGround);
     if (foundGround) {
         source.z = ground + StaticRef<float>(0x8CC7F8);
     }
@@ -1173,7 +1173,7 @@ bool CCam::ProcessArrestCamFirstPerson(CPed* cop, bool firstFrame) {
         return false;
     }
     auto* target = TheCamera.m_pTargetEntity;
-    if (!target->IsPed() || !cop) {
+    if (!target->GetIsTypePed() || !cop) {
         return false;
     }
     const auto t = std::clamp((float)(((double)CTimer::GetTimeInMS() - StaticRef<float>(0xB6EC60) - StaticRef<float>(0xB70024)) / StaticRef<float>(0x8CCCB0)), 0.0f, 1.0f);
@@ -1186,7 +1186,7 @@ bool CCam::ProcessArrestCamFirstPerson(CPed* cop, bool firstFrame) {
     }
     if (!(initialized & 2)) {
         initialized |= 2;
-        StaticRef<CVector>(0xB70004) = {0.0f, 0.0f, -0.5f};
+        StaticRef<CVector>(0xB70004) = CVector{0.0f, 0.0f, -0.5f};
     }
     const auto oldSource = m_vecSource;
     m_vecSource = target->GetPosition() + StaticRef<CVector>(0xB70004);
@@ -1234,9 +1234,9 @@ bool CCam::ProcessArrestCamOne() {
 
     CPed* ped{};
     CVector lookAt;
-    if (target->IsPed()) {
+    if (target->GetIsTypePed()) {
         ped = target->AsPed();
-    } else if (target->IsVehicle()) {
+    } else if (target->GetIsTypeVehicle()) {
         auto* driver = target->AsVehicle()->m_pDriver;
         if (driver && driver->IsPlayer()) {
             ped = driver;
@@ -1255,7 +1255,7 @@ bool CCam::ProcessArrestCamOne() {
         const auto beforeCollision = m_vecSource;
         TheCamera.AvoidTheGeometry(&beforeCollision, &lookAt, &m_vecSource, m_fFOV);
         m_vecFront = (lookAt - m_vecSource).Normalized();
-        m_vecUp = {0.0f, 0.0f, 1.0f};
+        m_vecUp = CVector{0.0f, 0.0f, 1.0f};
         const auto right = CrossProduct(m_vecFront, m_vecUp).Normalized();
         m_vecUp = CrossProduct(right, m_vecFront);
     };
@@ -1264,7 +1264,7 @@ bool CCam::ProcessArrestCamOne() {
         auto* cop = GetArrestingCop();
         std::array<int32, 6> choices{-1, -1, -1, -1, -1, -1};
         const auto randomScale = StaticRef<float>(0x858C7C);
-        if (target->IsPed()) {
+        if (target->GetIsTypePed()) {
             choices = cop && (float)CGeneral::GetRandomNumber() * randomScale > 0.5f
                 ? std::array<int32, 6>{1, 2, 3, 2, 8, -1}
                 : std::array<int32, 6>{1, 3, 2, 8, -1, -1};
@@ -1347,7 +1347,7 @@ bool CCam::ProcessArrestCamOne() {
     } else if (mode >= 4 && mode <= 7) {
         source = m_vecSource;
         m_vecFront = (lookAt - source).Normalized();
-        m_vecUp = {0.0f, 0.0f, 1.0f};
+        m_vecUp = CVector{0.0f, 0.0f, 1.0f};
         auto side = CrossProduct(m_vecFront, m_vecUp).Normalized();
         if (mode == 6 || mode == 7) {
             side = -side;
@@ -1358,7 +1358,7 @@ bool CCam::ProcessArrestCamOne() {
                 source.z += CTimer::GetTimeStep() * StaticRef<float>(0x8CC7E8);
             } else {
                 bool foundGround{};
-                const auto ground = CWorld::FindGroundZFor3DCoord(source.x, source.y, source.z, &foundGround, nullptr);
+                const auto ground = CWorld::FindGroundZFor3DCoord(source, &foundGround);
                 if (foundGround) {
                     source.z = ground + StaticRef<float>(0x8CC7F8);
                 }
@@ -1370,7 +1370,7 @@ bool CCam::ProcessArrestCamOne() {
         m_vecFront = lookAt - source;
         m_vecFront.z = 0.0f;
         m_vecFront.Normalise();
-        m_vecUp = {0.0f, 0.0f, 1.0f};
+        m_vecUp = CVector{0.0f, 0.0f, 1.0f};
         const auto side = CrossProduct(m_vecFront, m_vecUp).Normalized();
         m_vecFront = lookAt - source + side * StaticRef<float>(0x8CC7FC);
         m_vecFront.z = 0.0f;
@@ -1402,9 +1402,9 @@ void CCam::ProcessPedsDeadBaby() {
 
     auto* entity = TheCamera.m_pTargetEntity;
     CVector target;
-    if (entity->IsPed()) {
+    if (entity->GetIsTypePed()) {
         entity->AsPed()->GetBonePosition(&target, BONE_SPINE1, true);
-    } else if (entity->IsVehicle()) {
+    } else if (entity->GetIsTypeVehicle()) {
         target = entity->GetPosition();
         target.z += entity->GetColModel()->GetBoundingBox().m_vecMax.z;
     } else {
@@ -4803,7 +4803,7 @@ void CCam::Process_SpecialFixedForSyphon(const CVector& target, float, float, fl
     m_vecFront = CrossProduct(right, m_vecUp).Normalized();
     m_fFOV = 70.0f;
 
-    if (m_pCamTargetEntity && m_pCamTargetEntity->IsPed()) {
+    if (m_pCamTargetEntity && m_pCamTargetEntity->GetIsTypePed()) {
         auto* ped = m_pCamTargetEntity->AsPed();
         if (ped->m_pTargetedObject) {
             const auto* weapon = CWeaponInfo::GetWeaponInfo(ped->GetActiveWeapon().m_Type, ped->GetWeaponSkill());
