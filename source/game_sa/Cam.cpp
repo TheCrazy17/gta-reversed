@@ -194,7 +194,7 @@ void CCam::InjectHooks() {
     RH_ScopedInstall(Process_AttachedCam, 0x512B10);
     RH_ScopedInstall(Process_Cam_TwoPlayer, 0x525E50, { .Reversed = false });
     RH_ScopedInstall(Process_Cam_TwoPlayer_InCarAndShooting, 0x519810, { .Reversed = false });
-    RH_ScopedInstall(Process_Cam_TwoPlayer_Separate_Cars, 0x513510, { .Reversed = false });
+    RH_ScopedInstall(Process_Cam_TwoPlayer_Separate_Cars, 0x513510);
     RH_ScopedInstall(Process_Cam_TwoPlayer_Separate_Cars_TopDown, 0x513BE0);
     RH_ScopedInstall(Process_DW_BirdyCam, 0x51B850);
     RH_ScopedInstall(Process_DW_CamManCam, 0x51B120);
@@ -1760,7 +1760,89 @@ void CCam::Process_Cam_TwoPlayer_InCarAndShooting() {
 
 // 0x513510
 void CCam::Process_Cam_TwoPlayer_Separate_Cars() {
-    NOTSA_UNREACHABLE();
+    m_fFOV = 80.0f;
+
+    // NOTE: Two cam fields repurposed by this mode as the tracked player index and the [0,1] transition
+    auto& trackedPlayer = *reinterpret_cast<int32*>(&m_pCarWeAreFocussingOn);
+    auto& transition    = *reinterpret_cast<float*>(&m_pCarWeAreFocussingOnI);
+
+    CVehicle* player1Vehicle = FindPlayerVehicle(PED_TYPE_PLAYER1, false);
+    CVehicle* player2Vehicle = FindPlayerVehicle(PED_TYPE_PLAYER2, false);
+    const auto player1Pos    = player1Vehicle->GetPosition();
+    const auto player2Pos    = player2Vehicle->GetPosition();
+
+    const CVector delta = (player2Pos - player1Pos).Normalized();
+
+    // Anchors 6 units behind each vehicle, raised to the top of their collision box
+    const auto GetTopZ = [](CVehicle* veh) { return veh->GetColModel()->m_boundBox.m_vecMax.z + 1.0f; };
+    CVector player1Anchor{
+        player1Pos.x - 6.0f * delta.x,
+        player1Pos.y - 6.0f * delta.y,
+        player1Pos.z + GetTopZ(player1Vehicle) - 6.0f * delta.z
+    };
+    CVector player2Anchor{
+        player2Pos.x + 6.0f * delta.x,
+        player2Pos.y + 6.0f * delta.y,
+        player2Pos.z + GetTopZ(player2Vehicle) + 6.0f * delta.z
+    };
+
+    // Look vectors from each anchor towards the other vehicle
+    const CVector player1Look = (player2Pos - player1Anchor).Normalized();
+    const CVector player2Look = (player1Pos - player2Anchor).Normalized();
+
+    // Vector perpendicular to the line between the vehicles, slightly tilted down
+    CVector perpendicular{
+        player1Anchor.y - player2Anchor.y,
+        player2Anchor.x - player1Anchor.x,
+        0.0f
+    };
+    perpendicular.Normalise();
+    perpendicular.z = -0.1f;
+    perpendicular.Normalise();
+
+    const auto s    = std::sin(transition * PI);
+    const auto f    = (std::cos(transition * PI) + 1.0f) * 0.5f;
+    const auto invF = 1.0f - f;
+    const auto invS = 1.0f - s;
+    const auto dist = DistanceBetweenPoints(player1Pos, player2Pos);
+
+    m_vecSource = CVector{
+        f * player1Anchor.x + invF * player2Anchor.x,
+        f * player1Anchor.y + invF * player2Anchor.y,
+        f * player1Anchor.z + invF * player2Anchor.z
+    } - perpendicular * (0.75f * dist * s);
+
+    m_vecFront = (player1Look * f + player2Look * invF) * invS + perpendicular * s;
+    m_vecFront.Normalise();
+
+    m_vecTargetCoorsForFudgeInter = trackedPlayer == 0 ? player2Pos : player1Pos;
+
+    const auto side = CrossProduct(CVector{ 0.0f, 0.0f, 1.0f }, m_vecFront).Normalized();
+    m_vecUp = CrossProduct(m_vecFront, side);
+    m_vecUp.Normalise();
+
+    // Swap focus if the tracked vehicle drives away from the cam and the other one doesn't (the transition fades)
+    CVehicle* trackedVehicle = FindPlayerVehicle(trackedPlayer, false);
+    CVehicle* otherVehicle   = FindPlayerVehicle((trackedPlayer - 1) & 1, false);
+
+    CVector flatFront{ m_vecFront.x, m_vecFront.y, 0.0f };
+    flatFront.Normalise();
+
+    const auto trackedSpeedDot = DotProduct(flatFront, trackedVehicle->m_vecMoveSpeed);
+    if (trackedSpeedDot < -0.13f && trackedSpeedDot < DotProduct(-flatFront, otherVehicle->m_vecMoveSpeed)) {
+        trackedPlayer = (trackedPlayer - 1) & 1;
+    }
+
+    const auto step = CTimer::GetTimeStep() * 0.04f;
+    if (trackedPlayer == 0) {
+        transition = std::max(transition - step, 0.0f);
+    } else {
+        transition += step;
+        if (transition >= 1.0f) {
+            transition = 1.0f;
+            return;
+        }
+    }
 }
 
 // 0x513BE0
