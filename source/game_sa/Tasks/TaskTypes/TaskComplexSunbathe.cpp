@@ -1,6 +1,9 @@
 #include "StdInc.h"
 #include "TaskComplexSunbathe.h"
 
+bool CanSunbathe();               // 0x632140
+bool ShouldLoadSunbatheAnims();   // 0x632190
+
 void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexSunbathe, 0x86e0ac, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
@@ -8,8 +11,8 @@ void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x631F80);
     RH_ScopedInstall(Destructor, 0x632050);
 
-    //RH_ScopedGlobalInstall(CanSunbathe, 0x632140, { .Reversed = false });
-    //RH_ScopedGlobalInstall(ShouldLoadSunbatheAnims, 0x632190, { .Reversed = false });
+    RH_ScopedGlobalInstall(CanSunbathe, 0x632140);
+    RH_ScopedGlobalInstall(ShouldLoadSunbatheAnims, 0x632190);
 
     //RH_ScopedInstall(CreateSubTask, 0x638290, { .Reversed = false });
 
@@ -73,6 +76,55 @@ bool CTaskComplexSunbathe::MakeAbortable(CPed* ped, eAbortPriority priority, CEv
         return false;
     }
     m_bAborted = true;
+    return true;
+}
+
+// 0x62F2D0
+static bool IsExtraSunnyWeather(eWeatherType weather) {
+    switch (weather) {
+    case WEATHER_EXTRASUNNY_LA:
+    case WEATHER_EXTRASUNNY_SMOG_LA:
+    case WEATHER_EXTRASUNNY_SF:
+    case WEATHER_EXTRASUNNY_VEGAS:
+    case WEATHER_EXTRASUNNY_COUNTRYSIDE:
+    case WEATHER_EXTRASUNNY_DESERT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// 0x632140
+bool CanSunbathe() {
+    const auto hour = CClock::GetGameClockHours();
+    if (hour < 10 || hour > 17) {
+        return false;
+    }
+
+    const auto weather = CWeather::NewWeatherType;
+    switch (weather) {
+    case WEATHER_SUNNY_LA:
+    case WEATHER_SUNNY_SMOG_LA:
+    case WEATHER_SUNNY_SF:
+    case WEATHER_SUNNY_VEGAS:
+    case WEATHER_SUNNY_COUNTRYSIDE:
+    case WEATHER_SUNNY_DESERT:
+        return true;
+    default:
+        return IsExtraSunnyWeather(weather);
+    }
+}
+
+// 0x632190
+bool ShouldLoadSunbatheAnims() {
+    const auto* ped = CWorld::Players[CWorld::PlayerInFocus].m_pPed;
+
+    // Don't load the animations while the player is speeding around in a vehicle
+    if (ped->bInVehicle && ped->m_pVehicle) {
+        if (ped->m_pVehicle->m_vecMoveSpeed.SquaredMagnitude() > 0.04f) { // 0x863244
+            return false;
+        }
+    }
     return true;
 }
 
