@@ -7,16 +7,16 @@ void CScriptsForBrains::InjectHooks() {
     RH_ScopedClass(CScriptsForBrains);
     RH_ScopedCategory("Tasks/TaskTypes");
 
-    RH_ScopedInstall(Init, 0x46A8C0, {.Reversed = false});
-    //RH_ScopedInstall(SwitchAllObjectBrainsWithThisID, 0x46A900, {.Reversed = false});
-    //RH_ScopedInstall(AddNewScriptBrain, 0x46A930, {.Reversed = false});
-    //RH_ScopedInstall(AddNewStreamedScriptBrainForCodeUse, 0x46A9C0, {.Reversed = false});
+    RH_ScopedInstall(Init, 0x46A8C0);
+    RH_ScopedInstall(SwitchAllObjectBrainsWithThisID, 0x46A900);
+    RH_ScopedInstall(AddNewScriptBrain, 0x46A930);
+    RH_ScopedInstall(AddNewStreamedScriptBrainForCodeUse, 0x46A9C0);
     RH_ScopedInstall(GetIndexOfScriptBrainWithThisName, 0x46AA30);
     RH_ScopedInstall(HasAttractorScriptBrainWithThisNameLoaded, 0x46AB20);
     //RH_ScopedInstall(StartNewStreamedScriptBrain, 0x46B270, {.Reversed = false});
     RH_ScopedInstall(StartAttractorScriptBrainWithThisName, 0x46B390);
     RH_ScopedInstall(StartOrRequestNewStreamedScriptBrain, 0x46CD80, {.Reversed = false});
-    //RH_ScopedInstall(StartOrRequestNewStreamedScriptBrainWithThisName, 0x46CED0, {.Reversed = false});
+    RH_ScopedInstall(StartOrRequestNewStreamedScriptBrainWithThisName, 0x46CED0, {.Reversed = false});
     RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0, {.Reversed = false});
 }
 
@@ -25,6 +25,51 @@ void CScriptsForBrains::InjectHooks() {
 void CScriptsForBrains::Init() {
     for (auto& script : m_aScriptForBrains) {
         script = tScriptForBrains();
+    }
+}
+
+// 0x46A900
+void CScriptsForBrains::SwitchAllObjectBrainsWithThisID(int8 ID, bool bStatus) {
+    if (ID < 0) {
+        return;
+    }
+    for (auto& scriptBrain : m_aScriptForBrains) {
+        if (scriptBrain.m_ObjectGroupingId == ID) {
+            scriptBrain.m_bBrainActive = bStatus;
+        }
+    }
+}
+
+// 0x46A930
+void CScriptsForBrains::AddNewScriptBrain(int16 ImgIndex, int16 Model, uint16 priority, int8 attachType, int8 Type, float Radius) {
+    for (auto& scriptBrain : m_aScriptForBrains) {
+        if (scriptBrain.m_StreamedScriptIndex != -1) {
+            continue;
+        }
+        scriptBrain.m_StreamedScriptIndex           = ImgIndex;
+        scriptBrain.m_PedModelOrPedGeneratorIndex   = Model;
+        scriptBrain.m_PercentageChance              = priority;
+        scriptBrain.m_TypeOfBrain                   = attachType;
+        scriptBrain.m_ObjectGroupingId              = Type;
+        scriptBrain.m_bBrainActive                  = true;
+        scriptBrain.m_ObjectBrainActivationRadius   = Radius <= 0.0f ? 5.0f : Radius;
+        return;
+    }
+}
+
+// 0x46A9C0
+void CScriptsForBrains::AddNewStreamedScriptBrainForCodeUse(int16 ImgIndex, char* name, int8 attachType) {
+    for (auto& scriptBrain : m_aScriptForBrains) {
+        if (scriptBrain.m_StreamedScriptIndex != -1) {
+            continue;
+        }
+        scriptBrain.m_StreamedScriptIndex         = ImgIndex;
+        scriptBrain.m_TypeOfBrain                 = attachType;
+        scriptBrain.m_ObjectGroupingId            = -1;
+        scriptBrain.m_bBrainActive                = true;
+        scriptBrain.m_ObjectBrainActivationRadius = 5.0f;
+        strcpy(scriptBrain.m_ScriptName, name);
+        return;
     }
 }
 
@@ -46,6 +91,13 @@ void CScriptsForBrains::StartNewStreamedScriptBrain(uint8 index, CEntity* entity
 
 void CScriptsForBrains::StartOrRequestNewStreamedScriptBrain(uint8 index, CEntity* entity, int8 attachType, bool bAddToWaitingArray) {
     NOTSA_UNREACHABLE();
+}
+
+// 0x46CED0
+void CScriptsForBrains::StartOrRequestNewStreamedScriptBrainWithThisName(const char* name, CEntity* entity, int8 attachType) {
+    if (const auto idx = GetIndexOfScriptBrainWithThisName(name, attachType); idx >= 0) {
+        StartOrRequestNewStreamedScriptBrain(static_cast<uint8>(idx), entity, attachType, true);
+    }
 }
 
 bool CScriptsForBrains::HasAttractorScriptBrainWithThisNameLoaded(const char* name) {
