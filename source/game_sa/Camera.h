@@ -49,6 +49,23 @@ enum eLookingDirection {
     LOOKING_DIRECTION_FORWARD   = 3,
 };
 
+// Requests accepted by CCamera::TryToStartNewCamMode (0x51E560). The cinematic camera
+// selectors pick them by cycling tables in .rdata: 0x5267C0 car (0x8CC828), 0x526950 train
+// (0x8CC858), 0x526AE0 heli (0x8CC874), 0x526C80 plane (0x8CC894), 0x526E20 boat (0x8CC8B0).
+// Accepting one switches the camera to eCamMode(request + 0x24).
+enum eCamRequest : int32 {
+    CAM_REQUEST_DW_HELI_CHASE    = 0x14, // MODE_DW_HELI_CHASE
+    CAM_REQUEST_DW_CAM_MAN       = 0x15, // MODE_DW_CAM_MAN
+    CAM_REQUEST_DW_BIRDY         = 0x16, // MODE_DW_BIRDY
+    CAM_REQUEST_DW_PLANE_SPOTTER = 0x17, // MODE_DW_PLANE_SPOTTER
+    CAM_REQUEST_DW_DOG_FIGHT     = 0x18, // MODE_DW_DOG_FIGHT - refused
+    CAM_REQUEST_DW_FISH          = 0x19, // MODE_DW_FISH - refused
+    CAM_REQUEST_DW_PLANE_CAM_1   = 0x1A, // MODE_DW_PLANECAM1
+    CAM_REQUEST_DW_PLANE_CAM_2   = 0x1B, // MODE_DW_PLANECAM2
+    CAM_REQUEST_DW_PLANE_CAM_3   = 0x1C, // MODE_DW_PLANECAM3
+    CAM_REQUEST_CAM_ON_A_STRING  = 0x1D, // MODE_CAM_ON_A_STRING
+};
+
 enum class eGroundHeightType : int32 {
     ENTITY_BB_BOTTOM = 0,    // ground height + boundingBoxMin.z of colliding entity
     EXACT_GROUND_HEIGHT = 1, // ignores height of colliding entity at position

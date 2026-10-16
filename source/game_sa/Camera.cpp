@@ -2520,22 +2520,22 @@ bool CCamera::TryToStartNewCamMode(int32 camSequence) {
         }
         return setFixed(cameraPosition);
     }
-    case 0x14:
-    case 0x15:
-    case 0x16:
-    case 0x17:
-    case 0x1A:
-    case 0x1B:
-    case 0x1C: {
+    case CAM_REQUEST_DW_HELI_CHASE:
+    case CAM_REQUEST_DW_CAM_MAN:
+    case CAM_REQUEST_DW_BIRDY:
+    case CAM_REQUEST_DW_PLANE_SPOTTER:
+    case CAM_REQUEST_DW_PLANE_CAM_1:
+    case CAM_REQUEST_DW_PLANE_CAM_2:
+    case CAM_REQUEST_DW_PLANE_CAM_3: {
         auto& cam = GetActiveCam();
         const auto started = [&] {
             switch (camSequence) {
-            case 0x14: return cam.Process_DW_HeliChaseCam(true);
-            case 0x15: return cam.Process_DW_CamManCam(true);
-            case 0x16: return cam.Process_DW_BirdyCam(true);
-            case 0x17: return cam.Process_DW_PlaneSpotterCam(true);
-            case 0x1A: return cam.Process_DW_PlaneCam1(true);
-            case 0x1B: return cam.Process_DW_PlaneCam2(true);
+            case CAM_REQUEST_DW_HELI_CHASE: return cam.Process_DW_HeliChaseCam(true);
+            case CAM_REQUEST_DW_CAM_MAN: return cam.Process_DW_CamManCam(true);
+            case CAM_REQUEST_DW_BIRDY: return cam.Process_DW_BirdyCam(true);
+            case CAM_REQUEST_DW_PLANE_SPOTTER: return cam.Process_DW_PlaneSpotterCam(true);
+            case CAM_REQUEST_DW_PLANE_CAM_1: return cam.Process_DW_PlaneCam1(true);
+            case CAM_REQUEST_DW_PLANE_CAM_2: return cam.Process_DW_PlaneCam2(true);
             default:   return cam.Process_DW_PlaneCam3(true);
             }
         }();
@@ -2545,11 +2545,11 @@ bool CCamera::TryToStartNewCamMode(int32 camSequence) {
         TakeControl(playerEntity, static_cast<eCamMode>(camSequence + 0x24), eSwitchType::JUMPCUT, 2);
         return !isUnderwater();
     }
-    case 0x18:
-    case 0x19:
+    case CAM_REQUEST_DW_DOG_FIGHT:
+    case CAM_REQUEST_DW_FISH:
         TheCamera.m_bUseNearClipScript = false;
         return false;
-    case 0x1D:
+    case CAM_REQUEST_CAM_ON_A_STRING:
         TakeControl(playerEntity, MODE_CAM_ON_A_STRING, eSwitchType::JUMPCUT, 2);
         return true;
     default:
