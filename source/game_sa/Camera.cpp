@@ -142,7 +142,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(ConeCastCollisionResolve, 0x51A5D0);
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560);
     RH_ScopedInstall(CameraColDetAndReact, 0x520190);
-    RH_ScopedInstall(CamControl, 0x527FA0, { .Reversed = false });
+    RH_ScopedInstall(CamControl, 0x527FA0);
     RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
     RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
