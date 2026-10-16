@@ -44,7 +44,6 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
     RH_ScopedInstall(IsWanderPathClear, 0x5F2F70);
     RH_ScopedInstall(LiesInsideBoundingBox, 0x5F3880);
-    RH_ScopedOverloadedInstall(ComputeEntityHitSide, "2", 0x5F1450, int32 (*)(const CVector& point1, const CVector* point2, const float* x), { .Reversed = false });
 }
 
 // 0x5F1B00
@@ -444,16 +443,15 @@ int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CPed& ped, CEntity& entit
 
 // 0x5F1450
 int32 CPedGeometryAnalyser::ComputeEntityHitSide(const CVector& point, const CVector* planes, const float* planesDot) {
-    // Find which of the 4 planes' "wedge" (shared with its predecessor in the cyclic order) `point`
-    // falls into - i.e. the first `i` for which `point` is on the outward side of BOTH planes[i] and
-    // its predecessor planes[(i-1)%4]. Scans the 4-plane cycle twice (8 iterations) so the search is
-    // independent of where in the cycle it starts.
-    for (auto i = 0; i < 8; i++) {
+    // One turn around the 4 cyclic planes: the side `point` sits on is the one whose plane it is
+    // outside of (`< 0`) while still being inside its predecessor (`>= 0`), matching 0x5F149E -
+    // 0x5F14D8 where the first test jumps on C0 (strictly less) and the second returns on `JNP`.
+    for (auto i = 0; i < 4; i++) {
         const auto prevIdx = (i + 3) % 4;
-        const auto curIdx  = i % 4;
+        const auto curIdx  = i;
 
         if (DotProduct(planes[prevIdx], point) + planesDot[prevIdx] >= 0.0f &&
-            DotProduct(planes[curIdx], point) + planesDot[curIdx] >= 0.0f) {
+            DotProduct(planes[curIdx], point) + planesDot[curIdx] < 0.0f) {
             return curIdx; // eDirection
         }
     }
