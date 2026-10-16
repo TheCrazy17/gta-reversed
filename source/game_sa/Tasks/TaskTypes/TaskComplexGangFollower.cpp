@@ -6,10 +6,10 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGangFollower, 0x86F938, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
 
-    RH_ScopedInstall(Constructor, 0x65EAA0, { .Reversed = false });
-    RH_ScopedInstall(Destructor, 0x65EBB0, { .Reversed = false });
+    RH_ScopedInstall(Constructor, 0x65EAA0);
+    RH_ScopedInstall(Destructor, 0x65EBB0);
     //RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40, { .Reversed = false }); // not hooked because i want to keep CVector return, but original function took a CVector&
-    RH_ScopedInstall(Clone, 0x65ECB0, { .Reversed = false });
+    RH_ScopedInstall(Clone, 0x65ECB0);
     RH_ScopedInstall(MakeAbortable, 0x65EC30, { .Reversed = false });
     RH_ScopedInstall(CreateNextSubTask, 0x665E00, { .Reversed = false });
     RH_ScopedInstall(CreateFirstSubTask, 0x666160, { .Reversed = false });
@@ -24,6 +24,11 @@ CTaskComplexGangFollower::CTaskComplexGangFollower(CPedGroup* pedGroup, CPed* pe
     dword2C    = pos;
     dword20    = pos;
     dword38    = a6;
+
+    dword40 = 0;
+    dword44 = 0;
+    byte48  = 0;
+    byte49  = 0;
 
     m_Flags |= 0x14;
 
