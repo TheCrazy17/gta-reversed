@@ -10,7 +10,7 @@ void CRealTimeShadowManager::InjectHooks() {
     RH_ScopedCategory("Shadows");
 
     RH_ScopedInstall(Init, 0x7067C0);
-    RH_ScopedInstall(ReInit, 0x706870, {.Reversed = false});
+    RH_ScopedInstall(ReInit, 0x706870);
     RH_ScopedInstall(ReturnRealTimeShadow, 0x705B30);
     RH_ScopedInstall(GetRealTimeShadow, 0x706970);
     RH_ScopedInstall(Update, 0x706AB0);
@@ -64,7 +64,26 @@ void CRealTimeShadowManager::ReturnRealTimeShadow(CRealTimeShadow* shdw) {
 
 // 0x706870
 void CRealTimeShadowManager::ReInit() {
-    plugin::CallMethod<0x706870, CRealTimeShadowManager*>(this);
+    // Recreate each render target keeping its current size, then point the texture at
+    // the new raster - the old rasters were allocated for a resolution we no longer use.
+    const auto RecreateRaster = [](CShadowCamera& camera) {
+        auto* raster = RwCameraGetRaster(camera.m_pRwCamera);
+        const auto size = RwRasterGetWidth(raster);
+        RwCameraSetRaster(camera.m_pRwCamera, nullptr);
+        RwRasterDestroy(raster);
+        auto* newRaster = RwRasterCreate(size, size, 0, rwRASTERTYPECAMERATEXTURE);
+        RwCameraSetRaster(camera.m_pRwCamera, newRaster);
+        RwTextureSetRaster(camera.m_pRwRenderTexture, newRaster);
+    };
+
+    for (auto shadow : m_apShadows) {
+        RecreateRaster(shadow->m_camera);
+        RecreateRaster(shadow->m_blurCamera);
+    }
+    RecreateRaster(m_BlurCamera);
+    RecreateRaster(m_GradientCamera);
+
+    m_GradientCamera.MakeGradientRaster();
 }
 
 // 0x706AB0
