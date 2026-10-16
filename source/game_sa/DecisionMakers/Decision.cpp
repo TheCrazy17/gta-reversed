@@ -11,7 +11,7 @@ void CDecision::InjectHooks() {
     RH_ScopedInstall(Set, 0x600570);
     RH_ScopedInstall(Add, 0x600600);
     RH_ScopedInstall(From, 0x6006B0);
-    //RH_ScopedInstall(HasResponse, 0x600710, { .Reversed = false });
+    RH_ScopedInstall(HasResponse, 0x600710);
     //RH_ScopedInstall(MakeDecision, 0x6040D0, { .Reversed = false });
 }
 
@@ -55,11 +55,6 @@ void CDecision::Set(
 void CDecision::MakeDecision(int32, bool, int32, int32, int32, int32, int16&, int16&) {
 
 }
-
-// 0x600710
-bool CDecision::HasResponse() {
-
-}
 */
 
 // 0x600600
@@ -85,4 +80,14 @@ void CDecision::Add(int32 task, float* probs, int32* bools) {
         m_Bools[slot][1] = bools[1] != 0;
         return;
     }
+}
+
+// 0x600710
+bool CDecision::HasResponse() {
+    for (auto i = 0; i < MAX_NUM_CHOICES; i++) {
+        if (m_Tasks[i] != TASK_NONE) {
+            return true;
+        }
+    }
+    return false;
 }

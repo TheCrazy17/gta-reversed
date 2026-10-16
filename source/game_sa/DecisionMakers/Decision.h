@@ -51,6 +51,7 @@ public:
         notsa::mdarray<float, MAX_NUM_CHOICES, 6>& facialProbs
     );
     void Add(int32 task, float* probs, int32* bools);
+    bool HasResponse();
 };
 
 VALIDATE_SIZE(CDecision, 0x3C);
