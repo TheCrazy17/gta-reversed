@@ -1,6 +1,10 @@
 #include "StdInc.h"
 #include "TaskComplexSunbathe.h"
 
+#include "Streaming.h"
+#include "Animation/AnimManager.h"
+#include "Animation/AnimBlock.h"
+
 bool CanSunbathe();               // 0x632140
 bool ShouldLoadSunbatheAnims();   // 0x632190
 
@@ -21,7 +25,7 @@ void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedVMTInstall(MakeAbortable, 0x6320F0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x6399F0, { .Reversed = false });
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x639CB0, { .Reversed = false });
-    RH_ScopedVMTInstall(ControlSubTask, 0x6381A0, { .Reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x6381A0);
 
 }
 
@@ -140,5 +144,43 @@ CTask* CTaskComplexSunbathe::CreateFirstSubTask(CPed* ped) {
 
 // 0x6381A0
 CTask* CTaskComplexSunbathe::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6381A0, CTaskComplexSunbathe*, CPed*>(this, ped);
+    if (m_bAborted) {
+        return nullptr;
+    }
+
+    const auto ReferenceBlock = [](CAnimBlock* block, int32& blockIndex, bool& referenced) {
+        if (referenced) {
+            return;
+        }
+        if (block->IsLoaded) {
+            CAnimManager::AddAnimBlockRef(blockIndex);
+            referenced = true;
+        } else {
+            // Anim blocks are streamed as models, with the IFP resource ids right after the DAT ones
+            CStreaming::RequestModel(blockIndex + RESOURCE_ID_IFP, 8);
+        }
+    };
+
+    ReferenceBlock(m_pBeachAnimBlock, m_BeachAnimBlockIndex, m_bBeachAnimsReferenced);
+    if (!m_bSunbatheAnimsReferenced && ShouldLoadSunbatheAnims()) {
+        ReferenceBlock(m_pSunbatheAnimBlock, m_SunbatheAnimBlockIndex, m_bSunbatheAnimsReferenced);
+    }
+
+    if (m_bBathing) {
+        // NOTSA: two CPed-level bits still without name (ped+0x528 bit 3, ped+0x474 bit 20)
+        *(uint32*)((char*)ped + 0x528) |= 8u;
+        *(uint32*)((char*)ped + 0x474) |= 0x100000u;
+    }
+
+    if (!CanSunbathe()) {
+        if (m_BathingTimer.m_bStarted) {
+            m_BathingTimer.m_bStopped = true;
+            m_BathingTimer.m_nInterval -= CTimer::GetTimeInMS() - m_BathingTimer.m_nStartTime;
+        }
+        if (m_pSubTask->GetTaskType() == TASK_SIMPLE_SUNBATHE) {
+            m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr);
+        }
+    }
+
+    return m_pSubTask;
 }
