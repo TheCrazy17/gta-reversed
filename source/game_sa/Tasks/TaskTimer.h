@@ -90,6 +90,7 @@ public:
 
     bool IsStarted() const { return m_bStarted; }
 
+    int32 GetRemainingTimeMs();
     bool IsOutOfTime();
 };
 

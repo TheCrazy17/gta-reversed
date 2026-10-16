@@ -10,7 +10,16 @@ void CTaskTimer::InjectHooks() {
     RH_ScopedClass(CTaskTimer);
     RH_ScopedCategory("Tasks");
 
+    RH_ScopedInstall(GetRemainingTimeMs, 0x62EB80);
     RH_ScopedInstall(IsOutOfTime, 0x420E30);
+}
+
+// 0x62EB80
+int32 CTaskTimer::GetRemainingTimeMs() {
+    if (m_bStarted) {
+        return (m_nInterval - static_cast<int32>(CTimer::GetTimeInMS())) + m_nStartTime;
+    }
+    return 0;
 }
 
 // 0x420E30

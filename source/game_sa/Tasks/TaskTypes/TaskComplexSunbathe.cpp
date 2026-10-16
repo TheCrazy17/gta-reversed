@@ -5,6 +5,9 @@
 #include "InterestingEvents.h"
 #include "Animation/AnimManager.h"
 #include "Animation/AnimBlock.h"
+#include "TaskSimplePause.h"
+#include "TaskSimpleRunAnim.h"
+#include "TaskSimpleRunTimedAnim.h"
 
 bool CanSunbathe();               // 0x632140
 bool ShouldLoadSunbatheAnims();   // 0x632190
@@ -19,7 +22,7 @@ void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedGlobalInstall(CanSunbathe, 0x632140);
     RH_ScopedGlobalInstall(ShouldLoadSunbatheAnims, 0x632190);
 
-    //RH_ScopedInstall(CreateSubTask, 0x638290, { .Reversed = false });
+    RH_ScopedInstall(CreateSubTask, 0x638290);
 
     RH_ScopedVMTInstall(Clone, 0x6366A0);
     RH_ScopedVMTInstall(GetTaskType, 0x632040);
@@ -193,7 +196,50 @@ CTask* CTaskComplexSunbathe::CreateNextSubTask(CPed* ped) {
 
 // 0x638290
 CTask* CTaskComplexSunbathe::CreateSubTask(eTaskType type, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x638290, CTaskComplexSunbathe*, eTaskType, CPed*>(this, type, ped);
+    if (m_pSubTask && m_pSubTask->GetTaskType() == type) {
+        return m_pSubTask;
+    }
+
+    const auto sunbatherType = m_SunbatherType;
+    switch (type) {
+    case TASK_SIMPLE_PAUSE:
+        if ((!m_pSunbatheAnimBlock->IsLoaded && ShouldLoadSunbatheAnims()) || !m_pBeachAnimBlock->IsLoaded) {
+            return new CTaskSimplePause(10000);
+        }
+        return new CTaskSimplePause(CGeneral::GetRandomNumberInRange(1000, 5000));
+
+    case TASK_SIMPLE_SUNBATHE: {
+        int32 duration;
+        if (!m_pSunbatheAnimBlock->IsLoaded || (sunbatherType != SUNBATHER_MALE_1 && sunbatherType != SUNBATHER_FEMALE_1)) {
+            duration = m_BathingTimer.GetRemainingTimeMs() + 1000;
+        } else {
+            // Only men of the first two sets get a randomised stretch of the remaining time
+            duration = m_BathingTimer.GetRemainingTimeMs() + 1000 < 12001 ? m_BathingTimer.GetRemainingTimeMs() + 1000 : 12000;
+            duration = CGeneral::GetRandomNumberInRange(3000, duration);
+        }
+        return new CTaskSimpleRunTimedAnim(ANIM_GROUP_BEACH, (AnimationId)(sunbatherType + 0xEF), 4.0f, -4.0f, duration, type, "sunbathe", true);
+    }
+
+    case TASK_SIMPLE_START_SUNBATHING:
+        return new CTaskSimpleRunAnim(ANIM_GROUP_SUNBATHE, (AnimationId)(sunbatherType + 0xF4), 4.0f, type, "start sunbathing", true);
+
+    case TASK_SIMPLE_IDLE_SUNBATHING: {
+        AnimationId animId;
+        if (sunbatherType == SUNBATHER_MALE_1) {
+            animId = (AnimationId)(CGeneral::GetRandomNumberInRange(0, 3) + 0xFE);
+        } else if (sunbatherType == SUNBATHER_FEMALE_1) {
+            animId = (AnimationId)(CGeneral::GetRandomNumberInRange(0, 3) + 0x101);
+        } else {
+            animId = (AnimationId)type;
+        }
+        return new CTaskSimpleRunAnim(ANIM_GROUP_SUNBATHE, animId, 4.0f, type, "idle sunbathing", true);
+    }
+
+    case TASK_SIMPLE_STOP_SUNBATHING:
+        return new CTaskSimpleRunAnim(ANIM_GROUP_SUNBATHE, (AnimationId)(sunbatherType + 0xF9), 4.0f, type, "stop sunbathing", false);
+    }
+
+    return nullptr; // TASK_FINISHED and everything else
 }
 
 // 0x639CB0
