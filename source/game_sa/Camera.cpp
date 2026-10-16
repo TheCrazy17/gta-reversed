@@ -149,7 +149,10 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560);
     RH_ScopedInstall(CameraColDetAndReact, 0x520190);
     RH_ScopedInstall(CamControl, 0x527FA0);
-    RH_ScopedInstall(Process, 0x52B730);
+    // Body is reversed but stays redirected to GTA: upstream's version drops the camera shake
+    // block (0x52BA4E applies m_fShakeIntensity/m_fStartShakeTime/m_fEndShakeTime/m_nShakeType
+    // through ProcessJiggle), so enabling it would silently break screen shake.
+    RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
     RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
     RH_ScopedInstall(Init, 0x5BC520);
