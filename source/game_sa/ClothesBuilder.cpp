@@ -26,7 +26,7 @@ void CClothesBuilder::InjectHooks() {
     //RH_ScopedInstall(nullptr, 0x5A43A0, { .Reversed = false });
     //RH_ScopedInstall(nullptr, 0x5A44A0, { .Reversed = false }); DestroyTextureCB
     RH_ScopedInstall(PreprocessClothesDesc, 0x5A44C0, { .Reversed = false });
-    RH_ScopedInstall(ReleaseGeometry, 0x5A47B0, { .Reversed = false });
+    RH_ScopedInstall(ReleaseGeometry, 0x5A47B0);
     RH_ScopedGlobalInstall(GetAtomicWithName, 0x5A4810);
     RH_ScopedInstall(AddWeightToBoneVertex, 0x5A4840);
     RH_ScopedInstall(StoreBoneArray, 0x5A48B0);
@@ -90,8 +90,9 @@ void CClothesBuilder::PreprocessClothesDesc(CPedClothesDesc& desc, bool a2) {
 // unused
 // 0x5A47B0
 void CClothesBuilder::ReleaseGeometry(int32 numToRelease) {
-    for (auto i = numToRelease; i; CStreaming::SetModelIsDeletable(MODEL_CLOTHES01_ID384 + i))
-        --i;
+    for (auto modelId = numToRelease - 1; modelId >= 0; --modelId) {
+        CStreaming::SetModelIsDeletable(MODEL_CLOTHES01_ID384 + modelId);
+    }
 }
 
 // 0x5A4810
