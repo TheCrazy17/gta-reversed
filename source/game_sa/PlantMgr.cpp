@@ -98,7 +98,9 @@ void CPlantMgr::InjectHooks() {
     //RH_ScopedGlobalInstall(LoadModels, 0x5DD220); // uses `__usercall`, can't hook
 
     // Do not uncomment!
-    // RH_ScopedInstall(_CalcDistanceSqrToEntity, 0x5DBE40, {.Reversed = false}); <-- bad call conv.
+    // Can't be hooked: 0x5DBE40 takes the entity in EBX and the point in ESI (an internal helper),
+    // so no calling convention the hook framework supports matches. Body verified against it.
+    // RH_ScopedInstall(_CalcDistanceSqrToEntity, 0x5DBE40, {.Reversed = false});
 
     // debug shit, all of them just return true.
     // addresses (probably not in order): 0x5DB550 - 0x5DB580
