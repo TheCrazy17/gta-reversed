@@ -32,6 +32,8 @@ void CPickups::InjectHooks() {
     RH_ScopedInstall(FindPickUpForThisObject, 0x4551C0);
 
     // Cannot be hooked at all for now due to ABI fuckery, the return value is 32 bit, but causes the function to assume the calling convention of of T* Function(T*, ...)
+    // 0x456F20 is __cdecl with no `this` (the prologue only uses CL as a scratch register), which
+    // matches the static declaration and the plugin::CallAndReturn wrapper below.
     //RH_ScopedInstall(GenerateNewOne, 0x456F20, { .Reversed = false });
 
     RH_ScopedInstall(GenerateNewOne_WeaponType, 0x457380);
