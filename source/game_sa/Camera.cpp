@@ -12,6 +12,7 @@
 #include "PostEffects.h"
 #include "Cam.h"
 #include "Hud.h"
+#include "FileLoader.h"
 
 auto& TheCamera = StaticRef<CCamera>(0xB6F028);
 auto& gbModelViewer = StaticRef<bool>(0xBA6728);
@@ -133,8 +134,8 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(Find3rdPersonCamTargetVector, 0x514970);
     RH_ScopedInstall(CalculateGroundHeight, 0x514B80);
     RH_ScopedInstall(AvoidTheGeometry, 0x514030);
-    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60, { .Reversed = false });
-    RH_ScopedInstall(CalculateDerivedValues, 0x5150E0, { .Reversed = false });
+    RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60);
+    RH_ScopedInstall(CalculateDerivedValues, 0x5150E0);
     RH_ScopedInstall(ImproveNearClip, 0x516B20);
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
@@ -144,7 +145,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(CamControl, 0x527FA0, { .Reversed = false });
     RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
-    RH_ScopedInstall(LoadPathSplines, 0x5B24D0, { .Reversed = false });
+    RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
     RH_ScopedInstall(Init, 0x5BC520);
 
     RH_ScopedOverloadedInstall(ProcessVectorTrackLinear, "with-ratio", 0x50D350, void(CCamera::*)(float));
@@ -1807,12 +1808,12 @@ void CCamera::CalculateFrustumPlanes(bool bForMirror) {
 
 // 0x5150E0
 void CCamera::CalculateDerivedValues(bool bForMirror, bool bOriented) {
-    m_mMatInverse = m_mCameraMatrix;
+    m_mMatInverse = Invert(m_mCameraMatrix);
     CalculateFrustumPlanes(bForMirror);
 
     if (m_mCameraMatrix.GetForward().x == 0.0f && m_mCameraMatrix.GetForward().y == 0.0f) {
         m_mCameraMatrix.GetForward().x = 0.0001f;
-    } else if (bForMirror) {
+    } else if (bOriented) {
         m_fOrientation = std::atan2(m_mCameraMatrix.GetForward().x, m_mCameraMatrix.GetForward().y);
     }
 
@@ -2709,48 +2710,47 @@ void CCamera::DeleteCutSceneCamDataMemory() {
 
 // 0x5B24D0
 void CCamera::LoadPathSplines(FILE* file) {
-    char lineBuf[0x200];
+    static auto& delimiter = StaticRef<char[4]>(0x868B10); // ", \t"
+
+    DeleteCutSceneCamDataMemory();
+
     int32 sectionIndex   = -1;
     bool  expectingCount = true;
     int32 remainingLines = 0;
-    float* writePtr       = nullptr;
+    float* writePtr      = nullptr;
 
-    while (std::fgets(lineBuf, sizeof(lineBuf), file)) {
-        for (auto* p = lineBuf; *p; p++) {
-            if ((uint8)*p < 0x20 || *p == ',') {
-                *p = ' ';
-            }
-        }
-
-        auto* line = lineBuf;
-        while (*line != '\0' && (uint8)*line <= 0x20) {
-            line++;
-        }
-        if (*line == '#' || *line == '\0') {
+    for (auto* line = CFileLoader::LoadLine(file); line; line = CFileLoader::LoadLine(file)) {
+        if (line[0] == '#' || line[0] == '\0') {
             continue;
         }
 
-        if (remainingLines == 0) {
-            if (expectingCount) {
-                if (++sectionIndex > 3) {
-                    return;
-                }
-                std::sscanf(line, "%d", &remainingLines);
-                const auto floatsPerEntry = (sectionIndex == 0 || sectionIndex == 1) ? 4 : 10;
-                auto* data = new float[1 + remainingLines * floatsPerEntry];
-                m_aPathArray[sectionIndex].m_pArrPathData = data;
-                data[0]  = static_cast<float>(remainingLines);
-                writePtr = data + 1;
-                expectingCount = false;
-            } else if (*line == ';') {
-                expectingCount = true;
-            }
-        } else {
+        if (remainingLines != 0) {
             --remainingLines;
-            for (auto* tok = std::strtok(line, ", \t"); tok; tok = std::strtok(nullptr, ", \t")) {
+            for (auto* tok = std::strtok(line, delimiter); tok; tok = std::strtok(nullptr, delimiter)) {
                 *writePtr++ = static_cast<float>(std::atof(tok));
             }
+            continue;
         }
+
+        if (!expectingCount) {
+            if (line[0] == ';') {
+                expectingCount = true;
+            }
+            continue;
+        }
+
+        if (++sectionIndex > 3) {
+            return;
+        }
+        std::sscanf(line, "%d", &remainingLines);
+
+        // The first two sections hold positions (4 floats per entry), the last two hold tangents (10 floats per entry)
+        const auto floatsPerEntry = (sectionIndex == 0 || sectionIndex == 1) ? 4 : 10;
+        auto* data = new float[1 + remainingLines * floatsPerEntry];
+        m_aPathArray[sectionIndex].m_pArrPathData = data;
+        data[0]  = static_cast<float>(remainingLines);
+        writePtr = data + 1;
+        expectingCount = false;
     }
 }
 
