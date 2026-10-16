@@ -58,8 +58,9 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedInstall(MakePlayerGroupDisappear, 0x60A440);
     RH_ScopedInstall(MakePlayerGroupReappear, 0x60A4B0);
     RH_ScopedInstall(HandleSprintEnergy, 0x60A550);
-    RH_ScopedInstall(GetButtonSprintResults, 0x60A820, { .Reversed = false });
+    RH_ScopedInstall(GetButtonSprintResults, 0x60A820);
     RH_ScopedInstall(HandlePlayerBreath, 0x60A8D0);
+    RH_ScopedInstall(SetRealMoveAnim, 0x60A9C0);
     RH_ScopedOverloadedInstall(MakeChangesForNewWeapon, "", 0x60B460, void(CPlayerPed::*)(eWeaponType));
     RH_ScopedGlobalInstall(LOSBlockedBetweenPeds, 0x60B550);
     RH_ScopedInstall(DoesTargetHaveToBeBroken, 0x60C0C0);
@@ -678,22 +679,18 @@ float CPlayerPed::ControlButtonSprint(eSprintType sprintType) {
     return plugin::CallMethodAndReturn<float, 0x60A610, CPlayerPed *, eSprintType>(this, sprintType);
 }
 
-// Reverse CPlayerPed::SetRealMoveAnim before hooking this func
 // 0x60A820
 float CPlayerPed::GetButtonSprintResults(eSprintType sprintType) {
-    return plugin::CallMethodAndReturn<float, 0x60A820, CPlayerPed *, eSprintType>(this, sprintType);
-
-    // Forces the compiler to preserve the value of `edx`.
-    // Otherwise it's value is lost when called from 0x60B44C.
-    // which causes a crash (as it is used to store a pointer to an anim blend assoc)
+    // The original 0x60A820 leaves `edx` alone; this keeps that guarantee for callers of the hook.
     __asm { and edx, edx };
 
-    if (GetPlayerData()->m_fMoveSpeed <= PLAYER_SPRINT_THRESHOLD) {
-        return GetPlayerData()->m_fMoveSpeed <= 0.0f ? 0.0f : 1.0f;
-    } else {
-        const float progress = std::max(0.0f, GetPlayerData()->m_fMoveSpeed / PLAYER_SPRINT_THRESHOLD - 1.0f);
-        return PLAYER_SPRINT_SET[sprintType].field_1C * progress + 1.0f;
+    const float moveSpeed = GetPlayerData()->m_fMoveSpeed;
+    if (moveSpeed <= PLAYER_SPRINT_THRESHOLD) {
+        return moveSpeed <= 0.0f ? 0.0f : 1.0f;
     }
+
+    const float progress = std::max(0.0f, moveSpeed / PLAYER_SPRINT_THRESHOLD - 1.0f);
+    return PLAYER_SPRINT_SET[sprintType].field_1C * progress + 1.0f;
 }
 
 // 0x60A8A0
@@ -720,7 +717,249 @@ void CPlayerPed::HandlePlayerBreath(bool bDecreaseAir, float fMultiplier) {
 
 // 0x60A9C0
 void CPlayerPed::SetRealMoveAnim() {
-    plugin::CallMethod<0x60A9C0, CPlayerPed *>(this);
+    RpClump* const clump = GetRpClump();
+    CPlayerPedData* const playerData = GetPlayerData();
+
+    auto* walk      = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_WALK);
+    auto* run       = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_RUN);
+    auto* sprint    = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_SPRINT);
+    auto* walkStart = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_WALK_START);
+    auto* idle      = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_IDLE);
+    auto* runStop   = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_RUN_STOP);
+    auto* runStopR  = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_RUN_STOPR);
+    auto* turnLeft  = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_TURN_L);
+    auto* turnRight = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_TURN_R);
+    auto* idleTired = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_IDLE_TIRED);
+
+    if (bResetWalkAnims) {
+        if (walk) walk->SetCurrentTime(0.0f);
+        if (run) run->SetCurrentTime(0.0f);
+        if (sprint) sprint->SetCurrentTime(0.0f);
+        bResetWalkAnims = false;
+    }
+
+    if ((runStop && runStop->IsPlaying()) || (runStopR && runStopR->IsPlaying())) {
+        m_nMoveState = PEDMOVE_RUN;
+        if (runStop && !runStop->IsPlaying() && runStop->m_CurrentTime < runStop->m_BlendHier->m_fTotalTime) {
+            runStop->m_Flags |= ANIMATION_IS_PLAYING;
+        }
+    } else if ((runStop && runStop->m_BlendDelta >= 0.0f) || (runStopR && runStopR->m_BlendDelta >= 0.0f)) {
+        // Fade whatever run-stop animation is still up, right into the idle anim
+        if (CAnimBlendAssociation* stopAnim = runStop ? runStop : runStopR) {
+            stopAnim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+            stopAnim->m_BlendAmount = 1.0f;
+            stopAnim->m_BlendDelta = -2.0f;
+        }
+        RestoreHeadingRate();
+        if (!idle) {
+            idle = CAnimManager::BlendAnimation(clump, m_nAnimGroup, ANIM_ID_IDLE, 8.0f);
+        }
+        idle->m_BlendAmount = 0.0f;
+        idle->m_BlendDelta = 8.0f;
+    } else if (playerData->m_fMoveBlendRatio != 0.0f || sprint) {
+        if (idle) {
+            // Standing up out of idle: `walk start` takes over unless it's already running
+            if (!walkStart) {
+                walkStart = CAnimManager::AddAnimation(clump, m_nAnimGroup, ANIM_ID_WALK_START);
+            } else {
+                walkStart->m_BlendAmount = 1.0f;
+                walkStart->m_BlendDelta = 0.0f;
+            }
+            if (walk) walk->SetCurrentTime(0.0f);
+            if (run) run->SetCurrentTime(0.0f);
+            delete idle;
+            if (idleTired) idleTired->m_BlendDelta = -4.0f;
+            if (sprint) delete sprint;
+            sprint = nullptr;
+            m_nMoveState = PEDMOVE_WALK;
+        }
+        if (runStop) {
+            delete runStop;
+            RestoreHeadingRate();
+        }
+        if (runStopR) {
+            delete runStopR;
+            RestoreHeadingRate();
+        }
+        if (turnLeft) delete turnLeft;
+        if (turnRight) delete turnRight;
+        if (!walk) {
+            walk = CAnimManager::AddAnimation(clump, m_nAnimGroup, ANIM_ID_WALK);
+            walk->m_BlendAmount = 0.0f;
+        }
+        if (!run) {
+            run = CAnimManager::AddAnimation(clump, m_nAnimGroup, ANIM_ID_RUN);
+            run->m_BlendAmount = 0.0f;
+        }
+        if (walkStart && (!walkStart->IsPlaying() || walkStart->m_BlendHier->m_fTotalTime < walkStart->m_CurrentTime + walkStart->m_TimeStep)) {
+            // Not walked up yet, so skip the rest of it and blend walk/run straight in
+            delete walkStart;
+            walk->m_Flags |= ANIMATION_IS_PLAYING;
+            run->m_Flags |= ANIMATION_IS_PLAYING;
+            walkStart = nullptr;
+        }
+        if (m_nMoveState == PEDMOVE_SPRINT && walkStart) {
+            m_nMoveState = PEDMOVE_STILL;
+        }
+
+        if (!sprint || (m_nMoveState == PEDMOVE_SPRINT && playerData->m_fMoveBlendRatio >= 0.4f)) {
+            if (walkStart) {
+                walk->m_Flags &= ~ANIMATION_IS_PLAYING;
+                run->m_Flags &= ~ANIMATION_IS_PLAYING;
+                walk->m_BlendAmount = 0.0f;
+                run->m_BlendAmount = 0.0f;
+                goto rtn;
+            }
+            if (m_nMoveState == PEDMOVE_SPRINT) {
+                if (!sprint) {
+                    if (run->m_BlendAmount < 1.0f) {
+                        if (walk->m_BlendAmount == 0.0f && run->m_BlendAmount == 0.0f) {
+                            walk->m_BlendAmount = 1.0f;
+                        }
+                        if (run->m_BlendDelta < 0.0f) {
+                            run = CAnimManager::BlendAnimation(clump, m_nAnimGroup, ANIM_ID_RUN, 4.0f);
+                        }
+                        playerData->m_fMoveBlendRatio = run->m_BlendDelta + 1.0f;
+                        goto rtn;
+                    }
+                    sprint = CAnimManager::BlendAnimation(clump, m_nAnimGroup, ANIM_ID_SPRINT, 2.0f);
+                } else if (sprint->m_BlendDelta < 0.0f) {
+                    sprint->m_BlendDelta = 2.0f;
+                    run->m_BlendDelta = -2.0f;
+                }
+                if (sprint) CStats::UpdateStatsWhenSprinting();
+                goto rtn;
+            }
+            if (playerData->m_fMoveBlendRatio >= 1.0f) {
+                if (playerData->m_fMoveBlendRatio >= 2.0f) {
+                    walk->m_BlendAmount = 0.0f;
+                    run->m_BlendAmount = 1.0f;
+                    walk->m_BlendDelta = 0.0f;
+                    run->m_BlendDelta = 0.0f;
+                    m_nMoveState = PEDMOVE_RUN;
+                    CStats::UpdateStatsWhenRunning();
+                } else {
+                    walk->m_BlendAmount = 2.0f - playerData->m_fMoveBlendRatio;
+                    run->m_BlendAmount = playerData->m_fMoveBlendRatio - 1.0f;
+                    walk->m_BlendDelta = 0.0f;
+                    run->m_BlendDelta = 0.0f;
+                    m_nMoveState = PEDMOVE_RUN;
+                }
+                goto rtn;
+            }
+            walk->m_BlendAmount = 1.0f;
+            run->m_BlendAmount = 0.0f;
+            walk->m_BlendDelta = 0.0f;
+            run->m_BlendDelta = 0.0f;
+        } else {
+            if (sprint->m_BlendAmount == 0.0f) {
+                sprint->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+                sprint->m_BlendDelta = -1000.0f;
+            } else if (sprint->m_BlendDelta >= 0.0f || sprint->m_BlendAmount >= 0.8f) {
+                if (playerData->m_fMoveBlendRatio >= 0.4f) {
+                    if (sprint->m_BlendDelta >= 0.0f) {
+                        sprint->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+                        sprint->m_BlendDelta = -2.0f;
+                        run->m_BlendDelta = 1.0f;
+                    }
+                } else {
+                    // Slow down: half way through the sprint means the right-foot stop, otherwise the left one
+                    CAnimBlendAssociation* stopAnim;
+                    if (sprint->m_CurrentTime / sprint->m_BlendHier->m_fTotalTime >= 0.5) {
+                        stopAnim = CAnimManager::AddAnimation(clump, (AssocGroupId)0, ANIM_ID_RUN_STOPR);
+                    } else {
+                        stopAnim = CAnimManager::AddAnimation(clump, (AssocGroupId)0, ANIM_ID_RUN_STOP);
+                    }
+                    stopAnim->m_BlendAmount = 1.0f;
+                    stopAnim->SetDeleteCallback(CPed::RestoreHeadingRateCB, this);
+                    m_fHeadingChangeRate = 0.0f;
+                    sprint->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+                    sprint->m_BlendDelta = -1000.0f;
+                    walk->m_Flags &= ~ANIMATION_IS_PLAYING;
+                    run->m_Flags &= ~ANIMATION_IS_PLAYING;
+                    walk->m_BlendAmount = 0.0f;
+                    run->m_BlendAmount = 0.0f;
+                    walk->m_BlendDelta = 0.0f;
+                    run->m_BlendDelta = 0.0f;
+                }
+            } else if (playerData->m_fMoveBlendRatio < 1.0f) {
+                sprint->m_BlendDelta = -2.0f;
+                run->m_BlendDelta = 8.0f;
+            }
+            if (playerData->m_fMoveBlendRatio > 1.0f) {
+                m_nMoveState = PEDMOVE_RUN;
+                goto rtn;
+            }
+        }
+        m_nMoveState = PEDMOVE_WALK;
+    } else {
+        CPad* const pad = GetPadFromPlayer();
+        bool turnAnimSet = false;
+        if (pad->GetForceCameraBehindPlayer()) {
+            if (const int16 aim = pad->AimWeaponLeftRight(nullptr); aim != 0 && TheCamera.GetActiveCam().m_nMode == MODE_FOLLOWPED) {
+                const bool turningRight = aim >= 0;
+                if (turningRight) {
+                    if (!turnRight || turnRight->m_BlendDelta < 0.0f) {
+                        turnRight = CAnimManager::BlendAnimation(clump, (AssocGroupId)0, ANIM_ID_TURN_R, 16.0f);
+                    }
+                } else {
+                    if (!turnLeft || turnLeft->m_BlendDelta < 0.0f) {
+                        turnLeft = CAnimManager::BlendAnimation(clump, (AssocGroupId)0, ANIM_ID_TURN_L, 16.0f);
+                    }
+                }
+                // Full stick deflection (= 128) is a 1.0 blend speed
+                (turningRight ? turnRight : turnLeft)->m_Speed = std::fabs(static_cast<float>(pad->AimWeaponLeftRight(nullptr))) * 0.0078125f;
+                if (idle && idle->m_BlendAmount < 0.01f) delete idle;
+                turnAnimSet = true;
+            }
+        }
+        if (!turnAnimSet && !idle) {
+            CAnimManager::BlendAnimation(clump, m_nAnimGroup, ANIM_ID_IDLE, 4.0f);
+        }
+
+        if (playerData->m_fTimeCanRun >= 0.0f || GetIntelligence()->GetTaskFighting() || GetIntelligence()->GetTaskUseGun()
+            || GetIntelligence()->GetTaskDuck(true) || GetIntelligence()->GetTaskThrow() || GetIntelligence()->GetTaskJetPack()
+            || CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f, nullptr, true, false, false, false, false, false)) {
+            if (idleTired && idleTired->m_BlendAmount > 0.0f && idleTired->m_BlendDelta >= 0.0f) {
+                idleTired->m_Flags &= ~ANIMATION_IS_PLAYING;
+                idleTired->m_BlendDelta = -2.0f;
+            }
+        } else if (!idleTired) {
+            // Out of breath: fat players get their own tired anim
+            idleTired = CAnimManager::BlendAnimation(clump,
+                CClothes::GetDefaultPlayerMotionGroup() == ANIM_GROUP_FAT ? ANIM_GROUP_FAT_TIRED : (AssocGroupId)0,
+                ANIM_ID_IDLE_TIRED, 4.0f);
+            idleTired->m_Flags |= ANIMATION_IS_PLAYING;
+            m_nMoveState = PEDMOVE_STILL;
+            goto rtn;
+        }
+        m_nMoveState = PEDMOVE_STILL;
+    }
+
+rtn:
+    if (playerData->m_bAdrenaline) {
+        float speed;
+        if (playerData->m_nAdrenalineEndTime < CTimer::GetTimeInMS() && !CCheat::IsActive(CHEAT_ADRENALINE_MODE)) {
+            playerData->m_bAdrenaline = false;
+            CTimer::SetTimeScale(1.0f);
+            speed = 1.0f;
+        } else {
+            CTimer::SetTimeScale(1.0f / 3.0f);
+            speed = 2.0f;
+        }
+        if (walkStart) walkStart->m_Speed = speed;
+        if (walk) walk->m_Speed = speed;
+        if (run) run->m_Speed = speed;
+        if (!sprint) return;
+        sprint->m_Speed = speed;
+    }
+    if (sprint) {
+        if (TheCamera.GetActiveCam().m_nMode == MODE_FIXED) {
+            sprint->m_Speed = 0.7f;
+            return;
+        }
+        sprint->m_Speed = std::max(1.0f, GetButtonSprintResults(SPRINT_GROUND));
+    }
 }
 
 // 0x60B460
