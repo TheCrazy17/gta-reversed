@@ -10,7 +10,7 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x65EBB0);
     //RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40, { .Reversed = false }); // not hooked because i want to keep CVector return, but original function took a CVector&
     RH_ScopedInstall(Clone, 0x65ECB0);
-    RH_ScopedInstall(MakeAbortable, 0x65EC30, { .Reversed = false });
+    RH_ScopedInstall(MakeAbortable, 0x65EC30);
     RH_ScopedInstall(CreateNextSubTask, 0x665E00, { .Reversed = false });
     RH_ScopedInstall(CreateFirstSubTask, 0x666160, { .Reversed = false });
     RH_ScopedInstall(ControlSubTask, 0x662A10, { .Reversed = false });
@@ -76,11 +76,8 @@ bool CTaskComplexGangFollower::MakeAbortable(CPed* ped, eAbortPriority priority,
         return false;
     }
 
-    // NOTSA: clears two unidentified CPed-level task/flag bits (this+0x474 bit 0x400000,
-    // this+0x478 bit 0x10000) - exact field names not identified this session, kept as raw
-    // offset writes for fidelity.
-    *(uint32*)((char*)ped + 0x478) &= ~0x10000u;
-    *(uint32*)((char*)ped + 0x474) &= ~0x400000u;
+    ped->bDontAcceptIKLookAts = false;
+    ped->bMoveAnimSpeedHasBeenSetByTask = false;
     return true;
 }
 
