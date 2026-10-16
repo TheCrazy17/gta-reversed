@@ -387,6 +387,7 @@ public:
     void ProcessMusicFade();
     void ProcessScriptedCommands();
     void ProcessShake();
+    void UpdateSoundDistUp();
     void ProcessShake(float intensity);
     void ProcessVectorMoveLinear();
     void ProcessVectorMoveLinear(float ratio);

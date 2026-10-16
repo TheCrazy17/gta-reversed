@@ -142,6 +142,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(AvoidTheGeometry, 0x514030);
     RH_ScopedInstall(CalculateFrustumPlanes, 0x514D60);
     RH_ScopedInstall(CalculateDerivedValues, 0x5150E0);
+    RH_ScopedInstall(UpdateSoundDistUp, 0x515BD0);
     RH_ScopedInstall(ImproveNearClip, 0x516B20);
     RH_ScopedInstall(SetCameraUpForMirror, 0x51A560);
     RH_ScopedInstall(RestoreCameraAfterMirror, 0x51A5A0);
@@ -524,6 +525,37 @@ float CCamera::GetPositionAlongSpline() const {
 // 0x516B00
 float CCamera::GetRoughDistanceToGround() {
     return m_aCams[m_nActiveCam].m_vecSource.z - CalculateGroundHeight(eGroundHeightType::ENTITY_BB_BOTTOM);
+}
+
+// 0x515BD0
+void CCamera::UpdateSoundDistUp() {
+    static constexpr auto firstPersonModes = {
+        MODE_1STPERSON, MODE_SNIPER, MODE_M16_1STPERSON, MODE_ROCKETLAUNCHER, MODE_ROCKETLAUNCHER_HS,
+        MODE_SNIPER_RUNABOUT, MODE_ROCKETLAUNCHER_RUNABOUT, MODE_ROCKETLAUNCHER_RUNABOUT_HS, MODE_M16_1STPERSON_RUNABOUT,
+        MODE_FIGHT_CAM_RUNABOUT, MODE_1STPERSON_RUNABOUT, MODE_HELICANNON_1STPERSON, MODE_CAMERA
+    };
+
+    const auto& activeCam = m_aCams[m_nActiveCam];
+    // Right above the gun cams the sound distance must not jump around, so the probe starts closer in
+    const auto scale = (notsa::contains(firstPersonModes, activeCam.m_nMode) && m_pTargetEntity->GetIsTypePed()) ? 0.5f : 5.0f;
+    const auto origin = m_mCameraMatrix.GetForward() * scale + GetPosition();
+
+    const auto frameInPeriod = (int16)(CTimer::GetFrameCounter() % 12);
+    if (frameInPeriod == 0) {
+        m_fSoundDistUpAsReadOld = m_fSoundDistUpAsRead;
+
+        CColPoint colPoint{};
+        CEntity*  entity{};
+        // The second argument is the absolute z of the other end, so this searches 20 units upwards
+        if (CWorld::ProcessVerticalLine(origin, origin.z + 20.0f, colPoint, entity, true, false, false, false, true, false, nullptr)) {
+            m_fSoundDistUpAsRead = colPoint.m_vecPoint.z - origin.z;
+        } else {
+            m_fSoundDistUpAsRead = 20.0f;
+        }
+    }
+
+    const auto blend = (float)(frameInPeriod + 1) * (1.0f / 6.0f); // 0x85F0A0
+    m_fSoundDistUp = blend * m_fSoundDistUpAsRead + (1.0f - blend) * m_fSoundDistUpAsReadOld;
 }
 
 // 0x50AFA0
@@ -1944,7 +1976,7 @@ void CCamera::Process() {
     CalculateDerivedValues(false, true);
     CopyCameraMatrixToRWCam(false);
     m_vecGameCamPos = m_mCameraMatrix.GetPosition();
-    plugin::CallMethod<0x515BD0, CCamera*>(this); // un-reversed helper: picks m_mCameraMatrix' forward scaled by 0.5 or 5.0 depending on the active cam mode
+    UpdateSoundDistUp();
     UpdateSoundDistances();
     m_fLODDistMultiplier = !CCutsceneMgr::ms_running || CCutsceneMgr::ms_useLodMultiplier
         ? 70.0f / CDraw::ms_fFOV : 1.0f;
