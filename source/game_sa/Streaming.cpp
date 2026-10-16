@@ -96,7 +96,7 @@ void CStreaming::InjectHooks() {
     RH_ScopedInstall(InstanceLoadedModels, 0x4084F0);
     RH_ScopedInstall(IsCarModelNeededInCurrentZone, 0x407DD0);
     RH_ScopedInstall(SetMissionDoesntRequireModel, 0x409C90);
-    RH_ScopedInstall(SetModelIsDeletable, 0x409C10); // possible problem due to changed signature
+    RH_ScopedOverloadedInstall(SetModelIsDeletable, "", 0x409C10, void(*)(int32));
     RH_ScopedInstall(Shutdown, 0x4084B0);
     RH_ScopedInstall(StreamAmbulanceAndMedic, 0x40A2A0);
     RH_ScopedInstall(StreamCopModels, 0x40A150);
@@ -3015,9 +3015,13 @@ void CStreaming::SetMissionDoesntRequireSpecialChar(int32 slot) {
     SetMissionDoesntRequireModel(slot + SPECIAL_MODELS_RESOURCE_ID);
 }
 
-// Refactored: Added `mission` condition
-// signature changed
 // 0x409C10
+void CStreaming::SetModelIsDeletable(int32 modelId) {
+    SetModelIsDeletable(modelId, false);
+}
+
+// Refactored: Added `mission` condition, so it can also be used by
+// SetMissionDoesntRequireModel - the game's own callers use the 1-argument version above.
 void CStreaming::SetModelIsDeletable(int32 modelId, bool mission) {
     CStreamingInfo& streamingInfo = GetInfo(modelId);
 
