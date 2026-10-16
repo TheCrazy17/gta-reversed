@@ -91,7 +91,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(GetLookingLRBFirstPerson, 0x50AE60);
     RH_ScopedInstall(GetLookDirection, 0x50AE90);
     RH_ScopedInstall(GetLookingForwardFirstPerson, 0x50AED0);
-    RH_ScopedInstall(CopyCameraMatrixToRWCam, 0x50AFA0, { .Reversed = false });
+    RH_ScopedInstall(CopyCameraMatrixToRWCam, 0x50AFA0);
     RH_ScopedInstall(CalculateMirroredMatrix, 0x50B380);
     RH_ScopedInstall(DealWithMirrorBeforeConstructRenderList, 0x50B510);
     RH_ScopedInstall(ProcessFade, 0x50B5D0);
@@ -522,7 +522,58 @@ float CCamera::GetRoughDistanceToGround() {
 
 // 0x50AFA0
 void CCamera::CopyCameraMatrixToRWCam(bool bUpdateMatrix) {
-    return plugin::CallMethod<0x50AFA0, CCamera*, bool>(this, bUpdateMatrix);
+    static auto& cachedRight   = StaticRef<CVector>(0xB6FF90);
+    static auto& cachedUp      = StaticRef<CVector>(0xB6FF9C);
+    static auto& cachedAt      = StaticRef<CVector>(0xB6FFA8);
+    static auto& cachedPos     = StaticRef<CVector>(0xB6FFB4);
+    static auto& cachesInit    = StaticRef<uint8>(0xB6FFC0);
+    static auto& dirSnapLimit  = StaticRef<float>(0x8CCC78);
+    static auto& posSnapLimit  = StaticRef<float>(0x8CCC7C);
+
+    auto* frame     = RwCameraGetFrame(m_pRwCamera);
+    auto* camMatrix = RwFrameGetMatrix(frame);
+
+    if (!bUpdateMatrix) {
+        m_mCameraMatrixOld.UpdateMatrix(camMatrix);
+    }
+
+    // CMatrix keeps the view direction in the matrix' `up` slot and the world up in `at`
+    camMatrix->right = m_mCameraMatrix.GetRight();
+    camMatrix->up    = m_mCameraMatrix.GetForward();
+    camMatrix->at    = m_mCameraMatrix.GetUp();
+    camMatrix->pos   = m_mCameraMatrix.GetPosition();
+
+    // Reuse the previous value when the change is below the snap limit, otherwise the rendered camera jitters
+    const auto initCache = [](uint8& flags, const uint8 bit, CVector& cache) {
+        if ((flags & bit) == 0) {
+            flags |= bit;
+            cache = CVector{-99999.0f, -99999.0f, -99999.0f};
+        }
+    };
+    initCache(cachesInit, 1 << 0, cachedPos);
+    initCache(cachesInit, 1 << 1, cachedAt);
+    initCache(cachesInit, 1 << 2, cachedUp);
+    initCache(cachesInit, 1 << 3, cachedRight);
+
+    const auto snap = [](CVector& cache, RwV3d& value, float limit) {
+        if ((cache - CVector{value}).SquaredMagnitude() < sq(limit)) {
+            value = cache;
+        }
+        cache = value;
+    };
+    snap(cachedPos,  camMatrix->pos,   posSnapLimit);
+    snap(cachedAt,   camMatrix->at,    dirSnapLimit);
+    snap(cachedUp,   camMatrix->up,    dirSnapLimit);
+    snap(cachedRight, camMatrix->right, dirSnapLimit);
+
+    RwMatrixUpdate(camMatrix);
+    RwFrameUpdateObjects(frame);
+    RwFrameOrthoNormalize(frame);
+
+    if (m_bResetOldMatrix && !bUpdateMatrix) {
+        m_mCameraMatrixOld.UpdateMatrix(camMatrix);
+        m_bResetOldMatrix = false;
+    }
 }
 
 // 0x50B380
