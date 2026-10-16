@@ -24,7 +24,7 @@ void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x632040);
     RH_ScopedVMTInstall(MakeAbortable, 0x6320F0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x6399F0, { .Reversed = false });
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x639CB0, { .Reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x639CB0);
     RH_ScopedVMTInstall(ControlSubTask, 0x6381A0);
 
 }
@@ -137,9 +137,54 @@ CTask* CTaskComplexSunbathe::CreateNextSubTask(CPed* ped) {
     return plugin::CallMethodAndReturn<CTask*, 0x6399F0, CTaskComplexSunbathe*, CPed*>(this, ped);
 }
 
+// 0x638290
+CTask* CTaskComplexSunbathe::CreateSubTask(eTaskType type, CPed* ped) {
+    return plugin::CallMethodAndReturn<CTask*, 0x638290, CTaskComplexSunbathe*, eTaskType, CPed*>(this, type, ped);
+}
+
 // 0x639CB0
 CTask* CTaskComplexSunbathe::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x639CB0, CTaskComplexSunbathe*, CPed*>(this, ped);
+    // 0x639CB4: the original burns a rand() here whose value nobody reads, and each branch
+    // below pulls its own - dropping this one would shift the global RNG for the whole game.
+    rand();
+
+    if (ped->m_nPedType == PED_TYPE_CIVFEMALE) {
+        const float rnd = static_cast<float>(rand() & 0xFFFF) * (1.0f / 32768.0f);
+        m_SunbatherType = static_cast<eSunbatherType>(2 - static_cast<int32>(rnd * -3.0f));
+    } else if (!CPopulation::IsSunbather(ped->GetModelId())) {
+        m_SunbatherType = SUNBATHER_MALE_2;
+    } else {
+        m_SunbatherType = rand() < 0x3FFF ? SUNBATHER_MALE_2 : SUNBATHER_MALE_1;
+    }
+
+    if (!m_pBeachAnimBlock->IsLoaded) {
+        CStreaming::RequestModel(IFPToModelId(m_BeachAnimBlockIndex), STREAMING_KEEP_IN_MEMORY);
+    }
+    if (!m_pSunbatheAnimBlock->IsLoaded) {
+        CStreaming::RequestModel(IFPToModelId(m_SunbatheAnimBlockIndex), STREAMING_KEEP_IN_MEMORY);
+    }
+
+    m_bBathing = false;
+    const bool bLoadSunbatheAnims = ShouldLoadSunbatheAnims();
+    if (m_bStartStanding && bLoadSunbatheAnims) {
+        if (!m_pTowel && m_pSunbatheAnimBlock->IsLoaded) {
+            return CreateSubTask(TASK_SIMPLE_START_SUNBATHING, ped);
+        }
+        return CreateSubTask(TASK_SIMPLE_PAUSE, ped);
+    }
+    if (!m_pBeachAnimBlock->IsLoaded) {
+        if (bLoadSunbatheAnims) {
+            return CreateSubTask(TASK_SIMPLE_PAUSE, ped);
+        }
+        return nullptr;
+    }
+
+    const float bathRnd = static_cast<float>(rand() & 0xFFFF) * (1.0f / 32768.0f);
+    m_BathingTimer.m_nStartTime = CTimer::GetTimeInMS();
+    m_BathingTimer.m_nInterval  = 20000 - static_cast<int32>(bathRnd * -80000.0f);
+    m_BathingTimer.m_bStarted   = true;
+    m_bBathing                  = true;
+    return CreateSubTask(TASK_SIMPLE_SUNBATHE, ped);
 }
 
 // 0x6381A0
