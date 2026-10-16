@@ -2,6 +2,7 @@
 #include "TaskComplexSunbathe.h"
 
 #include "Streaming.h"
+#include "InterestingEvents.h"
 #include "Animation/AnimManager.h"
 #include "Animation/AnimBlock.h"
 
@@ -23,7 +24,7 @@ void CTaskComplexSunbathe::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x6366A0);
     RH_ScopedVMTInstall(GetTaskType, 0x632040);
     RH_ScopedVMTInstall(MakeAbortable, 0x6320F0);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x6399F0, { .Reversed = false });
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x6399F0);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x639CB0);
     RH_ScopedVMTInstall(ControlSubTask, 0x6381A0);
 
@@ -134,7 +135,60 @@ bool ShouldLoadSunbatheAnims() {
 
 // 0x6399F0
 CTask* CTaskComplexSunbathe::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6399F0, CTaskComplexSunbathe*, CPed*>(this, ped);
+    if (ped->m_nPedType == PED_TYPE_PROSTITUTE || ped->m_nPedType == PED_TYPE_CIVFEMALE) {
+        g_InterestingEvents.Add(CInterestingEvents::INTERESTING_EVENT_2, ped);
+    }
+
+    const auto startTime = CTimer::GetTimeInMS();
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_SIMPLE_PAUSE:
+        if (m_bBathing) {
+            if (ShouldLoadSunbatheAnims() && m_pSunbatheAnimBlock->IsLoaded) {
+                return CreateSubTask(TASK_SIMPLE_STOP_SUNBATHING, ped);
+            }
+        } else if (m_pSunbatheAnimBlock->IsLoaded && m_pBeachAnimBlock->IsLoaded) {
+            return CreateSubTask(TASK_SIMPLE_START_SUNBATHING, ped);
+        }
+        break;
+
+    case TASK_SIMPLE_SUNBATHE:
+        if (!m_pSunbatheAnimBlock->IsLoaded) {
+            return CreateSubTask(TASK_SIMPLE_PAUSE, ped);
+        }
+        if (CanSunbathe() && !m_BathingTimer.IsOutOfTime() && (m_SunbatherType == SUNBATHER_MALE_1 || m_SunbatherType == SUNBATHER_FEMALE_1)) {
+            return CreateSubTask(TASK_SIMPLE_IDLE_SUNBATHING, ped);
+        }
+        return CreateSubTask(TASK_SIMPLE_STOP_SUNBATHING, ped);
+
+    case TASK_SIMPLE_START_SUNBATHING:
+        if (!m_pBeachAnimBlock->IsLoaded) {
+            break;
+        }
+        m_BathingTimer.m_nStartTime = startTime;
+        m_BathingTimer.m_nInterval  = CGeneral::GetRandomNumberInRange(20000, 100000);
+        m_BathingTimer.m_bStarted   = true;
+        {
+            const auto task = CreateSubTask(TASK_SIMPLE_SUNBATHE, ped);
+            m_bBathing = true;
+            return task;
+        }
+
+    case TASK_SIMPLE_IDLE_SUNBATHING:
+        if (!m_pBeachAnimBlock->IsLoaded) {
+            return CreateSubTask(TASK_FINISHED, ped);
+        }
+        return CreateSubTask(TASK_SIMPLE_SUNBATHE, ped);
+
+    case TASK_SIMPLE_STOP_SUNBATHING: {
+        const auto task = CreateSubTask(TASK_FINISHED, ped);
+        m_bBathing = false;
+        return task;
+    }
+
+    default:
+        return nullptr;
+    }
+    return CreateSubTask(TASK_FINISHED, ped);
 }
 
 // 0x638290
