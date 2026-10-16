@@ -9,7 +9,7 @@ void CDecision::InjectHooks() {
 
     RH_ScopedInstall(SetDefault, 0x600530);
     RH_ScopedInstall(Set, 0x600570);
-    //RH_ScopedInstall(Add, 0x600600, { .Reversed = false });
+    RH_ScopedInstall(Add, 0x600600);
     RH_ScopedInstall(From, 0x6006B0);
     //RH_ScopedInstall(HasResponse, 0x600710, { .Reversed = false });
     //RH_ScopedInstall(MakeDecision, 0x6040D0, { .Reversed = false });
@@ -60,9 +60,29 @@ void CDecision::MakeDecision(int32, bool, int32, int32, int32, int32, int16&, in
 bool CDecision::HasResponse() {
 
 }
+*/
 
 // 0x600600
-void CDecision::Add(int32, float*, int32*) {
-
+void CDecision::Add(int32 task, float* probs, int32* bools) {
+    for (auto slot = 0; slot < MAX_NUM_CHOICES; slot++) {
+        if (m_Tasks[slot] != TASK_INVALID) {
+            continue;
+        }
+        auto j = 0u;
+        for (; j < 4u; j++) {
+            if (m_Probs[slot][j] != 0) {
+                break;
+            }
+        }
+        if (j < 4u || m_Bools[slot][0] || m_Bools[slot][1]) {
+            continue;
+        }
+        m_Tasks[slot] = (eTaskType)task;
+        for (auto k = 0u; k < 4u; k++) {
+            m_Probs[slot][k] = (uint8)probs[k];
+        }
+        m_Bools[slot][0] = bools[0] != 0;
+        m_Bools[slot][1] = bools[1] != 0;
+        return;
+    }
 }
-*/
