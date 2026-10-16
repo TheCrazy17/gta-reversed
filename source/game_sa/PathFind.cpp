@@ -68,7 +68,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(SwitchPedRoadsOffInArea, 0x452F00);
     RH_ScopedInstall(SwitchRoadsOffInArea, 0x452C80);
     RH_ScopedInstall(SwitchRoadsOffInAreaForOneRegion, 0x452820);
-    RH_ScopedInstall(ComputeRoute, 0x452760, { .Reversed = false });
+    RH_ScopedInstall(ComputeRoute, 0x452760);
     //RH_ScopedInstall(CompleteNewInterior, 0x452270);
     RH_ScopedInstall(SwitchOffNodeAndNeighbours, 0x452160);
     //RH_ScopedInstall(Find2NodesForCarCreation, 0x452090);
@@ -489,7 +489,38 @@ void CPathFind::DoPathSearch(
 
 // 0x452760
 void CPathFind::ComputeRoute(uint8 nodeType, const CVector& vecStart, const CVector& vecEnd, const CNodeAddress& startAddress, CNodeRoute* route) {
-    plugin::CallMethod<0x452760>(this, nodeType, &vecStart, &vecEnd, &startAddress, route);
+    static auto& forbiddenNode = StaticRef<CNodeAddress>(0x8A5F44); // written by 0x42F870 and 0x66EA30, both still un-reversed
+
+    CNodeAddress nodes[8];
+    for (auto& node : nodes) {
+        node.m_wAreaId = (uint16)-1; // 0x452776 only clears the area id, the node id keeps its stack garbage
+    }
+
+    int16 numNodes{};
+    DoPathSearch(
+        static_cast<ePathType>(nodeType),
+        vecStart,
+        startAddress,
+        vecEnd,
+        nodes,
+        numNodes,
+        8,
+        nullptr,
+        999999.0f,
+        nullptr,
+        999999.0f,
+        false,
+        forbiddenNode,
+        false,
+        false
+    );
+
+    route->Clear();
+    for (auto i = 0; i < numNodes; ++i) {
+        if (!route->IsFull()) {
+            route->Add(nodes[i]);
+        }
+    }
 }
 
 // 0x44D960
