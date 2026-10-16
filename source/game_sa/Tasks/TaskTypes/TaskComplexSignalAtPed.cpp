@@ -2,6 +2,7 @@
 #include "TaskComplexSignalAtPed.h"
 #include "TaskSimpleStandStill.h"
 #include "TaskSimpleDoHandSignal.h"
+#include "TaskComplexGangLeader.h"
 #include "TaskSimpleRunAnim.h"
 
 void CTaskComplexSignalAtPed::InjectHooks() {
@@ -15,7 +16,7 @@ void CTaskComplexSignalAtPed::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x660AA0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x660B30);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x660CC0, { .Reversed = false });
-    RH_ScopedVMTInstall(ControlSubTask, 0x660D80, { .Reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x660D80);
 }
 
 // 0x660A30
@@ -66,5 +67,26 @@ CTask* CTaskComplexSignalAtPed::CreateFirstSubTask(CPed* ped) {
 
 // 0x660D80
 CTask* CTaskComplexSignalAtPed::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x660D80, CTaskComplexSignalAtPed*, CPed*>(this, ped);
+    // Same gangs IFP bookkeeping as CTaskComplexGangLeader::ControlSubTask
+    if (!m_areAnimsReferenced) {
+        if (CTaskComplexGangLeader::ShouldLoadGangAnims()) {
+            const auto blk = CAnimManager::GetAnimationBlockIndex("gangs");
+            if (CAnimManager::GetAnimBlocks()[blk].IsLoaded) {
+                CAnimManager::AddAnimBlockRef(blk);
+                m_areAnimsReferenced = true;
+            } else {
+                CStreaming::RequestModel(IFPToModelId(blk), STREAMING_KEEP_IN_MEMORY);
+            }
+        }
+    } else if (!CTaskComplexGangLeader::ShouldLoadGangAnims()) {
+        CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex("gangs"));
+        m_areAnimsReferenced = false;
+    }
+
+    if (const auto pedToSignalAt = m_pedToSignalAt) {
+        const auto& to = pedToSignalAt->GetPosition();
+        const auto& from = ped->GetPosition();
+        ped->m_fAimingRotation = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(to.x - from.x, to.y - from.y, 0.0f, 0.0f));
+    }
+    return m_pSubTask;
 }
