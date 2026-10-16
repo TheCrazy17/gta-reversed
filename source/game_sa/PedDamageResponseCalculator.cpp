@@ -1,4 +1,5 @@
 #include "StdInc.h"
+#include "PedStats.h"
 
 #include <reversiblebugfixes/Bugs.hpp>
 #include "PedDamageResponseCalculator.h"
@@ -8,7 +9,7 @@ void CPedDamageResponseCalculator::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(Constructor, 0x4AD3F0);
-    RH_ScopedInstall(AccountForPedDamageStats, 0x4AD430, { .Reversed = false });
+    RH_ScopedInstall(AccountForPedDamageStats, 0x4AD430);
     RH_ScopedInstall(AccountForPedArmour, 0x4AD550);
     RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610, { .Reversed = false });
     RH_ScopedInstall(ComputeWillKillPed, 0x4B3210);
@@ -37,7 +38,39 @@ CPedDamageResponseCalculator* CPedDamageResponseCalculator::Constructor(CEntity*
  * @addr 0x4AD430
  */
 void CPedDamageResponseCalculator::AccountForPedDamageStats(CPed* ped, CPedDamageResponse& response) {
-    plugin::CallMethod<0x4AD430, CPedDamageResponseCalculator*, CPed*, CPedDamageResponse&>(this, ped, response);
+    const bool damageFactorUntouched = m_fDamageFactor == ms_damageFactor;
+
+    m_fDamageFactor = ped->IsPlayer()
+        ? m_fDamageFactor * 0.33f
+        : ped->m_pStats->m_fDefendWeakness * m_fDamageFactor;
+
+    const auto damager = static_cast<const CPed*>(m_pDamager);
+    if (m_pDamager && m_pDamager->GetIsTypePed() && damager->IsPlayer()) {
+        if (!CPedGroups::AreInSameGroup(ped, damager))
+            return;
+        if (m_weaponType == WEAPON_EXPLOSION || m_weaponType == WEAPON_FLAMETHROWER)
+            return;
+        if (damageFactorUntouched)
+            return;
+    } else {
+        if (ped && ped->IsPlayer()) {
+            if (!m_pDamager)
+                return;
+            if (m_pDamager->GetIsTypePed() && CPedIntelligence::AreFriends(*ped, *damager)) {
+                goto applyDamageScale;
+            }
+        }
+        if (!m_pDamager || !m_pDamager->GetIsTypePed())
+            return;
+        if (ped->GetCreatedBy() != PED_MISSION)
+            return;
+        if (!CPedGroups::AreInSameGroup(ped, damager))
+            return;
+        if (m_weaponType == WEAPON_EXPLOSION || m_weaponType == WEAPON_FLAMETHROWER)
+            return;
+    }
+applyDamageScale:
+    m_fDamageFactor = std::min(12.5f, m_fDamageFactor * 0.1f);
 }
 
 /*!
