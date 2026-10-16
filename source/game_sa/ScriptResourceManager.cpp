@@ -7,9 +7,9 @@ void CScriptResourceManager::InjectHooks() {
     RH_ScopedCategory("Scripts");
 
     RH_ScopedInstall(Initialise, 0x470480);
-    RH_ScopedInstall(AddToResourceManager, 0x4704B0, { .Reversed = false });
-    RH_ScopedInstall(RemoveFromResourceManager, 0x470510, { .Reversed = false });
-    RH_ScopedInstall(HasResourceBeenRequested, 0x470620, { .Reversed = false });
+    RH_ScopedInstall(AddToResourceManager, 0x4704B0);
+    RH_ScopedInstall(RemoveFromResourceManager, 0x470510);
+    RH_ScopedInstall(HasResourceBeenRequested, 0x470620);
     //RH_ScopedInstall(Load, 0x0, { .Reversed = false });
     //RH_ScopedInstall(Save, 0x0, { .Reversed = false });
 }
@@ -57,9 +57,7 @@ bool CScriptResourceManager::RemoveFromResourceManager(int32 modelId, eScriptRes
         auto& res = m_aScriptResources[matchedSlot];
         res.m_nModelId = -1;
         res.m_nType    = RESOURCE_TYPE_DEFAULT;
-        // NOTSA: original doesn't clear m_pThread here either, leaving a stale pointer in the
-        // freed slot - harmless since m_nType == RESOURCE_TYPE_DEFAULT marks it reusable, and
-        // AddToResourceManager overwrites all 3 fields on reuse.
+        res.m_pThread  = nullptr;
     }
     return numOtherHolders == 0;
 }
