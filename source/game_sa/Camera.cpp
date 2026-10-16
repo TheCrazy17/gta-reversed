@@ -149,10 +149,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(TryToStartNewCamMode, 0x51E560);
     RH_ScopedInstall(CameraColDetAndReact, 0x520190);
     RH_ScopedInstall(CamControl, 0x527FA0);
-    // Body is reversed but stays redirected to GTA: upstream's version drops the camera shake
-    // block (0x52BA4E applies m_fShakeIntensity/m_fStartShakeTime/m_fEndShakeTime/m_nShakeType
-    // through ProcessJiggle), so enabling it would silently break screen shake.
-    RH_ScopedInstall(Process, 0x52B730, { .Reversed = false });
+    RH_ScopedInstall(Process, 0x52B730);
     RH_ScopedInstall(DeleteCutSceneCamDataMemory, 0x5B24A0);
     RH_ScopedInstall(LoadPathSplines, 0x5B24D0);
     RH_ScopedInstall(Init, 0x5BC520);
@@ -1786,6 +1783,11 @@ void CCamera::Process() {
         return from + (to - from) * amount;
     };
 
+    const float shakeTime = static_cast<float>(CTimer::GetTimeInMS());
+    if (shakeTime < m_fEndShakeTime) {
+        ProcessShake((shakeTime - m_fStartShakeTime) / (m_fEndShakeTime - m_fStartShakeTime));
+    }
+
     if (m_bTransitionState && !(activeCam.m_nDirectionWasLooking != LOOKING_DIRECTION_FORWARD && m_pTargetEntity->GetIsTypeVehicle())) {
         const auto elapsed = static_cast<uint32>(std::min(
             static_cast<int32>(CTimer::GetTimeInMS() - m_nTimeTransitionStart),
@@ -1942,6 +1944,7 @@ void CCamera::Process() {
     CalculateDerivedValues(false, true);
     CopyCameraMatrixToRWCam(false);
     m_vecGameCamPos = m_mCameraMatrix.GetPosition();
+    plugin::CallMethod<0x515BD0, CCamera*>(this); // un-reversed helper: picks m_mCameraMatrix' forward scaled by 0.5 or 5.0 depending on the active cam mode
     UpdateSoundDistances();
     m_fLODDistMultiplier = !CCutsceneMgr::ms_running || CCutsceneMgr::ms_useLodMultiplier
         ? 70.0f / CDraw::ms_fFOV : 1.0f;
