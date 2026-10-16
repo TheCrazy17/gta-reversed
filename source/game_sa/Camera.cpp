@@ -163,7 +163,7 @@ void CCamera::InjectHooks() {
     RH_ScopedOverloadedInstall(ProcessVectorMoveLinear, "wo-ratio", 0x5164A0, void(CCamera::*)());
     RH_ScopedOverloadedInstall(ProcessFOVLerp, "with-ratio", 0x50D510, void(CCamera::*)(float));
     RH_ScopedOverloadedInstall(ProcessFOVLerp, "wo-ratio", 0x516500, void(CCamera::*)());
-    //RH_ScopedOverloadedInstall(ProcessJiggle, "0", 0x516560, { .Reversed = false });
+    RH_ScopedOverloadedInstall(ProcessShake, "1", 0x516560, void(CCamera::*)(float));
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
 }
@@ -1625,10 +1625,64 @@ void CCamera::ProcessShake() {
     plugin::CallMethod<0x51A6F0, CCamera*>(this);
 }
 
-// shakeIntensity not used
 // 0x516560
-CVector* CCamera::ProcessShake(float intensity) {
-    return plugin::CallMethodAndReturn<CVector*, 0x516560, CCamera*, float>(this, intensity);
+void CCamera::ProcessShake(float) {
+    // The shake window fraction the caller passes is never read: the rotation is driven by
+    // m_fShakeIntensity, which the caller updates before this. What the original leaves in EAX
+    // on return is a scratch vector nobody uses, hence the void here.
+    static auto& handShakersSetUp = StaticRef<bool>(0xB70048);
+
+    if (!handShakersSetUp) {
+        handShakersSetUp = true;
+
+        // 0x516578 writes every shaker except gHandShaker[0] with plain stores. All of them share
+        // the same limits except the z axis, the twitch frequency and the twitch velocity; a
+        // frequency of -1 means the original does not touch the field (it is already zero).
+        struct Variant { float limZ; int32 twitchFreq; float twitchVel; };
+        constexpr Variant variants[NUM_HANDSHAKERS - 1] = {
+            { 0.01f,  15, 0.001f },
+            { 0.04f,  20, 0.001f },
+            { 0.01f,  -1, 0.0005f },
+            { 0.01f,  20, 0.002f },
+            { 0.01f,  -1, 0.003f },
+        };
+        for (auto i = 1; i < NUM_HANDSHAKERS; ++i) {
+            const auto& variant = variants[i - 1];
+            auto& shaker = gHandShaker[i];
+            shaker.m_lim.Set(0.02f, 0.02f, variant.limZ);
+            shaker.m_motion.Set(0.0002f, 0.0002f, 0.0001f);
+            shaker.m_slow.Set(1.3f, 1.3f, 1.4f);
+            shaker.m_scaleReactionMin = 0.3f;
+            shaker.m_scaleReactionMax = 1.0f;
+            if (variant.twitchFreq != -1) {
+                shaker.m_twitchFreq = variant.twitchFreq;
+            }
+            shaker.m_twitchVel = variant.twitchVel;
+        }
+    }
+
+    auto& cam = GetActiveCam();
+    auto& shaker = gHandShaker[m_nShakeType];
+    shaker.Process(m_fShakeIntensity);
+
+    cam.m_vecFront = shaker.m_resultMat.InverseTransformPoint(cam.m_vecFront); // Multiply3x3(_VM)
+    cam.m_vecFront.Normalise();
+
+    const auto angle = shaker.m_ang.z * m_fShakeIntensity;
+    cam.m_vecUp = CVector{ std::sin(angle), 0.0f, std::cos(angle) };
+
+    auto side = CrossProduct(cam.m_vecFront, cam.m_vecUp);
+    side.Normalise();
+    cam.m_vecUp = CrossProduct(side, cam.m_vecFront);
+
+    if (cam.m_vecFront.x == 0.0f && cam.m_vecFront.y == 0.0f) {
+        cam.m_vecFront.x = 0.0001f;
+        cam.m_vecFront.y = 0.0001f;
+    }
+
+    side = CrossProduct(cam.m_vecFront, cam.m_vecUp);
+    side.Normalise();
+    cam.m_vecUp = CrossProduct(side, cam.m_vecFront);
 }
 
 // inlined - 0x52B845
