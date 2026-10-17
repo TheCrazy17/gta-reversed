@@ -5,6 +5,7 @@
 #include "Ped.h"
 #include "PedGroup.h"
 #include "PedGroupMembership.h"
+#include "PedGroups.h"
 #include "TaskComplexEnterCarAsPassenger.h"
 #include "TaskComplexLeaveCar.h"
 #include "TaskComplexSeekEntityXYOffset.h"
@@ -24,7 +25,7 @@ void CTaskComplexFollowLeaderInFormation::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x694A30);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x696820);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6968E0);
-    RH_ScopedVMTInstall(ControlSubTask, 0x696940, { .Reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x696940);
 }
 
 // 0x6949A0
@@ -146,5 +147,75 @@ CTask* CTaskComplexFollowLeaderInFormation::CreateFirstSubTask(CPed* ped) {
 
 // 0x696940
 CTask* CTaskComplexFollowLeaderInFormation::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x696940, CTaskComplexFollowLeaderInFormation*, CPed*>(this, ped);
+    if (!m_Leader) {
+        return nullptr;
+    }
+
+    if (m_pSubTask->GetTaskType() == TASK_SIMPLE_CAR_DRIVE) {
+        return m_pSubTask;
+    }
+
+    const auto sqDistToLeader = (ped->GetPosition() - m_Leader->GetPosition()).SquaredMagnitude();
+
+    if (m_Leader->bInVehicle && m_Leader->m_pVehicle) {
+        const auto leaderVehicle = m_Leader->m_pVehicle;
+
+        if (m_pSubTask->GetTaskType() != TASK_COMPLEX_SEEK_ENTITY) {
+            if (m_pSubTask->GetTaskType() != TASK_SIMPLE_STAND_STILL || CPedGroups::GetPedsGroup(ped)) {
+                return m_pSubTask;
+            }
+
+            // Standing still next to a leader that's in a car: get in if we reached it, else re-position
+            const auto sqVehicleRadius = sq(leaderVehicle->GetModelInfo()->GetColModel()->GetBoundRadius());
+            if (sqDistToLeader >= sqVehicleRadius) { // Not at the car yet
+                if (sqDistToLeader < sq(m_Dist)) {
+                    if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr)) {
+                        return CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+                    }
+                }
+            } else if (leaderVehicle->m_nNumPassengers < leaderVehicle->m_nMaxPassengers) {
+                if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr)) {
+                    return CreateSubTask(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER, ped);
+                }
+            }
+            return m_pSubTask;
+        }
+
+        // Chasing a leader that's in a car - the car is what we're seeking, so its radius matters
+        static_cast<CTaskComplexSeekEntityXYOffset*>(m_pSubTask)
+            ->UpdateMaxEntityDist2D(leaderVehicle->GetModelInfo()->GetColModel()->GetBoundRadius());
+
+        if (m_Dist <= 0.0f) {
+            return m_pSubTask;
+        }
+
+        if (sq(m_Dist) >= sqDistToLeader) {
+            return m_pSubTask;
+        }
+
+        // Too far away to keep up with the car, stop and wait for it to come back around
+        if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr)) {
+            CTaskSimpleStandStill task{ 0, false, false, 8.0f };
+            task.ProcessPed(ped);
+            return new CTaskSimplePause{ 2000 };
+        }
+        return m_pSubTask;
+    }
+
+    if (m_pSubTask->GetTaskType() == TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) {
+        if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr)) {
+            return CreateFirstSubTask(ped);
+        }
+        return m_pSubTask;
+    }
+
+    // Waiting around: get back on the leader's tail if it got away
+    if (   m_pSubTask->GetTaskType() == TASK_SIMPLE_PAUSE
+        || m_pSubTask->GetTaskType() == TASK_SIMPLE_STAND_STILL) {
+        if (sq(m_Dist) > sqDistToLeader) {
+            return CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+        }
+    }
+
+    return m_pSubTask;
 }

@@ -401,6 +401,14 @@ public:
         m_minEntityDist2D = v;
     }
 
+    //! @notsa-patch 0x6955D0 - grows the distance at which the entity counts as reached, restarting the scan when it does
+    void UpdateMaxEntityDist2D(float maxEntityDist2D) {
+        if (maxEntityDist2D > m_maxEntityDist2D) {
+            m_maxEntityDist2D = maxEntityDist2D;
+            m_scanTimer.Start(0);
+        }
+    }
+
     auto GetEntityToSeek() const {
         return m_entityToSeek;
     }
