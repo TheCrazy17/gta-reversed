@@ -34,6 +34,8 @@ public:
     CTask*    ControlSubTask(CPed* ped) override;
 
 private:
+    CTask* CreateSubTask(eTaskType taskType, CPed* ped);
+
     friend void InjectHooksMain();
     static void InjectHooks();
 
