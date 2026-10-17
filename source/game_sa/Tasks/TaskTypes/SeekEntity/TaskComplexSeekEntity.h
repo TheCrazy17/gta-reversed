@@ -62,6 +62,7 @@ public:
             RH_ScopedInstall(Destructor, 0x661F30);
 
             RH_ScopedInstall(CreateSubTask, 0x496DC0);
+            RH_ScopedInstall(UpdateMaxEntityDist2D, 0x6955D0);
 
             RH_ScopedVMTInstall(Clone, 0x664AF0);
             RH_ScopedVMTInstall(GetTaskType, 0x661EA0);
@@ -401,11 +402,13 @@ public:
         m_minEntityDist2D = v;
     }
 
-    //! @notsa-patch 0x6955D0 - grows the distance at which the entity counts as reached, restarting the scan when it does
+    // 0x6955D0
     void UpdateMaxEntityDist2D(float maxEntityDist2D) {
         if (maxEntityDist2D > m_maxEntityDist2D) {
             m_maxEntityDist2D = maxEntityDist2D;
-            m_scanTimer.Start(0);
+            m_scanTimer.m_nStartTime = CTimer::GetTimeInMS();
+            m_scanTimer.m_nInterval = 0;
+            m_scanTimer.m_bStarted = true;
         }
     }
 

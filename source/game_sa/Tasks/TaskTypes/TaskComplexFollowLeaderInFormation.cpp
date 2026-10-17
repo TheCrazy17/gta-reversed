@@ -21,6 +21,8 @@ void CTaskComplexFollowLeaderInFormation::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x6949A0);
     RH_ScopedInstall(Destructor, 0x694A40);
 
+    RH_ScopedInstall(CreateSubTask, 0x6962A0);
+
     RH_ScopedVMTInstall(Clone, 0x695740);
     RH_ScopedVMTInstall(GetTaskType, 0x694A30);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x696820);
