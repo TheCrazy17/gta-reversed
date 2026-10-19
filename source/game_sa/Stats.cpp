@@ -58,7 +58,7 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(FindLeastFavoriteRadioStation, 0x559010);
     RH_ScopedInstall(BuildStatLine, 0x559230, { .Reversed = false });
     RH_ScopedInstall(CheckForStatsMessage, 0x559760);
-    RH_ScopedInstall(LoadStatUpdateConditions, 0x559860, { .Reversed = false });
+    RH_ScopedInstall(LoadStatUpdateConditions, 0x559860);
     RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0);
     RH_ScopedInstall(FindCriminalRatingString, 0x55A210);
     RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
@@ -337,7 +337,44 @@ void CStats::CheckForStatsMessage() {
 
 // 0x559860
 void CStats::LoadStatUpdateConditions() {
-    plugin::Call<0x559860>();
+    CFileMgr::SetDir("");
+
+    auto* file = CFileMgr::OpenFile("DATA\\STATDISP.DAT", "rb");
+
+    TotalNumStatMessages = 0;
+
+    uint32 numMessages = 0;
+    for (char* line = CFileLoader::LoadLine(file); line; line = CFileLoader::LoadLine(file)) {
+        if (line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+        if (numMessages >= StatMessage.size()) {
+            break;
+        }
+
+        int32 statId{};
+        float value{};
+        char  statName[84]{};
+        char  condition[12]{};
+        char  textId[8]{};
+        RET_IGNORED(sscanf_s(line, "%d %s %s %f %s", &statId, SCANF_S_STR(statName), SCANF_S_STR(condition), &value, SCANF_S_STR(textId)));
+
+        auto& message     = StatMessage[numMessages];
+        message.stat_num  = static_cast<int16>(statId);
+        message.displayed = false;
+        if (std::strcmp(condition, "lessthan") == 0) {
+            message.condition = STATMESSAGE_LESSTHAN;
+        } else if (std::strcmp(condition, "morethan") == 0) {
+            message.condition = STATMESSAGE_MORETHAN;
+        } // Anything else keeps the condition the message already had
+        message.value = value;
+        std::strcpy(message.text_id, textId);
+
+        numMessages++;
+    }
+    TotalNumStatMessages = numMessages;
+
+    CFileMgr::CloseFile(file);
 }
 
 // 0x5599B0
