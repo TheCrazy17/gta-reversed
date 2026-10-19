@@ -28,7 +28,7 @@ void CPlane::InjectHooks() {
     RH_ScopedInstall(SetGearUp, 0x6CAC20);
     RH_ScopedInstall(SetGearDown, 0x6CAC70);
     RH_ScopedVMTInstall(OpenDoor, 0x6CACB0);
-    RH_ScopedVMTInstall(ProcessControl, 0x6C9260, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessControl, 0x6C9260);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6CADD0, { .Reversed = false });
     RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6CB7C0, { .Reversed = false });
     RH_ScopedVMTInstall(VehicleDamage, 0x6CC4B0, { .Reversed = false });
@@ -655,15 +655,11 @@ void CPlane::Render() {
 
 // 0x6C9260
 void CPlane::ProcessControl() {
-    return plugin::CallMethod<0x6C9260, CPlane*>(this);
-
-    // untested
-    if (GetStatus() == STATUS_PLAYER) {
-        if (m_nModelIndex == MODEL_CROPDUST || m_nModelIndex == MODEL_STUNT) {
-            auto pad = CPad::GetPad(m_pDriver->GetPadNumber());
-            if (pad->IsRightShockPressed()) {
-                m_bSmokeEjectorEnabled = m_bSmokeEjectorEnabled == 0;
-            }
+    // The crop duster and the stunt plane toggle their smoke with the right stick button
+    if (GetStatus() == STATUS_PLAYER && (m_nModelIndex == MODEL_CROPDUST || m_nModelIndex == MODEL_STUNT)) {
+        const auto padIndex = m_pDriver && m_pDriver->m_nPedType == PED_TYPE_PLAYER2 ? 1 : 0;
+        if (CPad::GetPad(padIndex)->IsRightShockPressed()) {
+            m_bSmokeEjectorEnabled = !m_bSmokeEjectorEnabled;
         }
     }
 
@@ -684,23 +680,24 @@ void CPlane::ProcessControl() {
         m_StallCounter = 0;
     }
 
-    CVehicle::ProcessWeapons();
+    ProcessWeapons();
+
     if (m_nModelIndex == MODEL_VORTEX) {
-        m_WheelStates[0] = WHEEL_STATE_NORMAL;
-        m_WheelStates[1] = WHEEL_STATE_NORMAL;
-        m_WheelStates[2] = WHEEL_STATE_NORMAL;
-        m_WheelStates[3] = WHEEL_STATE_NORMAL;
+        m_WheelStates.fill(WHEEL_STATE_NORMAL);
     }
 
     if (m_pSmokeParticle) {
-        RwMatrix out;
-        m_nSmokeTimer += (uint32)(-CTimer::GetTimeStepInMS());
-        m_pSmokeParticle->GetCompositeMatrix(&out);
-        CVector velocity = -m_vecMoveSpeed * 5.0f;
-        auto particleData = FxPrtMult_c(0.0f, 0.0f, 0.0f, 0.2f, 1.0f, 1.0f, 0.1f);
-        g_fx.m_SmokeHuge->AddParticle(out.pos, velocity, 0.00f, particleData);
-        g_fx.m_SmokeHuge->AddParticle(out.pos, velocity, 0.05f, particleData);
-        if (m_nSmokeTimer <= 0 || vehicleFlags.bIsDrowning) {
+        m_nSmokeTimer += static_cast<uint32>(static_cast<int32>(CTimer::GetTimeStep() * 0.02f * -1000.0f));
+
+        RwMatrix mat;
+        m_pSmokeParticle->GetCompositeMatrix(&mat);
+
+        const auto velocity     = -m_vecMoveSpeed * 5.0f;
+        const FxPrtMult_c prtMult{ 0.0f, 0.0f, 0.0f, 0.2f, 1.0f, 1.0f, 0.1f };
+        g_fx.m_SmokeHuge->AddParticle(CVector{ mat.pos }, velocity, 0.0f, prtMult);
+        g_fx.m_SmokeHuge->AddParticle(CVector{ mat.pos }, velocity, 0.05f, prtMult);
+
+        if (static_cast<int32>(m_nSmokeTimer) <= 0 || vehicleFlags.bIsDrowning) {
             m_pSmokeParticle->Kill();
             m_pSmokeParticle = nullptr;
         }
