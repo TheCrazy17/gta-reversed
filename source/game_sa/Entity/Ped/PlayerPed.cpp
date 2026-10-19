@@ -13,6 +13,22 @@
 #include "TaskSimpleUseGun.h"
 #include "EntryExitManager.h"
 #include "MBlur.h"
+#include "GangWars.h"
+#include "Radar.h"
+#include "Stats.h"
+#include "Cheat.h"
+#include "TaskComplexBeInGroup.h"
+#include "EventScriptCommand.h"
+#include "EventGroupEvent.h"
+#include "EventNewGangMember.h"
+#include "EventDontJoinPlayerGroup.h"
+#include "EventPlayerCommandToGroupAttack.h"
+#include "EventPlayerCommandToGroupGather.h"
+#include "TaskSimplePlayerOnFoot.h"
+#include "TaskComplexFacial.h"
+#include "Plugins/RpAnimBlendPlugin/RpAnimBlend.h"
+#include "Fire.h"
+#include "AEPedSpeechAudioEntity.h"
 
 bool CPlayerPed::bDebugPlayerInvincible;
 bool CPlayerPed::bDebugTargeting;
@@ -80,11 +96,11 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650, { .Reversed = false });
     RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80, { .Reversed = false });
     RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0, { .Reversed = false });
-    RH_ScopedInstall(MakeThisPedJoinOurGroup, 0x60C840, { .Reversed = false });
-    RH_ScopedInstall(PlayerWantsToAttack, 0x60CC50, { .Reversed = false });
-    RH_ScopedInstall(SetInitialState, 0x60CD20, { .Reversed = false });
-    RH_ScopedInstall(EvaluateNeighbouringTarget, 0x60D1C0, { .Reversed = false });
-    RH_ScopedInstall(ProcessGroupBehaviour, 0x60D350, { .Reversed = false });
+    RH_ScopedInstall(MakeThisPedJoinOurGroup, 0x60C840);
+    RH_ScopedInstall(PlayerWantsToAttack, 0x60CC50);
+    RH_ScopedInstall(SetInitialState, 0x60CD20);
+    RH_ScopedInstall(EvaluateNeighbouringTarget, 0x60D1C0);
+    RH_ScopedInstall(ProcessGroupBehaviour, 0x60D350);
     RH_ScopedInstall(ProcessWeaponSwitch, 0x60D850, { .Reversed = false });
     RH_ScopedInstall(FindWeaponLockOnTarget, 0x60DC50, { .Reversed = false });
     RH_ScopedInstall(FindNextWeaponLockOnTarget, 0x60E530, { .Reversed = false });
@@ -1186,19 +1202,191 @@ void CPlayerPed::ForceGroupToNeverFollow(bool enable) {
         TellGroupToStartFollowingPlayer(false, false, true);
 }
 
+// 0x609380
+static bool IsRecruitCheatActive() {
+    return CCheat::IsActive(CHEAT_WANNA_BE_IN_MY_GANG) || CCheat::IsActive(CHEAT_NO_ONE_CAN_STOP_US) || CCheat::IsActive(CHEAT_ROCKET_MAYHEM);
+}
+
+// Time the group buttons have to be held to disband the group
+static constexpr uint16 HOLD_TO_DISBAND_MS = 0x4B0;
+
 // 0x60C840
 void CPlayerPed::MakeThisPedJoinOurGroup(CPed* ped) {
-    plugin::CallMethod<0x60C840, CPlayerPed *, CPed*>(this, ped);
+    if (ped->bDruggedUp) {
+        Say(CTX_GLOBAL_DRUGGED_IGNORE);
+        return;
+    }
+    if (ped->GetTaskManager().FindActiveTaskByType(TASK_COMPLEX_KILL_PED_ON_FOOT)) {
+        return;
+    }
+
+    // Only Families members can be recruited, unless one of the recruit cheats is on
+    const auto recruitCheat = IsRecruitCheatActive();
+    if (ped->m_nPedType != PED_TYPE_GANG2 && !recruitCheat) {
+        return;
+    }
+
+    auto& group = GetPlayerGroup();
+    if (group.GetMembership().IsMember(ped)) {
+        return;
+    }
+
+    CAEPedSpeechAudioEntity::SetCJMood(static_cast<eCJMood>(-1), 10'000, 1, -1, -1);
+    Say(CTX_GLOBAL_JOIN_ME_ASK, 0, 1.0f, true);
+
+    auto maxMembers = CStats::FindMaxNumberOfGroupMembers();
+    maxMembers      = std::min<int32>(maxMembers, GetPlayerData()->m_nScriptLimitToGangSize);
+    if (const auto cityUnlocked = CStats::GetStatValue(STAT_CITY_UNLOCKED); cityUnlocked == 1.0f || cityUnlocked == 2.0f) {
+        maxMembers = 0;
+    }
+
+    const auto numMembers = group.GetMembership().CountMembersExcludingLeader();
+    if (!(recruitCheat && numMembers < 7) && numMembers >= maxMembers) {
+        ped->Say(CTX_GLOBAL_JOIN_GANG_NO, 2500, 1.0f, true);
+
+        CEventDontJoinPlayerGroup event{ this };
+        ped->GetIntelligence()->m_eventGroup.Add(&event, false);
+        return;
+    }
+
+    if (auto* const oldGroup = CPedGroups::GetPedsGroup(ped)) {
+        oldGroup->GetMembership().RemoveMember(ped);
+    }
+
+    // The task belongs to the script command event, which is destroyed at the end of the scope
+    const auto playerGroupId = FindPlayerPed(-1)->GetPlayerData()->m_nPlayerGroup;
+    CEventScriptCommand scriptCommand{ TASK_PRIMARY_PRIMARY, new CTaskComplexBeInGroup(playerGroupId, false), false };
+    ped->GetIntelligence()->m_eventGroup.Add(&scriptCommand, false);
+
+    group.GetMembership().AddFollower(ped);
+    group.Process();
+    ped->GiveWeaponWhenJoiningGang();
+
+    CEventGroupEvent newMemberEvent{ this, new CEventNewGangMember(ped) };
+    group.GetIntelligence().AddEvent(&newMemberEvent);
+
+    ped->bDrownsInWater = false;
+
+    CStats::IncrementStat(STAT_GANG_MEMBERS_RECRUITED, 1.0f);
+    CStats::DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_GANG_STRENGTH, 1.0f);
+
+    const auto blipColor = CGangWars::GetGangColor(GANG_GROVE);
+    const auto blip      = CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedRef(ped), blipColor, BLIP_DISPLAY_BLIPONLY);
+    CRadar::ChangeBlipScale(blip, 2);
+    CRadar::ChangeBlipColour(blip, blipColor);
+    CRadar::SetBlipFriendly(blip, true);
+
+    ped->bClearRadarBlipOnDeath = true;
+
+    static auto& playerGroupMaxSeparation = StaticRef<float>(0x86C6C0);
+    group.GetMembership().SetSeparationRange(playerGroupMaxSeparation);
+
+    ped->Say(CTX_GLOBAL_JOIN_GANG_YES, 2500, 1.0f, true);
 }
 
 // 0x60CC50
 bool CPlayerPed::PlayerWantsToAttack() {
-    return plugin::CallMethodAndReturn<bool, 0x60CC50, CPlayerPed *>(this);
+    auto& group = GetPlayerGroup();
+    if (group.GetMembership().CountMembersExcludingLeader() < 1) {
+        return false;
+    }
+    if (!group.m_bMembersEnterLeadersVehicle) {
+        return false;
+    }
+    group.GetIntelligence().ReportAllBarScriptTasksFinished();
+
+    // Lock-on target first, then the mouse target when the mouse aims in third person
+    auto* target = m_pTargetedObject;
+    if (CCamera::m_bUseMouse3rdPerson && !target) {
+        target = m_p3rdPersonMouseTarget;
+    }
+
+    CPed* ped{};
+    if (target) {
+        if (target->GetIsTypePed()) {
+            ped = target->AsPed();
+        } else {
+            if (CTagManager::IsTag(*target)) {
+                return false;
+            }
+            if (target->GetIsTypeObject() && target->AsObject()->CanBeTargetted()) {
+                return false;
+            }
+            ped = FindPedToAttack();
+        }
+    } else {
+        ped = FindPedToAttack();
+    }
+
+    if (ped) {
+        group.PlayerGaveCommand_Attack(this, ped);
+    }
+    return false;
 }
 
 // 0x60CD20
 void CPlayerPed::SetInitialState(bool bGroupCreated) {
-    plugin::CallMethod<0x60CD20, CPlayerPed *, bool>(this, bGroupCreated);
+    CMBlur::ClearDrunkBlur();
+    CTimer::ResetTimeScale();
+
+    m_bUsesCollision            = true;
+    physicalFlags.bApplyGravity = true;
+
+    ClearAimFlag();
+    ClearLookFlag();
+    bRenderPedInCar = true;
+    if (m_pFire) {
+        m_pFire->Extinguish();
+    }
+
+    SetPedState(PEDSTATE_IDLE);
+    SetMoveState(PEDMOVE_STILL);
+
+    bDontRender      = false;
+    bIsBeingArrested = false;
+    bCanExitCar      = true;
+    bIsDucking       = false;
+
+    GetIntelligence()->FlushIntelligence();
+    RpAnimBlendClumpRemoveAllAssociations(GetRpClump());
+    GetTaskManager().SetTask(new CTaskSimplePlayerOnFoot{}, TASK_PRIMARY_DEFAULT, false);
+
+    m_nAnimGroup         = ANIM_GROUP_PLAYER;
+    bIsPedDieAnimPlaying = false;
+    if (m_pPlayerData) {
+        m_pPlayerData->m_bAdrenaline = false;
+    }
+    SetRealMoveAnim();
+
+    m_pStats->m_nTemper = 50;
+
+    if (m_pAttachedTo && !m_bUsesCollision) {
+        m_bUsesCollision = true;
+    }
+    m_pAttachedTo = nullptr;
+    m_nTurretAmmo = 0;
+
+    GetTaskManager().SetTaskSecondary(new CTaskComplexFacial{}, TASK_SECONDARY_FACIAL_COMPLEX);
+
+    if (!bGroupCreated && !GetPlayerData()->m_bGroupNeverFollow) {
+        auto& group = GetPlayerGroup();
+        group.m_bMembersEnterLeadersVehicle = true;
+        group.GetIntelligence().SetDefaultTaskAllocatorType(ePedGroupDefaultTaskAllocatorType::RANDOM);
+
+        CEventPlayerCommandToGroupAttack attackEvent{ nullptr };
+        attackEvent.ComputeResponseTaskType(&group);
+        if (attackEvent.WillRespond()) {
+            auto* const gatherEvent = new CEventPlayerCommandToGroupGather{ nullptr };
+            gatherEvent->m_TaskId   = attackEvent.m_TaskId;
+
+            CEventGroupEvent groupEvent{ this, gatherEvent };
+            group.GetIntelligence().AddEvent(&groupEvent);
+        }
+    }
+
+    if (m_pPlayerData) {
+        m_pPlayerData->SetInitialState();
+    }
 }
 
 // 0x60D000
@@ -1234,13 +1422,102 @@ void CPlayerPed::EvaluateTarget(CEntity* target, CEntity *& outTarget, float & o
 }
 
 // 0x60D1C0
-void CPlayerPed::EvaluateNeighbouringTarget(CEntity* target, CEntity** outTarget, float* outTargetPriority, float maxDistance, float arg4, bool arg5) {
-    plugin::CallMethod<0x60D1C0, CPlayerPed *, CEntity*, CEntity**, float*, float, float, bool>(this, target, outTarget, outTargetPriority, maxDistance, arg4, arg5);
+void CPlayerPed::EvaluateNeighbouringTarget(CEntity* target, CEntity** outTarget, float* outTargetPriority, float maxDistance, float compensationRotRad, bool searchPositiveSide) {
+    if ((target->GetPosition() - GetPosition()).Magnitude() > maxDistance) {
+        return;
+    }
+    if (DoesTargetHaveToBeBroken(target, &GetActiveWeapon())) {
+        return;
+    }
+
+    // Angle between the camera to target direction and the reference rotation
+    const auto angle = CGeneral::LimitRadianAngle(CGeneral::GetATanOf(CVector2D{ target->GetPosition() - TheCamera.GetPosition() }) - compensationRotRad);
+    if (std::fabs(angle) >= 0.87266463f) { // 50 degrees
+        return;
+    }
+
+    // Only targets on the requested side are candidates; the closest to the reference wins
+    float priority;
+    if (searchPositiveSide) {
+        priority = angle > 0.0f ? -angle : -100'000.0f;
+    } else {
+        priority = angle < 0.0f ? angle : -100'000.0f;
+    }
+
+    if (priority > *outTargetPriority) {
+        *outTarget         = target;
+        *outTargetPriority = priority;
+    }
 }
 
 // 0x60D350
 void CPlayerPed::ProcessGroupBehaviour(CPad* pad) {
-    plugin::CallMethod<0x60D350, CPlayerPed *, CPad*>(this, pad);
+    auto* target = m_pTargetedObject;
+    if (CCamera::m_bUseMouse3rdPerson && !target) {
+        target = m_p3rdPersonMouseTarget;
+    }
+
+    auto* const playerData = GetPlayerData();
+    const auto  timeMS     = static_cast<uint16>(static_cast<int32>(CTimer::GetTimeStepNonClipped() * 0.02f * 1000.0f));
+
+    if (!FindPlayerVehicle(-1, false)) {
+        // Holding the forward button disbands the group, a short press recruits or calls the group
+        auto& pressedMS = playerData->m_nPadUpPressedInMilliseconds;
+        if (pad->GetGroupControlForward()) {
+            pressedMS += timeMS;
+            if (pressedMS == HOLD_TO_DISBAND_MS && !playerData->m_bGroupStuffDisabled) {
+                DisbandPlayerGroup();
+            }
+        } else {
+            if (pressedMS != 0 && pressedMS < HOLD_TO_DISBAND_MS) {
+                const auto isRecruitable = target && target->GetIsTypePed() && (target->AsPed()->m_nPedType == PED_TYPE_GANG2 || IsRecruitCheatActive());
+                if (!isRecruitable) {
+                    TellGroupToStartFollowingPlayer(true, true, false);
+                } else if (!playerData->m_bGroupStuffDisabled) {
+                    MakeThisPedJoinOurGroup(target->AsPed());
+                }
+            }
+            pressedMS = 0;
+        }
+    }
+
+    if (playerData->m_bGroupStuffDisabled) {
+        return;
+    }
+
+    if (!FindPlayerVehicle(-1, false)) {
+        auto& pressedMS = playerData->m_nPadDownPressedInMilliseconds;
+        if (pad->GetGroupControlBack()) {
+            pressedMS += timeMS;
+            if (pressedMS >= HOLD_TO_DISBAND_MS) {
+                DisbandPlayerGroup();
+            }
+        } else {
+            if (pressedMS != 0 && pressedMS < HOLD_TO_DISBAND_MS) {
+                if (target && target->GetIsTypePed() && target->AsPed()->m_nPedType == PED_TYPE_GANG2) {
+                    MakeThisPedJoinOurGroup(target->AsPed());
+                } else {
+                    TellGroupToStartFollowingPlayer(false, true, false);
+                }
+            }
+            pressedMS = 0;
+        }
+    }
+
+    // Families members hate the police only while the player is wanted
+    if ((CTimer::GetFrameCounter() & 0x1F) == 6) {
+        for (auto& ped : GetPedPool()->GetAllValid()) {
+            if (ped.m_nPedType != PED_TYPE_GANG2) {
+                continue;
+            }
+            const auto copMask = CPedType::GetPedFlag(PED_TYPE_COP);
+            if (FindPlayerWanted(-1)->m_WantedLevel != eWantedLevel::WANTED_CLEAN) {
+                ped.m_acquaintance.SetAsAcquaintance(ACQUAINTANCE_HATE, copMask);
+            } else {
+                ped.m_acquaintance.ClearAsAcquaintance(ACQUAINTANCE_HATE, copMask);
+            }
+        }
+    }
 }
 
 // 0x60D5A0

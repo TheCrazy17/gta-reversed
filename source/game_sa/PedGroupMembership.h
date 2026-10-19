@@ -40,6 +40,9 @@ public:
     //! Set a new leader [Should be called only if there's no leader]
     void AppointNewLeader();
 
+    //! Maximum distance from the leader at which followers still count as present
+    void SetSeparationRange(float range) { m_separationRange = range; }
+
     //! Count of members
     size_t CountMembers();
 

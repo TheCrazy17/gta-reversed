@@ -88,8 +88,8 @@ public:
     bool PlayerWantsToAttack();
     void SetInitialState(bool bGroupCreated);
     void MakeChangesForNewWeapon(uint32 weaponSlot);
-    void EvaluateTarget(CEntity* target, CEntity *& outTarget, float & outTargetPriority, float maxDistance, float arg4, bool arg5);
-    void EvaluateNeighbouringTarget(CEntity* target, CEntity** outTarget, float* outTargetPriority, float maxDistance, float arg4, bool arg5);
+    void EvaluateTarget(CEntity* target, CEntity *& outTarget, float & outTargetPriority, float maxDistance, float compensationRotRad, bool searchPositiveSide);
+    void EvaluateNeighbouringTarget(CEntity* target, CEntity** outTarget, float* outTargetPriority, float maxDistance, float compensationRotRad, bool searchPositiveSide);
     void ProcessGroupBehaviour(CPad* pad);
     // return PlayerWantsToAttack();
     bool PlayerHasJustAttackedSomeone();
