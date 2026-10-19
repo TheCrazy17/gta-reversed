@@ -78,7 +78,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(FindParkingNodeInArea, 0x4513F0, { .Reversed = false });
     RH_ScopedInstall(FindLinkBetweenNodes, 0x451350);
     RH_ScopedInstall(ReturnInteriorNodeIndex, 0x451300);
-    RH_ScopedInstall(FindNthNodeClosestToCoors, 0x44F8C0, { .Reversed = false });
+    RH_ScopedInstall(FindNthNodeClosestToCoors, 0x44F8C0);
     //RH_ScopedInstall(FindNodeClosestInRegion, 0x44F2C0);
     //RH_ScopedInstall(CalcDistToAnyConnectingLinks, 0x44F190);
     //RH_ScopedInstall(CalcRoadDensity, 0x44EFC0);
@@ -282,10 +282,37 @@ CVector CPathFind::TakeWidthIntoAccountForWandering(CNodeAddress nodeAddress, in
 //  0x44F8C0
 CNodeAddress CPathFind::FindNthNodeClosestToCoors(CVector pos, uint8 nodeType, float maxDistance, bool bLowTraffic, bool bUnkn, int32 nthNode, bool bBoatsOnly,
                                                   bool bIgnoreInterior, CNodeAddress* outNode) {
-    CNodeAddress outAddress;
-    plugin::CallMethod<0x44F8C0, CPathFind*, CNodeAddress*, CVector, uint8, float, bool, bool, int32, bool, bool, CNodeAddress*>(
-        this, &outAddress, pos, nodeType, maxDistance, bLowTraffic, bUnkn, nthNode, bBoatsOnly, bIgnoreInterior, outNode);
-    return outAddress;
+    // Un-mark all the nodes of the given type, marked nodes are skipped by `FindNodeClosestToCoors`
+    // The original keeps the range of the previous area for areas it doesn't know how to get the range for
+    uint32 begin = nthNode, end = nthNode;
+    for (auto area = 0u; area < NUM_TOTAL_PATH_NODE_AREAS; area++) {
+        if (!m_pPathNodes[area]) {
+            continue;
+        }
+        if (nodeType == PATH_TYPE_VEH) {
+            begin = 0;
+            end   = m_anNumVehicleNodes[area];
+        } else if (nodeType == PATH_TYPE_PED) {
+            begin = m_anNumVehicleNodes[area];
+            end   = m_anNumNodes[area];
+        }
+        for (auto i = begin; i < end; i++) {
+            m_pPathNodes[area][i].unk1 = false;
+        }
+    }
+
+    // Find the closest, and mark it, `nthNode` times. The next closest one is the one we want.
+    for (; nthNode >= 1; nthNode--) {
+        const auto found = FindNodeClosestToCoors(pos, (ePathType)nodeType, maxDistance, bLowTraffic, bUnkn, 1, bBoatsOnly, bIgnoreInterior);
+        if (outNode) {
+            *outNode = found;
+        }
+        if (!found.IsValid()) {
+            return found;
+        }
+        GetPathNode(found)->unk1 = true;
+    }
+    return FindNodeClosestToCoors(pos, (ePathType)nodeType, maxDistance, bLowTraffic, bUnkn, 1, bBoatsOnly, false);
 }
 
 // 0x451B70
