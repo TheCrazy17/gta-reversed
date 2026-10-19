@@ -2,6 +2,7 @@
 
 #include "TaskComplexFollowPointRoute.h"
 #include "TaskComplexWalkRoundCar.h"
+#include "CarEnterExit.h"
 
 void CTaskComplexWalkRoundCar::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexWalkRoundCar, 0x86f308, 11);
@@ -21,7 +22,7 @@ void CTaskComplexWalkRoundCar::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x654280);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x656B70);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x658200, { .Reversed = false });
-    RH_ScopedVMTInstall(ControlSubTask, 0x654370, { .Reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x654370);
 }
 
 // 0x6541B0
@@ -108,5 +109,39 @@ CTask* CTaskComplexWalkRoundCar::CreateFirstSubTask(CPed* ped) {
 
 // 0x654370
 CTask* CTaskComplexWalkRoundCar::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x654370, CTaskComplexWalkRoundCar*, CPed*>(this, ped);
+    if (m_bFirstSubTaskNeedsToBeCreated) {
+        m_bFirstSubTaskNeedsToBeCreated = false;
+        return CreateFirstSubTask(ped);
+    }
+
+    // The walk is cut short when it takes too long, or when the player gives up on entering the vehicle
+    bool shouldAbort    = false;
+    bool playerQuitting = false;
+    if (ped->IsPlayer() && m_Veh && m_EnterCarStartTime != -1 && CCarEnterExit::IsPlayerToQuitCarEnter(ped, m_Veh, m_EnterCarStartTime, m_pSubTask)
+        && m_pSubTask->GetTaskType() == TASK_COMPLEX_FOLLOW_POINT_ROUTE) {
+        shouldAbort    = true;
+        playerQuitting = true;
+    } else if (m_pSubTask->GetTaskType() == TASK_COMPLEX_FOLLOW_POINT_ROUTE && m_Timer.IsOutOfTime()) {
+        shouldAbort = true;
+    }
+
+    // Keep going while the vehicle hasn't moved or turned since the route was made
+    if (m_Veh && !shouldAbort) {
+        const auto& matrix = m_Veh->GetMatrix();
+        if ((m_VehPos - m_Veh->GetPosition()).SquaredMagnitude() <= 0.0625f
+            && DotProduct(matrix.GetForward(), m_VehMatFwd) >= 0.9f
+            && DotProduct(matrix.GetRight(), m_VehMatRight) >= 0.9f) {
+            return m_pSubTask;
+        }
+    }
+
+    if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT)) {
+        if (playerQuitting) {
+            if (auto* const primary = ped->GetTaskManager().GetTaskPrimary(TASK_PRIMARY_PRIMARY); primary && primary->GetTaskType() == TASK_COMPLEX_ENTER_CAR_AS_DRIVER) {
+                primary->MakeAbortable(ped, ABORT_PRIORITY_LEISURE);
+            }
+        }
+        return nullptr;
+    }
+    return m_pSubTask;
 }
