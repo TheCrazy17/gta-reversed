@@ -61,7 +61,7 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(FindCriminalRatingString, 0x55A210, { .Reversed = false });
     RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
     RH_ScopedInstall(UpdateRespectStat, 0x55BC50, { .Reversed = false });
-    RH_ScopedInstall(UpdateSexAppealStat, 0x55BF20, { .Reversed = false });
+    RH_ScopedInstall(UpdateSexAppealStat, 0x55BF20);
     RH_ScopedInstall(UpdateFatAndMuscleStats, 0x55C470);
     RH_ScopedInstall(UpdateStatsWhenCycling, 0x55C780);
     RH_ScopedInstall(UpdateStatsWhenSwimming, 0x55C990);
@@ -578,7 +578,53 @@ void CStats::UpdateRespectStat(uint8 arg0) {
 
 // 0x55BF20
 void CStats::UpdateSexAppealStat() {
-    plugin::Call<0x55BF20>();
+    // The vehicle the player was last seen in, so the stat reacts to a car that was just left too
+    static auto& lastPlayerVehicle = StaticRef<CVehicle*>(0xB79530);
+
+    const auto appearanceShare = StatTypesFloat[STAT_APPEARANCE] * 0.5f;
+    auto       vehicleShare    = 0.0f;
+
+    if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+        lastPlayerVehicle = vehicle;
+        CEntity::RegisterReference(lastPlayerVehicle);
+    }
+
+    if (lastPlayerVehicle) {
+        const auto& vehiclePos = lastPlayerVehicle->GetPosition();
+        const auto  playerPos  = FindPlayerCoors(-1);
+        if (CVector2D{ vehiclePos - playerPos }.Magnitude() < 35.0f) {
+            vehicleShare = std::clamp(lastPlayerVehicle->m_fHealth * 2.0f - 1000.0f, 0.0f, 1000.0f);
+
+            // Flashy vehicles count the most
+            switch (lastPlayerVehicle->GetVehicleModelInfo()->m_nVehicleClass) {
+            case VEHICLE_CLASS_POORFAMILY:
+            case VEHICLE_CLASS_BIG:
+            case VEHICLE_CLASS_MOPED:
+            case VEHICLE_CLASS_BICYCLE:
+                vehicleShare *= 0.1f;
+                break;
+            case VEHICLE_CLASS_RICHFAMILY:
+            case VEHICLE_CLASS_EXECUTIVE:
+            case VEHICLE_CLASS_LEISUREBOAT:
+                break;
+            case VEHICLE_CLASS_WORKER:
+            case VEHICLE_CLASS_TAXI:
+            case VEHICLE_CLASS_WORKERBOAT:
+                vehicleShare *= 0.3f;
+                break;
+            default:
+                vehicleShare *= 0.5f;
+                break;
+            }
+        }
+    }
+
+    auto& sexAppeal = StatTypesFloat[STAT_SEX_APPEAL];
+    sexAppeal       = std::clamp(vehicleShare * 0.5f + appearanceShare, 0.0f, 1000.0f);
+    if (CCheat::IsActive(CHEAT_MAX_SEX_APPEAL)) {
+        sexAppeal = 1000.0f;
+    }
+    CheckForStatsMessage();
 }
 
 // 0x55C180
