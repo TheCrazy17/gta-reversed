@@ -448,7 +448,6 @@ public:
     bool TryToStartNewCamMode(int32 camSequence);
 
     void UpdateAimingCoors(const CVector& aimingTargetCoors);
-    void UpdateSoundDistances();
     void UpdateTargetEntity();
     bool Using1stPersonWeaponMode() const;
 

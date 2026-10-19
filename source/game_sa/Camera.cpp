@@ -164,7 +164,6 @@ void CCamera::InjectHooks() {
     RH_ScopedOverloadedInstall(ProcessShake, "1", 0x516560, void(CCamera::*)(float));
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
-    RH_ScopedInstall(UpdateSoundDistances, 0x515BD0, { .Reversed = false });
     RH_ScopedOverloadedInstall(IsSphereVisible, "", 0x420C40, bool(CCamera::*)(const CVector&, float, RwMatrix*), { .Reversed = false });
     RH_ScopedOverloadedInstall(ProcessShake, "void", 0x51A6F0, void(CCamera::*)(), { .Reversed = false });
 }
@@ -578,10 +577,10 @@ void CCamera::CopyCameraMatrixToRWCam(bool bUpdateMatrix) {
         m_mCameraMatrixOld.UpdateMatrix(camMatrix);
     }
 
-    // CMatrix keeps the view direction in the matrix' `up` slot and the world up in `at`
+    // RwMatrix::at is the view direction, which is CMatrix's forward vector
     camMatrix->right = m_mCameraMatrix.GetRight();
-    camMatrix->up    = m_mCameraMatrix.GetForward();
-    camMatrix->at    = m_mCameraMatrix.GetUp();
+    camMatrix->up    = m_mCameraMatrix.GetUp();
+    camMatrix->at    = m_mCameraMatrix.GetForward();
     camMatrix->pos   = m_mCameraMatrix.GetPosition();
 
     // Reuse the previous value when the change is below the snap limit, otherwise the rendered camera jitters
@@ -1221,11 +1220,6 @@ void CCamera::UpdateAimingCoors(const CVector& aimingTargetCoors) {
     m_vecAimingTargetCoors = aimingTargetCoors;
 }
 
-// 0x515BD0
-void CCamera::UpdateSoundDistances() {
-    plugin::CallMethod<0x515BD0, CCamera*>(this);
-}
-
 // unused
 // 0x50CB90
 void CCamera::SetNearClipBasedOnPedCollision(float arg2) {
@@ -1667,16 +1661,15 @@ void CCamera::ProcessShake(float) {
     if (!handShakersSetUp) {
         handShakersSetUp = true;
 
-        // 0x516578 writes every shaker except gHandShaker[0] with plain stores. All of them share
-        // the same limits except the z axis, the twitch frequency and the twitch velocity; a
-        // frequency of -1 means the original does not touch the field (it is already zero).
+        // Every shaker but gHandShaker[0] shares these limits; only the z limit, the twitch
+        // frequency and the twitch velocity differ.
         struct Variant { float limZ; int32 twitchFreq; float twitchVel; };
         constexpr Variant variants[NUM_HANDSHAKERS - 1] = {
-            { 0.01f,  15, 0.001f },
-            { 0.04f,  20, 0.001f },
-            { 0.01f,  -1, 0.0005f },
-            { 0.01f,  20, 0.002f },
-            { 0.01f,  -1, 0.003f },
+            { 0.01f, 15, 0.001f  },
+            { 0.04f, 20, 0.001f  },
+            { 0.01f, 10, 0.0005f },
+            { 0.01f, 20, 0.002f  },
+            { 0.01f, 2,  0.003f  },
         };
         for (auto i = 1; i < NUM_HANDSHAKERS; ++i) {
             const auto& variant = variants[i - 1];
@@ -1686,9 +1679,7 @@ void CCamera::ProcessShake(float) {
             shaker.m_slow.Set(1.3f, 1.3f, 1.4f);
             shaker.m_scaleReactionMin = 0.3f;
             shaker.m_scaleReactionMax = 1.0f;
-            if (variant.twitchFreq != -1) {
-                shaker.m_twitchFreq = variant.twitchFreq;
-            }
+            shaker.m_twitchFreq = variant.twitchFreq;
             shaker.m_twitchVel = variant.twitchVel;
         }
     }
@@ -1697,7 +1688,7 @@ void CCamera::ProcessShake(float) {
     auto& shaker = gHandShaker[m_nShakeType];
     shaker.Process(m_fShakeIntensity);
 
-    cam.m_vecFront = shaker.m_resultMat.InverseTransformPoint(cam.m_vecFront); // Multiply3x3(_VM)
+    cam.m_vecFront = shaker.m_resultMat.InverseTransformVector(cam.m_vecFront); // Multiply3x3(_VM)
     cam.m_vecFront.Normalise();
 
     const auto angle = shaker.m_ang.z * m_fShakeIntensity;
@@ -1980,7 +1971,6 @@ void CCamera::Process() {
     CopyCameraMatrixToRWCam(false);
     m_vecGameCamPos = m_mCameraMatrix.GetPosition();
     UpdateSoundDistUp();
-    UpdateSoundDistances();
     m_fLODDistMultiplier = !CCutsceneMgr::ms_running || CCutsceneMgr::ms_useLodMultiplier
         ? 70.0f / CDraw::ms_fFOV : 1.0f;
     m_fGenerationDistMultiplier = m_fLODDistMultiplier;
