@@ -134,7 +134,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(TestCollisionBetween2MovingRects_OnlyFrontBumper, 0x425F70, { .Reversed = false });
     RH_ScopedInstall(TestWhetherToFirePlaneGuns, 0x429520);
     RH_ScopedInstall(ThisVehicleShouldTryNotToTurn, 0x421FE0);
-    RH_ScopedInstall(TriggerDogFightMoves, 0x429300, { .Reversed = false });
+    RH_ScopedInstall(TriggerDogFightMoves, 0x429300);
     RH_ScopedInstall(UpdateCarCount, 0x424000);
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
     RH_ScopedInstall(WeaveForObject, 0x426BC0);
@@ -1509,7 +1509,51 @@ bool CCarCtrl::ThisVehicleShouldTryNotToTurn(CVehicle* vehicle) {
 
 // 0x429300
 void CCarCtrl::TriggerDogFightMoves(CVehicle* vehicle1, CVehicle* vehicle2) {
-    plugin::Call<0x429300, CVehicle*, CVehicle*>(vehicle1, vehicle2);
+    auto& ap = vehicle1->m_autoPilot;
+    if (ap.m_nTempAction != TEMPACT_NONE) {
+        return;
+    }
+
+    auto offset = vehicle1->GetPosition() - vehicle2->GetPosition();
+    if (offset.Magnitude() >= 70.0f) {
+        return;
+    }
+    offset.Normalise();
+
+    // Positive if vehicle 1 is in front of vehicle 2
+    const auto inFront = offset.Dot(vehicle2->GetForward());
+    if (std::abs(vehicle1->GetPosition().z - vehicle2->GetPosition().z) >= 15.0f) {
+        return;
+    }
+
+    switch (CGeneral::GetRandomNumber() & 0xFF) {
+    case 0xC:
+        if (inFront > 0.0f) {
+            ap.m_nTempAction     = TEMPACT_PLANE_FLY_STRAIGHT;
+            ap.m_nTempActionTime = (CGeneral::GetRandomNumber() & 0x3FF) + 1500 + CTimer::GetTimeInMS();
+        }
+        break;
+    case 0xD:
+        if (inFront > 0.0f) {
+            ap.m_nTempAction     = TEMPACT_PLANE_SHARP_LEFT;
+            ap.m_nTempActionTime = (CGeneral::GetRandomNumber() & 0x1FF) + 700 + CTimer::GetTimeInMS();
+        }
+        break;
+    case 0xE:
+        if (inFront > 0.0f) {
+            ap.m_nTempAction     = TEMPACT_PLANE_SHARP_RIGHT;
+            ap.m_nTempActionTime = (CGeneral::GetRandomNumber() & 0x1FF) + 700 + CTimer::GetTimeInMS();
+        }
+        break;
+    case 0xF:
+        if (inFront > 0.7f) {
+            ap.m_nTempAction     = TEMPACT_PLANE_FLY_UP;
+            ap.m_nTempActionTime = (CGeneral::GetRandomNumber() & 0x7FF) + 3000 + CTimer::GetTimeInMS();
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 // 0x424000
