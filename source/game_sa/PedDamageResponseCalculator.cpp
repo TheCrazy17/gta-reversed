@@ -2,6 +2,8 @@
 #include "PedStats.h"
 #include "Tasks/TaskTypes/TaskSimpleFight.h"
 #include "Localisation.h"
+#include "Events/EventDamage.h"
+#include "PedDamageResponse.h"
 
 #include <reversiblebugfixes/Bugs.hpp>
 #include "PedDamageResponseCalculator.h"
@@ -16,7 +18,7 @@ void CPedDamageResponseCalculator::InjectHooks() {
     RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610);
     RH_ScopedInstall(ComputeWillKillPed, 0x4B3210);
     RH_ScopedInstall(IsBleedingWeapon, 0x4B5C2A);
-    RH_ScopedInstall(ComputeDamageResponse, 0x4B5AC0, { .Reversed = false });
+    RH_ScopedInstall(ComputeDamageResponse, 0x4B5AC0);
 }
 
 // 0x4AD3F0
@@ -194,7 +196,7 @@ bool CPedDamageResponseCalculator::ComputeWillForceDeath(CPed* ped, CPedDamageRe
                 : (uint32)(CGeneral::GetRandomNumber() & 7);
         }
 
-        // Peds that are driving can't be one shot this way, neither can they when the player aims on purpose
+        // Headshots always kill peds that are driving, and when the player aims on purpose
         const auto isDrivingNpc = ped->bInVehicle && ped->m_pVehicle && !ped->IsPlayer() && !ped->bNoCriticalHits;
         const auto isAimedAt    = !ped->IsPlayer()
             && damagerPed
@@ -296,6 +298,49 @@ bool CPedDamageResponseCalculator::IsBleedingWeapon(CPed* ped) const {
  * @addr 0x4B5AC0
  */
 void CPedDamageResponseCalculator::ComputeDamageResponse(CPed* ped, CPedDamageResponse& response, bool bSpeak) {
-    plugin::CallMethod<0x4B5AC0, CPedDamageResponseCalculator*, CPed*, CPedDamageResponse&, bool>(this, ped, response, bSpeak);
+    if (response.m_bDamageCalculated) {
+        return;
+    }
+    response = CPedDamageResponse{};
+    response.m_bDamageCalculated = true;
+    response.m_bCheckIfAffectsPed = true;
+
+    AccountForPedDamageStats(ped, response);
+    AccountForPedArmour(ped, response);
+    ComputeWillKillPed(ped, response, bSpeak);
+
+    auto* const player = FindPlayerPed();
+
+    // Hurting others as (or with the vehicle of) the player causes havoc
+    if (m_pDamager) {
+        if ((m_pDamager == player || m_pDamager == FindPlayerVehicle()) && m_pDamager != ped && response.m_fDamageHealth + response.m_fDamageArmor > 3.0f) {
+            CWorld::Players[CWorld::PlayerInFocus].m_nHavocCaused++;
+        }
+    }
+
+    if (ped == player) {
+        player->AnnoyPlayerPed(false);
+    }
+
+    // The player's group reacts to the player getting hurt
+    if (ped->IsPlayer() && m_pDamager && m_pDamager->GetIsTypePed()) {
+        CEventDamage damageEvent{ const_cast<CEntity*>(m_pDamager), 0, m_weaponType, m_bodyPart, 0, false, ped->bInVehicle };
+        ped->AsPlayer()->MakeGroupRespondToPlayerTakingDamage(damageEvent);
+    }
+
+    if (response.m_fDamageHealth + response.m_fDamageArmor > 0.0f) {
+        if (!ped->IsPlayer() && (m_weaponType == WEAPON_KNIFE || m_weaponType == WEAPON_KATANA || m_weaponType == WEAPON_CHAINSAW)) {
+            ped->field_72F = 200;
+        }
+        if (ped == player) {
+            CWorld::Players[CWorld::PlayerInFocus].m_nLastTimeEnergyLost = CTimer::GetTimeInMS();
+        }
+        ped->m_nLastWeaponDamage = (char)m_weaponType;
+        if (m_pDamager) {
+            ped->m_pLastEntityDamage = const_cast<CEntity*>(m_pDamager);
+            ped->m_pLastEntityDamage->RegisterReference(&ped->m_pLastEntityDamage);
+            ped->field_768 = CTimer::GetTimeInMS();
+        }
+    }
 }
 
