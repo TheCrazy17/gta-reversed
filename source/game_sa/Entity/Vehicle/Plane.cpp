@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "Plane.h"
+#include "Events/EventDanger.h"
 #include "CarCtrl.h"
 #include "FireManager.h"
 
@@ -37,7 +38,7 @@ void CPlane::InjectHooks() {
     RH_ScopedInstall(SwitchAmbientPlanes, 0x6CCC50);
     RH_ScopedVMTInstall(BlowUpCar, 0x6CCCF0);
     RH_ScopedInstall(FindPlaneCreationCoors, 0x6CD090);
-    RH_ScopedInstall(DoPlaneGenerationAndRemoval, 0x6CD2F0, { .Reversed = false });
+    RH_ScopedInstall(DoPlaneGenerationAndRemoval, 0x6CD2F0);
 }
 
 // 0x6C8E20
@@ -398,7 +399,237 @@ void CPlane::FindPlaneCreationCoors(CVector* outCoors, CVector* outTargetCoors, 
 
 // 0x6CD2F0
 void CPlane::DoPlaneGenerationAndRemoval() {
-    plugin::Call<0x6CD2F0>();
+    if ((CTimer::GetFrameCounter() & 0x1F) != 0x1E) {
+        return;
+    }
+    if (!GenPlane_Active) {
+        return;
+    }
+
+    const auto numPlanesAndHelis = CountPlanesAndHelis();
+
+    // Resets the heading of an aircraft that was just created, (0x6C4130)
+    const auto SetHeadingMatrix = [](CVehicle& vehicle, float heading) {
+        auto& matrix = vehicle.GetMatrix();
+        matrix.GetRight()   = CVector{ std::sin(heading), -std::cos(heading), 0.0f };
+        matrix.GetForward() = CVector{ std::cos(heading),  std::sin(heading), 0.0f };
+        matrix.GetUp()      = CVector{ 0.0f, 0.0f, 1.0f };
+    };
+
+    // Sends the plane or helicopter that was just created on its way
+    const auto SetCruiseVelocity = [](CVehicle& vehicle, float heading) {
+        vehicle.SetVelocity(CVector{ std::cos(heading) * 0.6666667f, std::sin(heading) * 0.6666667f, 0.0f });
+    };
+
+    switch (GenPlane_Status) {
+    case 0: { // Choose what to generate next
+        if (CGame::currArea != AREA_CODE_NORMAL_WORLD || numPlanesAndHelis >= 5 || AreWeInNoPlaneZone() || CCutsceneMgr::ms_cutsceneProcessing) {
+            GenPlane_LastTimeGenerated = CTimer::GetTimeInMS();
+            return;
+        }
+
+        const auto timeMS = CTimer::GetTimeInMS();
+
+        // A Hydra is sent after a player who is flying and has a high wanted level
+        if (static_cast<int32>(FindPlayerPed(-1)->GetWantedLevel()) > 3) {
+            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
+                if ((playerVehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE || playerVehicle->m_nVehicleSubType == VEHICLE_TYPE_HELI)
+                    && playerVehicle->m_nModelIndex != MODEL_ANDROM
+                    && playerVehicle->m_nModelIndex != MODEL_AT400
+                    && timeMS > GenPlane_LastTimeGenerated + 60'000
+                ) {
+                    int32 numHydras = 0;
+                    for (auto i = GetVehiclePool()->GetSize(); i-- > 0;) {
+                        auto* const vehicle = GetVehiclePool()->GetAt(i);
+                        if (vehicle && vehicle->m_autoPilot.m_nCarMission == MISSION_PLANE_ATTACK_PLAYER_POLICE) {
+                            numHydras++;
+                        }
+                    }
+                    if (numHydras < 1 || (numHydras < 2 && static_cast<int32>(FindPlayerPed(-1)->GetWantedLevel()) > 4)) {
+                        GenPlane_ModelIndex = MODEL_HYDRA;
+                        GenPlane_Status     = 1;
+                    }
+                }
+            }
+        }
+
+        if (numPlanesAndHelis >= 1 || GenPlane_Status != 0) {
+            return;
+        }
+
+        const auto weatherAllowsSmallAircraft = (CWeather::WeatherRegion == WEATHER_REGION_DEFAULT || CWeather::WeatherRegion == WEATHER_REGION_DESERT)
+            && CWeather::OldWeatherType != WEATHER_SANDSTORM_DESERT
+            && CWeather::NewWeatherType != WEATHER_SANDSTORM_DESERT;
+        if (weatherAllowsSmallAircraft) {
+            // Small aircraft are not sent while the player is flying one
+            auto* const playerVehicle = FindPlayerVehicle(-1, false);
+            const auto  playerFlying  = playerVehicle && (playerVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI || playerVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_PLANE);
+            if (!playerFlying && timeMS > GenPlane_LastTimeGenerated + 120'000) {
+                switch (CGeneral::GetRandomNumber() & 7) {
+                case 3:
+                case 4:
+                    GenPlane_ModelIndex = MODEL_CROPDUST;
+                    break;
+                case 5:
+                case 6:
+                    GenPlane_ModelIndex = MODEL_BEAGLE;
+                    break;
+                default:
+                    GenPlane_ModelIndex = MODEL_RUSTLER;
+                    break;
+                }
+                GenPlane_Status = 1;
+                return;
+            }
+            if (GenPlane_Status != 0) {
+                return;
+            }
+        }
+
+        // Police helicopters in gang areas, and when there are riots
+        if (CPopCycle::m_bCurrentZoneIsGangArea) {
+            if (!CTheScripts::IsPlayerOnAMission() && timeMS > GenPlane_LastTimeGenerated + 350'000) {
+                GenPlane_Status     = 1;
+                GenPlane_ModelIndex = MODEL_POLMAV;
+                return;
+            }
+            if (GenPlane_Status != 0) {
+                return;
+            }
+        }
+        if (CGameLogic::LaRiotsActiveHere()) {
+            GenPlane_Status     = 1;
+            GenPlane_ModelIndex = MODEL_POLMAV;
+            return;
+        }
+        if (GenPlane_Status != 0) {
+            return;
+        }
+
+        // Big planes
+        if (CWeather::WeatherRegion != WEATHER_REGION_DEFAULT && CWeather::WeatherRegion != WEATHER_REGION_DESERT
+            && !CPopCycle::m_bCurrentZoneIsGangArea
+            && CWeather::OldWeatherType != WEATHER_SANDSTORM_DESERT
+            && CWeather::NewWeatherType != WEATHER_SANDSTORM_DESERT
+            && timeMS > GenPlane_LastTimeGenerated + 200'000
+            && !AreWeInNoBigPlaneZone()
+        ) {
+            auto* const playerVehicle = FindPlayerVehicle(-1, false);
+            if (playerVehicle && (playerVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI || playerVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_PLANE)) {
+                return;
+            }
+            GenPlane_ModelIndex = (CGeneral::GetRandomNumber() & 1) == 0 ? MODEL_AT400 : MODEL_ANDROM;
+            GenPlane_Status     = 1;
+        }
+        return;
+    }
+    case 1: { // Wait for the model and create the aircraft
+        if (!CStreaming::GetInfo(GenPlane_ModelIndex).IsLoaded()) {
+            CStreaming::RequestModel(GenPlane_ModelIndex, STREAMING_KEEP_IN_MEMORY);
+            return;
+        }
+
+        if (GenPlane_ModelIndex == MODEL_POLMAV) {
+            CVector pos, target;
+            float   heading;
+            float   flightHeight;
+            FindPlaneCreationCoors(&pos, &target, &heading, &flightHeight, false);
+
+            auto* const heli = new CHeli(GenPlane_ModelIndex, RANDOM_VEHICLE);
+            heli->SetPosn(pos);
+            SetHeadingMatrix(*heli, heading);
+            CCarCtrl::JoinCarWithRoadSystem(heli);
+            heli->m_fHeliRotorSpeed = 0.22f;
+            heli->SetStatus(STATUS_PHYSICS);
+            CWorld::Add(heli);
+
+            heli->m_fMinAltitude                = flightHeight;
+            heli->m_autoPilot.m_nCarMission     = MISSION_HELI_FLYINDIRECTION;
+            heli->field_9B4                     = heading;
+            heli->m_fMaxAltitude                = flightHeight;
+            SetCruiseVelocity(*heli, heading);
+            heli->vehicleFlags.bNeverUseSmallerRemovalRange = true;
+            heli->m_nExtendedRemovalRange                   = 0xFF;
+            heli->m_autoPilot.m_nCruiseSpeed                = 50;
+            heli->SetEngineState(true);
+
+            // The helicopter goes after a car or after a ped, chosen at random
+            const auto heliPos = heli->GetPosition();
+            const auto AimAt = [&](CEntity* target) {
+                heli->m_autoPilot.m_TargetEntity = static_cast<CVehicle*>(target);
+                heli->m_autoPilot.m_nCarMission  = MISSION_HELI_FOLLOW_ENTITY;
+                target->RegisterReference(reinterpret_cast<CEntity**>(&heli->m_autoPilot.m_TargetEntity));
+                heli->m_nHeliFlags |= 2;
+                heli->m_autoPilot.m_nCarCtrlFlags |= 0xA0;
+            };
+            if ((CGeneral::GetRandomNumber() & 1) == 0) {
+                if (auto* const car = CWorld::FindUnsuspectingTargetCar(heliPos, FindPlayerCoors(-1))) {
+                    AimAt(car);
+                }
+            } else if (auto* const ped = CWorld::FindUnsuspectingTargetPed(heliPos, FindPlayerCoors(-1))) {
+                AimAt(ped);
+
+                auto* const group = CPedGroups::GetPedsGroup(ped);
+                if (group && !group->m_bIsMissionGroup) {
+                    CEventDanger event{ heli, 200.0f };
+                    event.m_TaskId = TASK_GROUP_FLEE_THREAT;
+                    group->GetIntelligence().AddEvent(&event);
+                } else if (!ped->IsPlayer() && !ped->IsCreatedBy(PED_MISSION) && ped->m_nPedType != PED_TYPE_COP) {
+                    CEventDanger event{ heli, 200.0f };
+                    event.m_TaskId = TASK_COMPLEX_SMART_FLEE_ENTITY;
+                    ped->GetIntelligence()->m_eventGroup.Add(&event, false);
+                }
+            }
+        } else {
+            const bool isBigPlane = GenPlane_ModelIndex == MODEL_ANDROM || GenPlane_ModelIndex == MODEL_AT400;
+
+            CVector pos, target;
+            float   heading;
+            float   flightHeight;
+            FindPlaneCreationCoors(&pos, &target, &heading, &flightHeight, isBigPlane);
+
+            auto* const plane = new CPlane(GenPlane_ModelIndex, RANDOM_VEHICLE);
+            plane->SetPosn(pos);
+            plane->m_planeCreationHeading = heading;
+            SetHeadingMatrix(*plane, heading);
+            CCarCtrl::JoinCarWithRoadSystem(plane);
+            plane->SetStatus(STATUS_PHYSICS);
+            CWorld::Add(plane);
+
+            plane->m_planeHeading                 = heading;
+            plane->m_minAltitude                  = flightHeight;
+            plane->m_autoPilot.m_nCarMission      = MISSION_PLANE_FLYINDIRECTION;
+            plane->m_planeHeadingPrev             = heading;
+            plane->m_maxAltitude                  = flightHeight;
+            SetCruiseVelocity(*plane, heading);
+            plane->vehicleFlags.bNeverUseSmallerRemovalRange = true;
+
+            if (!isBigPlane && GenPlane_ModelIndex != MODEL_HYDRA) {
+                plane->m_nExtendedRemovalRange = 150;
+            } else {
+                plane->m_nExtendedRemovalRange = 360;
+                if (isBigPlane) {
+                    plane->m_bUsesCollision = false;
+                }
+            }
+            if (GenPlane_ModelIndex == MODEL_HYDRA) {
+                plane->m_autoPilot.m_nCarMission = MISSION_PLANE_ATTACK_PLAYER_POLICE;
+                plane->m_wMiscComponentAngle     = 0;
+            }
+
+            plane->SetGearUp();
+            plane->SetEngineState(true);
+            CStreaming::SetModelIsDeletable(GenPlane_ModelIndex);
+            CStreaming::SetModelTxdIsDeletable(GenPlane_ModelIndex);
+        }
+
+        GenPlane_LastTimeGenerated = CTimer::GetTimeInMS();
+        GenPlane_Status            = 0;
+        return;
+    }
+    default:
+        return;
+    }
 }
 
 // 0x6C9140
