@@ -42,6 +42,7 @@ CTask* Clone() const override {
  // 0x61B770
     bool ProcessPed(CPed* ped) override;
     void OffsetPedPosition(CPed* ped);
+    void StartAnim(CPed* ped);
 
 private:
     friend void InjectHooksMain();
