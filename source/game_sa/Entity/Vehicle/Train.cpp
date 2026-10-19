@@ -12,6 +12,8 @@
 #include "CarCtrl.h"
 #include "ModelIndices.h"
 #include "Population.h"
+#include "CullZones.h"
+#include "Weather.h"
 #include "FileMgr.h"
 #include "CustomBuildingDNPipeline.h"
 #include "Replay.h"
@@ -25,6 +27,8 @@
 #include "PedGroups.h"
 
 
+// Models of the carriages of every kind of train, the list of each one ends with a zero
+auto& TrainConfigs = StaticRef<int32[16][16]>(0x8D44F8);
 auto& pTrackNodes = StaticRef<CTrainNode*[4]>(0xC38024);
 auto& NumTrackNodes = StaticRef<std::array<int32, 4>>(0xC38014);
 auto& arrTotalTrackLength = StaticRef<std::array<float, 4>>(0xC37FEC);
@@ -66,8 +70,8 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
     RH_ScopedInstall(IsNextStationAllowed, 0x6F7260);
     RH_ScopedInstall(SkipToNextAllowedStation, 0x6F72F0);
-    RH_ScopedInstall(CreateMissionTrain, 0x6F7550, { .Reversed = false });
-    RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900, { .Reversed = false });
+    RH_ScopedInstall(CreateMissionTrain, 0x6F7550);
+    RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900);
     RH_ScopedInstall(AddNearbyPedAsRandomPassenger, 0x6F8170);
     RH_ScopedVMTInstall(SetModelIndex, 0x6F5530);
     RH_ScopedVMTInstall(ProcessControl, 0x6F86A0);
@@ -780,12 +784,304 @@ void CTrain::SkipToNextAllowedStation(CTrain* train) {
 
 // 0x6F7550
 void CTrain::CreateMissionTrain(CVector posn, bool clockwiseDirection, uint32 trainType, CTrain** outFirstCarriage, CTrain** outLastCarriage, int32 nodeIndex, int32 trackId, bool isMissionTrain) {
-    ((void(__cdecl*)(CVector, bool, uint32, CTrain**, CTrain**, int32, int32, bool))0x6F7550)(posn, clockwiseDirection, trainType, outFirstCarriage, outLastCarriage, nodeIndex, trackId, isMissionTrain);
+    if (nodeIndex < 0) {
+        nodeIndex = FindClosestTrackNode(posn, &trackId);
+    }
+
+    float railDistance = static_cast<float>(pTrackNodes[trackId][nodeIndex].m_nDistanceFromStart) * 0.33333334f;
+
+    std::array<CTrain*, 16> created{};
+    size_t                  numCreated{};
+    CTrain*                 first{};
+    CTrain*                 previous{};
+
+    for (const auto modelIndex : TrainConfigs[trainType]) {
+        if (!modelIndex) {
+            break;
+        }
+
+        auto* const train = new CTrain(modelIndex, PERMANENT_VEHICLE);
+        train->GetMatrix().SetTranslate(CVector{});
+        train->m_nNodeIndex = static_cast<int16>(nodeIndex);
+        train->SetStatus(STATUS_ABANDONED);
+        train->vehicleFlags.bIsLocked          = true;
+        train->m_fCurrentRailDistance          = railDistance;
+        train->trainFlags.bMissionTrain        = isMissionTrain;
+        train->trainFlags.bClockwiseDirection  = clockwiseDirection;
+        train->m_nTrackId                      = static_cast<int8>(trackId);
+
+        if (isMissionTrain) {
+            train->trainFlags.bStopsAtStations = false;
+        }
+
+        if (!previous) {
+            if (isMissionTrain) {
+                train->GetPosition() = posn;
+                train->FindPositionOnTrackFromCoors();
+            }
+            train->m_fLength = 0.0f;
+        } else {
+            // Each carriage is placed one carriage length behind or ahead of the previous rail position
+            if (clockwiseDirection) {
+                const auto& bbox = CModelInfo::GetModelInfo(train->m_nModelIndex)->GetColModel()->GetBoundingBox();
+                const auto  length = bbox.m_vecMax.y - bbox.m_vecMin.y;
+                train->m_fLength = -length;
+                railDistance -= length;
+            } else {
+                const auto& bbox = CModelInfo::GetModelInfo(previous->m_nModelIndex)->GetColModel()->GetBoundingBox();
+                const auto  length = bbox.m_vecMax.y - bbox.m_vecMin.y;
+                train->m_fLength = length;
+                railDistance += length;
+            }
+        }
+
+        created[numCreated++] = train;
+
+        if (!previous) {
+            train->trainFlags.bIsFrontCarriage = true;
+            first = train;
+            if (outFirstCarriage) {
+                *outFirstCarriage = train;
+            }
+        } else {
+            train->trainFlags.bIsFrontCarriage = false;
+            train->vehicleFlags.bHasBeenOwnedByPlayer = true;
+            previous->trainFlags.bIsLastCarriage = false;
+        }
+        train->trainFlags.bIsLastCarriage = true;
+        if (outLastCarriage) {
+            *outLastCarriage = train;
+        }
+
+        train->m_pPrevCarriage = previous;
+        if (previous) {
+            previous->RegisterReference(reinterpret_cast<CEntity**>(&train->m_pPrevCarriage));
+        }
+        train->m_pNextCarriage = nullptr;
+        if (previous) {
+            previous->m_pNextCarriage = train;
+            train->RegisterReference(reinterpret_cast<CEntity**>(&previous->m_pNextCarriage));
+        }
+
+        train->ProcessControl();
+        previous = train;
+    }
+
+    for (auto i = numCreated; i-- > 0;) {
+        CWorld::Remove(created[i]);
+        CWorld::Add(created[i]);
+    }
+
+    if (first->m_nModelIndex != MODEL_TRAM) {
+        CPopulation::AddPedInCar(first, true, -1, 0, false, false);
+        if (first->m_pDriver) {
+            first->m_pDriver->GetIntelligence()->SetPedDecisionMakerType(6);
+        }
+    }
+
+    // A train that has a streak model carriage is a streak train
+    bool isStreak = false;
+    for (auto* carriage = first; carriage; carriage = carriage->m_pNextCarriage) {
+        if (carriage->m_nModelIndex == MODEL_STREAK) {
+            isStreak = true;
+            break;
+        }
+    }
+    for (auto* carriage = first; carriage; carriage = carriage->m_pNextCarriage) {
+        carriage->trainFlags.bIsStreakModel = isStreak;
+    }
 }
 
 // 0x6F7900
 void CTrain::DoTrainGenerationAndRemoval() {
-    ((void(__cdecl*)())0x6F7900)();
+    static auto& playerNearStation = StaticRef<bool>(0xC38068);
+    static auto& lastTrainConfig   = StaticRef<int32>(0xC38064); // Cycles through the configurations of the main train
+
+    const auto timeMS     = CTimer::GetTimeInMS();
+    const auto prevTimeMS = CTimer::GetPreviousTimeInMS();
+
+    // Check once every 3 seconds whether the player is close to a station
+    if (timeMS / 3000 != prevTimeMS / 3000) {
+        playerNearStation = false;
+        for (const auto& station : aStationCoors) {
+            if ((CVector2D{ station } - CVector2D{ FindPlayerCoors(-1) }).Magnitude() < 60.0f) {
+                playerNearStation = true;
+            }
+        }
+    }
+
+    // Close to a station the trains are handled every frame and from further away
+    const uint32 period     = playerNearStation ? 1 : 950;
+    const float  maxGenDist = playerNearStation ? 100.0f : 70.0f;
+    if (timeMS / period == prevTimeMS / period) {
+        return;
+    }
+
+    // Remove the trains that are far away from the camera
+    bool trainExists = false;
+    for (auto i = GetVehiclePool()->GetSize(); i-- > 0;) {
+        auto* const vehicle = GetVehiclePool()->GetAt(i);
+        if (!vehicle || vehicle->m_nVehicleSubType != VEHICLE_TYPE_TRAIN) {
+            continue;
+        }
+        auto* const front = vehicle->AsTrain();
+        if (!front->trainFlags.bIsFrontCarriage || front->trainFlags.bMissionTrain) {
+            continue;
+        }
+        trainExists = true;
+
+        bool canRemove = true;
+        for (auto* carriage = front; carriage; carriage = carriage->m_pNextCarriage) {
+            const auto toCamera = TheCamera.GetPosition() - carriage->GetPosition();
+            if (carriage == FindPlayerVehicle(-1, false) || CVector2D{ toCamera }.Magnitude() < 220.0f) {
+                canRemove = false;
+            }
+        }
+        if (!canRemove) {
+            continue;
+        }
+        for (auto* carriage = front; carriage;) {
+            auto* const next = carriage->m_pNextCarriage;
+            CWorld::Remove(carriage);
+            delete carriage;
+            carriage = next;
+        }
+    }
+
+    if (bDisableRandomTrains) {
+        return;
+    }
+
+    // Distance in the plane from the camera to a node of a track
+    const auto DistanceToCamera = [](uint32 track, int32 node) {
+        const auto& trackNode = pTrackNodes[track][node];
+        return (CVector2D{ trackNode.GetX(), trackNode.GetY() } - CVector2D{ TheCamera.GetPosition() }).Magnitude();
+    };
+
+    // Moves the generation node along the track, in the chosen direction, until it is far enough from the camera
+    // Returns the node that was left last
+    const auto WalkNodeAwayFromCamera = [&](float& distance) {
+        auto previousNode = static_cast<int32>(GenTrain_GenerationNode);
+        while (distance < 170.0f) {
+            previousNode = static_cast<int32>(GenTrain_GenerationNode);
+            if (GenTrain_Direction) {
+                GenTrain_GenerationNode--;
+                if (static_cast<int32>(GenTrain_GenerationNode) < 0) {
+                    GenTrain_GenerationNode += NumTrackNodes[GenTrain_Track];
+                }
+            } else {
+                GenTrain_GenerationNode = (GenTrain_GenerationNode + 1) % NumTrackNodes[GenTrain_Track];
+            }
+            distance = DistanceToCamera(GenTrain_Track, GenTrain_GenerationNode);
+        }
+        return previousNode;
+    };
+
+    switch (GenTrain_Status) {
+    case 0: { // Look for a place to put a new train
+        if (trainExists) {
+            return;
+        }
+
+        GenTrain_Track          = 0;
+        GenTrain_GenerationNode = CGeneral::GetRandomNumber() % NumTrackNodes[0];
+        const auto&   genNode   = pTrackNodes[0][GenTrain_GenerationNode];
+        const CVector genNodePos{ genNode.GetX(), genNode.GetY(), genNode.GetZ() };
+        float         distance = DistanceToCamera(0, GenTrain_GenerationNode);
+
+        // Too far, or the node is inside a tunnel that the player is not in, use the tram track instead
+        bool useTramTrack = distance >= maxGenDist;
+        if (!useTramTrack && genNodePos.z + 6.0f <= FindPlayerCoors(-1).z) {
+            if (!(CCullZones::FindTunnelAttributesForCoors(FindPlayerCoors(-1)) & (TUNNEL | TUNNEL_TRANSITION))
+                && (CCullZones::FindTunnelAttributesForCoors(genNodePos) & TUNNEL)
+            ) {
+                useTramTrack = true;
+            }
+        }
+
+        if (!useTramTrack) {
+            GenTrain_Direction      = CGeneral::GetRandomNumber() & 1;
+            const auto previousNode = WalkNodeAwayFromCamera(distance);
+
+            lastTrainConfig      = (lastTrainConfig + 1) % 8;
+            GenTrain_Status      = 1;
+            GenTrain_TrainConfig = lastTrainConfig;
+            if (distance > 220.0f) {
+                GenTrain_GenerationNode = previousNode;
+            }
+            return;
+        }
+
+        // Trams only run in San Fierro
+        if (GenTrain_Status != 0 || CWeather::WeatherRegion != WEATHER_REGION_SF) {
+            return;
+        }
+        GenTrain_Track          = 1;
+        GenTrain_GenerationNode = CGeneral::GetRandomNumber() % NumTrackNodes[1];
+        distance                = DistanceToCamera(1, GenTrain_GenerationNode);
+        if (distance >= maxGenDist) {
+            return;
+        }
+        GenTrain_Direction = CGeneral::GetRandomNumber() & 1;
+        WalkNodeAwayFromCamera(distance);
+        if (distance >= 220.0f) {
+            return;
+        }
+        GenTrain_Status      = 1;
+        GenTrain_TrainConfig = (CGeneral::GetRandomNumber() & 1) + 8;
+        return;
+    }
+    case 1: { // Wait for the models and create the train
+        bool allLoaded = true;
+        for (const auto model : TrainConfigs[GenTrain_TrainConfig]) {
+            if (!model) {
+                break;
+            }
+            if (!CStreaming::GetInfo(model).IsLoaded()) {
+                CStreaming::RequestModel(model, STREAMING_KEEP_IN_MEMORY);
+                allLoaded = false;
+            }
+        }
+        if (!allLoaded) {
+            return;
+        }
+
+        if (DistanceToCamera(GenTrain_Track, GenTrain_GenerationNode) > 60.0f) {
+            CTrain* firstCarriage{};
+            CreateMissionTrain(CVector{}, GenTrain_Direction, GenTrain_TrainConfig, &firstCarriage, nullptr, GenTrain_GenerationNode, GenTrain_Track, false);
+
+            int32 speedRange;
+            if (GenTrain_Track == 0) {
+                speedRange = CGeneral::GetRandomNumber() % 30 + 15;
+
+                // Slower near the start of the line
+                const auto& node = pTrackNodes[GenTrain_Track][GenTrain_GenerationNode];
+                if ((CVector2D{ node.GetX(), node.GetY() } - CVector2D{ 2222.0f, -1750.0f }).Magnitude() < 300.0f) {
+                    speedRange /= 2;
+                }
+            } else {
+                speedRange = CGeneral::GetRandomNumber() % 7 + 7;
+            }
+
+            float maxSpeed;
+            firstCarriage->FindMaximumSpeedToStopAtStations(&maxSpeed);
+            SetTrainSpeed(firstCarriage, std::min(static_cast<float>(speedRange), maxSpeed));
+            firstCarriage->m_autoPilot.m_nCruiseSpeed = static_cast<uint8>(speedRange);
+        }
+
+        for (const auto model : TrainConfigs[GenTrain_TrainConfig]) {
+            if (!model) {
+                break;
+            }
+            CStreaming::SetModelIsDeletable(model);
+            CStreaming::SetModelTxdIsDeletable(model);
+        }
+        GenTrain_Status = 0;
+        return;
+    }
+    default:
+        return;
+    }
 }
 
 // 0x6F8170
