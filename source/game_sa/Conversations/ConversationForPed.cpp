@@ -5,7 +5,7 @@
 void CConversationForPed::InjectHooks() {
     RH_ScopedClass(CConversationForPed);
     RH_ScopedCategory("Conversations");
-    RH_ScopedInstall(Update, 0x43C190, {.Reversed = false});
+    RH_ScopedInstall(Update, 0x43C190);
     RH_ScopedInstall(IsPlayerInPositionForConversation, 0x43AC40);
 }
 
@@ -22,7 +22,81 @@ void CConversationForPed::Clear(bool dontClearNodes) {
 
 // 0x43C190
 void CConversationForPed::Update() {
-    plugin::CallMethod<0x43C190, CConversationForPed*>(this);
+    const auto now = CTimer::GetTimeInMS();
+
+    if (!m_pPed || !m_Enabled || !IsPlayerInPositionForConversation(false)) {
+        m_Status = INACTIVE;
+        return;
+    }
+
+    // The ped speaks (or says something awkward if the player isn't answering)
+    const auto PedSpeaks = [&] {
+        const auto& node = CConversations::m_Nodes[m_CurrentNode];
+        if (!m_SuppressSubtitles) {
+            CMessages::ClearSmallMessagesOnly();
+            CMessages::AddMessageJump(TheText.Get(node.m_Name), 4000, 1, true);
+        }
+        if (node.m_Speech > 0) {
+            m_pPed->Say((eGlobalSpeechContext)(int16)node.m_Speech);
+        }
+        if (node.m_Speech < 0) {
+            CConversations::AwkwardSay(-node.m_Speech, m_pPed);
+        }
+        m_Status     = PED_SPEAKING;
+        m_LastChange = now;
+    };
+
+    // The player picked an answer, and the next node starts
+    const auto PlayerAnswers = [&](bool yes) {
+        const auto& node = CConversations::m_Nodes[m_CurrentNode];
+        if (!m_SuppressSubtitles) {
+            CMessages::ClearSmallMessagesOnly();
+            const auto key = std::string{ node.m_Name, strnlen(node.m_Name, sizeof(node.m_Name)) } + (yes ? 'Y' : 'N');
+            CMessages::AddMessageJump(TheText.Get(key.c_str()), 4000, 3, true);
+        }
+        const auto speech = yes ? node.m_SpeechY : node.m_SpeechN;
+        if (speech > 0) {
+            FindPlayerPed()->Say((eGlobalSpeechContext)(int16)speech);
+        }
+        if (speech < 0) {
+            CConversations::AwkwardSay(-speech, FindPlayerPed());
+        }
+        m_CurrentNode = yes ? node.m_NodeYes : node.m_NodeNo;
+        m_LastChange  = now;
+        if (!m_SuppressSubtitles) {
+            CMessages::AddMessageQ(TheText.Get(CConversations::m_Nodes[m_CurrentNode].m_Name), 4000, 1, true);
+        }
+        m_Status = PLAYER_SPEAKING;
+    };
+
+    // Time to wait for the player's answer ran out, or the player is already answering
+    bool pedSpeaks = true;
+    if (now <= m_LastTimeWeWereCloseEnough + 10000) {
+        pedSpeaks = false;
+        if (m_Status == PLAYER_SPEAKING) {
+            pedSpeaks = now > m_LastChange + 4000;
+            if (!pedSpeaks) {
+                auto* const pad = CPad::GetPad(0);
+                pedSpeaks = pad->ConversationNoJustDown() || pad->ConversationYesJustDown();
+            }
+        }
+    }
+
+    if (pedSpeaks) {
+        PedSpeaks();
+    } else if (m_LastChange + 400 < now && (m_Status == PED_SPEAKING || m_Status == WAITINGFORINPUT || m_Status == INACTIVE)) {
+        const auto& node = CConversations::m_Nodes[m_CurrentNode];
+        if (CPad::GetPad(0)->ConversationNoJustDown() && node.m_NodeNo >= 0) {
+            PlayerAnswers(false);
+        } else if (CPad::GetPad(0)->ConversationYesJustDown() && node.m_NodeYes >= 0) {
+            PlayerAnswers(true);
+        }
+    }
+
+    m_LastTimeWeWereCloseEnough = now;
+    if (m_Status == PED_SPEAKING && m_LastChange + 4000 < now) {
+        m_Status = WAITINGFORINPUT;
+    }
 }
 
 // 0x43AC40
