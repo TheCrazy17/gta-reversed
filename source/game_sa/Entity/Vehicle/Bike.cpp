@@ -538,7 +538,7 @@ void CBike::ProcessDrivingAnims(CPed* driver, bool blend) {
 // 0x6B7280
 void CBike::ProcessRiderAnims(CPed* rider, CVehicle* vehicle, CRideAnimData* rideData, tBikeHandlingData* handling, int16 a5) {
     const auto isPlayer = rider->IsPlayer();
-    auto* const clump = rider->m_pRwClump;
+    auto* const clump = rider->GetRpClump();
 
     CBike*       bike{};
     CAutomobile* quad{};
