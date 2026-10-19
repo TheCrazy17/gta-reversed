@@ -1,6 +1,9 @@
 #include "StdInc.h"
 
 #include "PlayerInfo.h"
+#include "Cranes.h"
+#include "PedGeometryAnalyser.h"
+#include "CarEnterExit.h"
 #include "FireManager.h"
 #include "MenuSystem.h"
 #include "Hud.h"
@@ -14,7 +17,7 @@ void CPlayerInfo::InjectHooks() {
     RH_ScopedInstall(FindObjectToSteal, 0x56DBD0);
     RH_ScopedInstall(EvaluateCarPosition, 0x56DAD0);
     RH_ScopedInstall(Process, 0x56F8D0, { .Reversed = false });
-    RH_ScopedInstall(FindClosestCarSectorList, 0x56F4E0, { .Reversed = false });
+    RH_ScopedInstall(FindClosestCarSectorList, 0x56F4E0);
     RH_ScopedInstall(Clear, 0x56F330);
     RH_ScopedInstall(StreamParachuteWeapon, 0x56EB30);
     RH_ScopedInstall(AddHealth, 0x56EAB0);
@@ -181,7 +184,74 @@ void CPlayerInfo::Process(uint32 playerIndex) {
 
 // 0x56F4E0
 void CPlayerInfo::FindClosestCarSectorList(CPtrListDoubleLink<CVehicle*>& ptrList, CPed* ped, float minX, float minY, float maxX, float maxY, float* outVehDist, CVehicle** outVehicle) {
-    plugin::CallMethod<0x56F4E0, CPlayerInfo*, CPtrListDoubleLink<CVehicle*>&, CPed*, float, float, float, float, float*, CVehicle**>(this, ptrList, ped, minX, minY, maxX, maxY, outVehDist, outVehicle);
+    for (auto* node = ptrList.GetNode(), *next = decltype(node){}; node; node = next) {
+        next = node->Next;
+
+        auto* const vehicle = node->Item;
+        if (vehicle->IsScanCodeCurrent() || !vehicle->GetUsesCollision() || vehicle->GetType() != ENTITY_TYPE_VEHICLE) {
+            continue;
+        }
+        vehicle->SetCurrentScanCode();
+
+        if (vehicle->GetStatus() == STATUS_WRECKED || vehicle->GetStatus() == STATUS_TRAIN_MOVING) {
+            continue;
+        }
+
+        if (!vehicle->m_matrix) {
+            vehicle->AllocateMatrix();
+            vehicle->m_placement.UpdateMatrix(vehicle->m_matrix);
+        }
+
+        // Vehicles that are on their side can't be used, unless it is a bike
+        if (vehicle->GetMatrix().GetUp().z <= 0.3f && vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE) {
+            continue;
+        }
+
+        const auto& vehPos = vehicle->GetPosition();
+        const auto& pedPos = ped->GetPosition();
+        const auto  roadPos = CVector{ vehPos.x, vehPos.y, vehPos.z - vehicle->GetHeightAboveRoad() + 1.0f };
+        auto        heightDiff = pedPos.z - roadPos.z;
+
+        // The AT400 is measured against its door instead
+        CVector doorPos;
+        int32   doorId      = 0;
+        bool    closeEnough = false;
+        if (vehicle->m_nModelIndex == MODEL_AT400 && CCarEnterExit::GetNearestCarDoor(ped, vehicle, doorPos, doorId)) {
+            heightDiff  = std::abs(pedPos.z - doorPos.z);
+            closeEnough = heightDiff < 1.0f;
+        }
+        if (!closeEnough && std::abs(heightDiff) >= 2.0f) {
+            // Only boats can be used from this far, as long as the ped is standing on it or right above it
+            if (vehicle->m_nVehicleType != VEHICLE_TYPE_BOAT) {
+                continue;
+            }
+            const auto justAbove = roadPos.z < pedPos.z && pedPos.z - 4.0f < roadPos.z;
+            if (!justAbove && ped->m_pContactEntity != vehicle) {
+                continue;
+            }
+        }
+
+        if (!vehicle->vehicleFlags.bConsideredByPlayer) {
+            continue;
+        }
+        if (!CCarEnterExit::GetNearestCarDoor(ped, vehicle, doorPos, doorId = 0)) {
+            continue;
+        }
+
+        auto dist = CVector{ pedPos.x - vehPos.x, pedPos.y - vehPos.y, 0.0f }.Magnitude();
+        if (dist > 10.0f) {
+            // Too far away, unless the ped is inside the vehicle's bounding box
+            if (!CPedGeometryAnalyser::LiesInsideBoundingBox(*ped, pedPos, *vehicle)) {
+                continue;
+            }
+            dist = 10.0f;
+        }
+
+        if (CCranes::IsThisCarBeingCarriedByAnyCrane(vehicle)) {
+            continue;
+        }
+        EvaluateCarPosition(vehicle, ped, dist, outVehDist, outVehicle);
+    }
 }
 
 // 0x56F330
