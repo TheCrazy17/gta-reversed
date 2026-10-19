@@ -102,7 +102,7 @@ bool CTaskSimpleRunNamedAnim::ProcessPed(CPed* ped) {
 
     if (!m_pAnim) {
         // Somebody else is already using the anim
-        if (const auto anim = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), true, m_pAnimHierarchy); anim && anim->m_pCallbackFunc) {
+        if (const auto anim = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), true, m_pAnimHierarchy); anim && anim->m_pCallbackData) {
             return true;
         }
         StartAnim(ped);
