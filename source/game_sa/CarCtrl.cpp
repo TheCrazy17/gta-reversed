@@ -104,7 +104,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0, { .Reversed = false });
     RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090, { .Reversed = false });
-    RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0, { .Reversed = false });
+    RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
     RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0, { .Reversed = false });
@@ -1223,7 +1223,43 @@ void CCarCtrl::SteerAIBoatWithPhysicsCirclingPlayer(CVehicle* vehicle, float* ar
 
 // 0x428BE0
 void CCarCtrl::SteerAIBoatWithPhysicsHeadingForTarget(CVehicle* vehicle, float arg2, float arg3, float* arg4, float* arg5, float* arg6) {
-    plugin::Call<0x428BE0, CVehicle*, float, float, float*, float*, float*>(vehicle, arg2, arg3, arg4, arg5, arg6);
+    // arg4: steering, arg5: gas / brake, arg6: handbrake
+    const auto& pos = vehicle->GetPosition();
+
+    CVector2D forward{ vehicle->GetForward() };
+    if (const auto len = forward.Magnitude(); len == 0.0f) {
+        forward.x = 1.0f;
+    } else {
+        forward *= 1.0f / len;
+    }
+
+    // How far the boat has to turn, in [-0.5, 0.5]
+    const auto targetHeading  = CGeneral::GetATanOfXY(arg2 - pos.x, arg3 - pos.y);
+    const auto currentHeading = CGeneral::GetATanOfXY(forward.x, forward.y);
+    auto       turn           = targetHeading - currentHeading;
+    while (turn < -3.1415927f) {
+        turn += 6.2831855f;
+    }
+    while (turn > 3.1415927f) {
+        turn -= 6.2831855f;
+    }
+    turn = std::clamp(turn, -0.5f, 0.5f);
+
+    const auto cruiseSpeed = (float)vehicle->m_autoPilot.m_nCruiseSpeed;
+    const auto speedDiff   = cruiseSpeed - vehicle->GetMoveSpeed().Magnitude2D() * 60.0f;
+    if (speedDiff > 0.0f) {
+        // Too slow, so speed up
+        const auto ratio = speedDiff / cruiseSpeed;
+        *arg5            = ratio <= 0.25f ? 1.0f - (0.25f - ratio) * 4.0f : 1.0f;
+        *arg6            = 0.0f;
+        *arg4            = turn;
+        return;
+    }
+
+    // Too fast, so brake and steer the other way
+    *arg5 = speedDiff < -5.0f ? -0.2f : -0.1f;
+    *arg6 = 0.0f;
+    *arg4 = turn * -1.0f;
 }
 
 // 0x422B20
