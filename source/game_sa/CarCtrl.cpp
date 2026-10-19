@@ -82,7 +82,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GenerateOneRandomCar, 0x430050, { .Reversed = false });
     RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0);
     RH_ScopedInstall(GetAIHeliToFlyInDirection, 0x42A730);
-    RH_ScopedInstall(GetAIPlaneToAttackPlayer, 0x429780, { .Reversed = false });
+    RH_ScopedInstall(GetAIPlaneToAttackPlayer, 0x429780);
     RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890);
     RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370);
     RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
@@ -617,7 +617,22 @@ void CCarCtrl::GetAIHeliToFlyInDirection(CAutomobile* automobile) {
 
 // 0x429780
 void CCarCtrl::GetAIPlaneToAttackPlayer(CAutomobile* automobile) {
-    plugin::Call<0x429780, CAutomobile*>(automobile);
+    auto* const plane = static_cast<CPlane*>(automobile);
+
+    // Aim a bit ahead of where the player is going
+    const auto  playerSpeed = FindPlayerSpeed();
+    const auto  playerPos   = FindPlayerCoors();
+    const auto& pos         = plane->GetPosition();
+
+    plane->m_planeHeading = CGeneral::GetATanOfXY(playerSpeed.x * 50.0f + playerPos.x - pos.x, playerSpeed.y * 50.0f + playerPos.y - pos.y);
+    plane->m_maxAltitude  = playerSpeed.z * 50.0f + playerPos.z;
+    FlyAIPlaneInCertainDirection(plane);
+
+    if (auto* const playerVeh = FindPlayerVehicle(); playerVeh && playerVeh->GetVehicleAppearance() == VEHICLE_APPEARANCE_PLANE) {
+        TriggerDogFightMoves(plane, playerVeh);
+    }
+    TestWhetherToFirePlaneGuns(plane, FindPlayerVehicle());
+    PossiblyFireHSMissile(plane, FindPlayerVehicle());
 }
 
 // 0x429890
