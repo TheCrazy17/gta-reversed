@@ -149,7 +149,7 @@ void CRadar::InjectHooks() {
 
     RH_ScopedInstall(SetupAirstripBlips, 0x587D20); // TEST
     RH_ScopedInstall(DrawBlips, 0x588050);
-    RH_ScopedInstall(ClipRadarPoly, 0x585040, { .Reversed = false });
+    RH_ScopedInstall(ClipRadarPoly, 0x585040);
     RH_ScopedInstall(DrawAreaOnRadar, 0x5853D0);
     RH_ScopedOverloadedInstall(StreamRadarSections, "xy", 0x584C50, void (*)(int32, int32));
     RH_ScopedInstall(AddBlipToLegendList, 0x5859F0);
@@ -1117,7 +1117,77 @@ int32 LineRadarBoxCollision(CVector2D& result, const CVector2D& lineStart, const
 
 // 0x585040
 int32 CRadar::ClipRadarPoly(CVector2D* out, const CVector2D* in) {
-    return plugin::CallAndReturn<int32, 0x585040, CVector2D*, const CVector2D*>(out, in);
+    // The corners of the radar box, in the order the sides are numbered by `LineRadarBoxCollision`
+    static constexpr CVector2D CORNERS[4]{ { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f }, { -1.0f, -1.0f } };
+
+    const auto IsInsideBox = [](const CVector2D& p) {
+        return !(p.x < -1.0f || p.x > 1.0f || p.y < -1.0f || p.y > 1.0f);
+    };
+
+    bool inside[4];
+    for (auto i = 0; i < 4; i++) {
+        inside[i] = IsInsideBox(in[i]);
+    }
+
+    int32 count     = 0;
+    int32 entryEdge = -1; // The last side of the box the polygon was seen entering through
+    for (auto i = 0; i < 4; i++) {
+        if (inside[i]) {
+            out[count++] = in[i];
+            continue;
+        }
+
+        // The vertex is outside, find where its edges cross the box
+        const auto entered = LineRadarBoxCollision(out[count], in[i], in[(i - 1) & 3]);
+        if (entered != -1) {
+            count++;
+            entryEdge = entered;
+        }
+
+        auto&      exitPoint = out[count];
+        const auto exited    = LineRadarBoxCollision(exitPoint, in[i], in[(i + 1) & 3]);
+        if (exited == -1) {
+            continue;
+        }
+
+        if (entered == -1) {
+            if (entryEdge == -1) {
+                // Nothing seen so far, look at the remaining edges for the side it comes in from
+                for (auto j = 3; j >= i; j--) {
+                    CVector2D ignored;
+                    const auto edge = LineRadarBoxCollision(ignored, j == 0 ? in[0] : in[j], j == 0 ? in[3] : in[j - 1]);
+                    if (edge != -1) {
+                        entryEdge = edge;
+                        break;
+                    }
+                }
+            }
+
+            // Follow the box around from the side it came in through to the side it leaves by
+            const auto savedExit = exitPoint;
+            auto*      dst       = &exitPoint;
+            if (entryEdge != -1) {
+                for (auto edge = entryEdge; edge != exited; edge = (edge + 1) & 3) {
+                    count++;
+                    *dst++ = CORNERS[edge];
+                }
+            }
+            out[count] = savedExit;
+        }
+        count++;
+    }
+
+    // The whole radar box can be inside the polygon, with none of its vertices in the box
+    if (count == 0) {
+        const auto slopeA = (in[0].y - in[1].y) / (in[0].x - in[1].x);
+        const auto slopeB = (in[0].y - in[3].y) / (in[0].x - in[3].x);
+        if ((slopeA * in[0].x - in[0].y) * (slopeA * in[3].x - in[3].y) < 0.0f
+            && (slopeB * in[0].x - in[0].y) * (slopeB * in[1].x - in[1].y) < 0.0f) {
+            std::ranges::copy(CORNERS, out);
+            return 4;
+        }
+    }
+    return count;
 }
 
 // 0x5853D0
