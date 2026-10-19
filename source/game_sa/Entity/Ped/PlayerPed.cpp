@@ -38,6 +38,8 @@
 #include "GameLogic.h"
 #include "AEPedSpeechAudioEntity.h"
 #include "EventGunAimedAt.h"
+#include "TaskComplexSmartFleeEntity.h"
+#include "CarCtrl.h"
 
 bool CPlayerPed::bDebugPlayerInvincible;
 bool CPlayerPed::bDebugTargeting;
@@ -103,8 +105,8 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedInstall(ProcessAnimGroups, 0x6098F0);
     RH_ScopedInstall(ControlButtonSprint, 0x60A610);
     RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650);
-    RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80, { .Reversed = false });
-    RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0, { .Reversed = false });
+    RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80);
+    RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0);
     RH_ScopedInstall(MakeThisPedJoinOurGroup, 0x60C840);
     RH_ScopedInstall(PlayerWantsToAttack, 0x60CC50);
     RH_ScopedInstall(SetInitialState, 0x60CD20);
@@ -1301,7 +1303,80 @@ void CPlayerPed::Compute3rdPersonMouseTarget(bool weaponIsNotMelee) {
 
 // 0x60BA80
 void CPlayerPed::DrawTriangleForMouseRecruitPed() {
-    plugin::CallMethod<0x60BA80, CPlayerPed *>(this);
+    auto* const target = m_p3rdPersonMouseTarget;
+    if (!target) {
+        return;
+    }
+
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,       RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE,        RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,           RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,          RWRSTATE(rwBLENDINVSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE,  RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER,      RWRSTATE(NULL));
+    RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTION,  RWRSTATE(rwALPHATESTFUNCTIONALWAYS));
+
+    // The marker goes from red to green with the health of the target
+    uint8 red{}, green{}, blue{};
+    const auto health = std::min(target->m_fHealth / target->m_fMaxHealth, 1.0f);
+    if (health > 0.0f) {
+        red   = static_cast<uint8>((1.0f - health) * 255.0f);
+        green = static_cast<uint8>(health * 255.0f);
+    }
+
+    // The marker grows with the distance to the target
+    const auto distance = std::max((target->GetPosition() - GetPosition()).Magnitude() - 10.0f, 0.0f);
+    const auto size     = std::min(distance * 0.02f, 1.0f) * 0.825f + 0.175f;
+
+    const auto side = TheCamera.GetRightVector() * size;
+    const auto up   = CVector{ 0.0f, 0.0f, size };
+
+    auto  base = target->GetPosition();
+    base.z += 1.0f;
+
+    // Gang members of the Ballas get the triangle pointing down
+    CVector points[3];
+    if (target->m_nPedType == PED_TYPE_GANG1) {
+        points[0] = base;
+        points[1] = base - side + up;
+        points[2] = base + side + up;
+    } else {
+        points[0] = base + up;
+        points[1] = base + side;
+        points[2] = base - side;
+    }
+
+    // Pull the vertices one unit towards the camera so they do not sink into the ped
+    const auto& camPos = TheCamera.GetPosition();
+    for (auto& point : points) {
+        auto towardsCam = camPos - point;
+        towardsCam.Normalise();
+        point += towardsCam;
+    }
+
+    auto* const verts = TempBufferVertices.m_3d;
+    for (auto i = 0; i < 3; i++) {
+        RwIm3DVertexSetPos(&verts[i], points[i].x, points[i].y, points[i].z);
+    }
+    RwIm3DVertexSetRGBA(&verts[0], red, green, blue, 255);
+    RwIm3DVertexSetRGBA(&verts[1], red, green, blue, 0);
+    RwIm3DVertexSetRGBA(&verts[2], red, green, blue, 0);
+
+    aTempBufferIndices[0] = 0;
+    aTempBufferIndices[1] = 1;
+    aTempBufferIndices[2] = 2;
+    if (RwIm3DTransform(verts, 3, nullptr, rwIM3D_VERTEXXYZ | rwIM3D_VERTEXRGBA)) {
+        RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, aTempBufferIndices, 3);
+        RwIm3DEnd();
+    }
+
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER,      RWRSTATE(NULL));
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,       RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE,        RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,           RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,          RWRSTATE(rwBLENDINVSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE,  RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTION,  RWRSTATE(rwALPHATESTFUNCTIONGREATER));
 }
 
 // 0x60C0C0
@@ -1329,7 +1404,67 @@ bool CPlayerPed::DoesTargetHaveToBeBroken(CEntity* target, CWeapon* weapon) {
 
 // 0x60C1E0
 void CPlayerPed::KeepAreaAroundPlayerClear() {
-    plugin::CallMethod<0x60C1E0, CPlayerPed *>(this);
+    // Game created pedestrians nearby either walk away from the player or are removed when off screen
+    static auto& fleePosCheckPeriod    = StaticRef<int32>(0x86F678);
+    static auto& fleePosChangeTolerance = StaticRef<float>(0xC18CF0);
+
+    for (auto* const entity : GetIntelligence()->GetPedScanner().m_apEntities) {
+        auto* const ped = entity ? entity->AsPed() : nullptr;
+        if (!ped || !ped->IsCreatedBy(PED_GAME) || ped->bInVehicle || !ped->IsAlive()) {
+            continue;
+        }
+        if (CPedGroups::GetGroup(0).GetMembership().IsMember(ped)) {
+            continue;
+        }
+
+        if (!ped->GetIsOnScreen() || ped->bKeepTasksAfterCleanUp) {
+            ped->FlagToDestroyWhenNextProcessed();
+            continue;
+        }
+
+        // Skip peds that are already fleeing from the player
+        if (auto* const fleeTask = static_cast<CTaskComplexSmartFleeEntity*>(ped->GetIntelligence()->FindTaskByType(TASK_COMPLEX_SMART_FLEE_ENTITY));
+            fleeTask && fleeTask->m_fleeFrom == this
+        ) {
+            continue;
+        }
+        if (auto* const scriptCommand = static_cast<CEventScriptCommand*>(ped->GetIntelligence()->m_eventGroup.GetEventOfType(EVENT_SCRIPT_COMMAND));
+            scriptCommand && scriptCommand->m_task && scriptCommand->m_task->GetTaskType() == TASK_COMPLEX_SMART_FLEE_ENTITY
+        ) {
+            continue;
+        }
+
+        auto* const task = new CTaskComplexSmartFleeEntity{ this, false, 1000.0f, 100'000, fleePosCheckPeriod, fleePosChangeTolerance, PEDMOVE_WALK };
+        CEventScriptCommand event{ TASK_PRIMARY_PRIMARY, task, false };
+        ped->GetIntelligence()->m_eventGroup.Add(&event, false);
+    }
+
+    // Vehicles close to the player (or the vehicle the player is in) are told to wait or back off
+    const auto center = bInVehicle && m_pVehicle ? m_pVehicle->GetPosition() : GetPosition();
+
+    int16     numFound{};
+    CEntity*  found[6]{};
+    CWorld::FindObjectsInRange(GetPosition(), 15.0f, true, &numFound, 6, found, false, true, false, false, false);
+    for (auto i = 0; i < numFound; i++) {
+        auto* const vehicle = found[i]->AsVehicle();
+        if (vehicle->m_nCreatedBy == MISSION_VEHICLE || vehicle->GetStatus() == STATUS_PLAYER || vehicle->GetStatus() == STATUS_FORCED_STOP) {
+            continue;
+        }
+
+        auto& autoPilot = vehicle->m_autoPilot;
+        const auto& vehPos = vehicle->GetPosition();
+        if ((vehPos - center).SquaredMagnitude() > 25.0f) {
+            autoPilot.m_nTempAction     = TEMPACT_WAIT;
+            autoPilot.m_nTempActionTime = CTimer::GetTimeInMS() + 5000;
+        } else {
+            // Back off when the player is in front of the vehicle, otherwise keep going
+            const auto& forward = vehicle->GetForward();
+            const auto  inFront = (center.y - vehPos.y) * forward.y + (center.x - vehPos.x) * forward.x > 0.0f;
+            autoPilot.m_nTempAction     = inFront ? TEMPACT_REVERSE : TEMPACT_GOFORWARD;
+            autoPilot.m_nTempActionTime = CTimer::GetTimeInMS() + 2000;
+        }
+        CCarCtrl::PossiblyRemoveVehicle(vehicle);
+    }
 }
 
 // 0x60C520
