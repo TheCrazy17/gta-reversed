@@ -4,6 +4,10 @@
 #include "Ragdoll/IKChainManager.h"
 #include "TaskSimpleCarSetPedOut.h"
 #include "CarEnterExit.h"
+#include "VehicleAnimGroupData.h"
+#include "Weather.h"
+#include "Entity/Vehicle/Automobile.h"
+#include <numbers>
 
 void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarDrive, 0x86E904, 9);
@@ -15,8 +19,8 @@ void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedInstall(TriggerIK, 0x63C500);
     RH_ScopedInstall(UpdateBopping, 0x63C900);
     RH_ScopedInstall(StartBopping, 0x642760);
-    RH_ScopedInstall(ProcessHeadBopping, 0x6428C0, { .Reversed = false });
-    RH_ScopedInstall(ProcessArmBopping, 0x642AE0, { .Reversed = false });
+    RH_ScopedInstall(ProcessHeadBopping, 0x6428C0);
+    RH_ScopedInstall(ProcessArmBopping, 0x642AE0);
     RH_ScopedInstall(ProcessBopping, 0x642E70);
     RH_ScopedVMTInstall(Clone, 0x63DC20);
     RH_ScopedVMTInstall(GetTaskType, 0x63C450);
@@ -149,12 +153,178 @@ void CTaskSimpleCarDrive::StartBopping(CPed* ped) {
 
 // 0x6428C0
 void CTaskSimpleCarDrive::ProcessHeadBopping(CPed* ped, bool a3, float a4) {
-    plugin::CallMethod<0x6428C0, CTaskSimpleCarDrive*, CPed*, bool, float>(this, ped, a3, a4);
+    float wave = 0.0f;
+    if (a3) {
+        if (!m_b01) {
+            // Random chance to start bopping the head
+            if (m_fHeadBoppingFactor == 0.0f && CGeneral::GetRandomNumberInRange(0, 1000) > 995) {
+                if (m_nBoppingStartTime == -1) {
+                    StartBopping(ped);
+                    m_nHeadBoppingStartTime = m_nBoppingStartTime;
+                } else {
+                    m_nHeadBoppingStartTime = CTimer::GetTimeInMS();
+                }
+                m_nHeadBoppingDirection        = CGeneral::GetRandomNumberInRange(1, 3);
+                m_fRandomHeadBoppingMultiplier = CGeneral::GetRandomNumberInRange(3.0f, 8.0f);
+                m_fHeadBoppingFactor           = 0.0f;
+                m_fHeadBoppingOrientation      = 0.0f;
+                wave                           = 0.0f;
+            } else {
+                a3 = false;
+            }
+        } else {
+            wave = std::sin(m_fBoppingProgress * std::numbers::pi_v<float>);
+            // Keep going for at least 5 seconds, then there is a small chance to stop on every frame
+            if (CTimer::GetTimeInMS() - (uint32)m_nHeadBoppingStartTime > 5000 && CGeneral::GetRandomNumberInRange(0, 1000) >= 996) {
+                a3 = false;
+            }
+        }
+    }
+    m_b01 = a3;
+
+    float delta;
+    if (!m_b01) {
+        if (m_fHeadBoppingFactor > 0.0f) {
+            m_fHeadBoppingFactor -= 0.05f;
+        }
+        if (m_fHeadBoppingFactor < 0.0f) {
+            m_fHeadBoppingFactor = 0.0f;
+        }
+        delta = (1.0f - m_fHeadBoppingFactor) * (wave - m_fHeadBoppingOrientation);
+    } else {
+        if (m_fHeadBoppingFactor < 1.0f) {
+            m_fHeadBoppingFactor += 0.05f;
+        }
+        if (m_fHeadBoppingFactor > 1.0f) {
+            m_fHeadBoppingFactor = 1.0f;
+        }
+        delta = (wave - m_fHeadBoppingOrientation) * m_fHeadBoppingFactor;
+    }
+    m_fHeadBoppingOrientation += delta;
+
+    if (a4 < 64.0f && m_fHeadBoppingOrientation > 0.0f) {
+        auto angle = m_fRandomHeadBoppingMultiplier * m_fHeadBoppingOrientation;
+        const auto frame = ped->m_apBones[PED_NODE_HEAD]->Frame;
+        if (m_nHeadBoppingDirection > 0) {
+            RwV3d axisX{ 1.0f, 0.0f, 0.0f };
+            RwFrameRotate(frame, &axisX, m_nBoppingCompletedTimes != 0 ? -angle : angle, rwCOMBINEPRECONCAT);
+        }
+        if (m_nHeadBoppingDirection != 2) {
+            angle = -angle;
+        }
+        RwV3d axisZ{ 0.0f, 0.0f, 1.0f };
+        RwFrameRotate(frame, &axisZ, angle, rwCOMBINEPRECONCAT);
+        ped->bUpdateMatricesRequired = true;
+    }
 }
 
 // 0x642AE0
 void CTaskSimpleCarDrive::ProcessArmBopping(CPed* ped, bool a3, float a4) {
-    plugin::CallMethod<0x642AE0, CTaskSimpleCarDrive*, CPed*, bool, float>(this, ped, a3, a4);
+    if (ped->IsPlayer()) {
+        return;
+    }
+
+    auto* const veh = ped->m_pVehicle;
+    if (CWeather::Rain <= 0.0f) {
+        if (veh->m_pDriver == ped) {
+            veh->SetWindowOpenFlag(CAR_DOOR_LF);
+        } else if (veh->m_apPassengers[0] == ped) {
+            veh->SetWindowOpenFlag(CAR_DOOR_RF);
+        } else if (veh->m_apPassengers[1] == ped) {
+            veh->SetWindowOpenFlag(CAR_DOOR_LR);
+        } else if (veh->m_apPassengers[2] == ped) {
+            veh->SetWindowOpenFlag(CAR_DOOR_RR);
+        }
+    } else {
+        // Windows get closed while it rains
+        veh->ClearWindowOpenFlag(CAR_DOOR_LF);
+        veh->ClearWindowOpenFlag(CAR_DOOR_RF);
+        veh->ClearWindowOpenFlag(CAR_DOOR_LR);
+        veh->ClearWindowOpenFlag(CAR_DOOR_RR);
+        a3 = false;
+    }
+
+    // The right side passengers use the other arm
+    const auto animId = (AnimationId)(veh->m_apPassengers[0] == ped || veh->m_apPassengers[2] == ped ? 0xA3 : 0xA2);
+    auto* const assoc = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), animId);
+
+    if (!a3) {
+        if (assoc) {
+            assoc->SetBlendDelta(-4.0f);
+        }
+        m_b02 = false;
+        return;
+    }
+
+    if (!m_b02) {
+        if (CGeneral::GetRandomNumberInRange(0, 1000) <= 995) {
+            return;
+        }
+
+        bool canStart = true;
+        if (m_pVehicle->m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE) {
+            const auto door = CCarEnterExit::ComputeTargetDoorToExit(m_pVehicle, ped);
+            if (m_pVehicle->AsAutomobile()->m_damageManager.GetDoorStatus_Component((tComponent)door) != DAMSTATE_OK
+                || CCarEnterExit::CarHasDoorToClose(m_pVehicle, door)
+                || !m_pVehicle->CanPedLeanOut(ped)
+            ) {
+                canStart = false;
+            }
+
+            const auto& dummies = CModelInfo::GetModelInfo(m_pVehicle->m_nModelIndex)->AsVehicleModelInfoPtr()->m_pVehicleStruct->m_avDummyPos;
+            const auto& handRest = dummies[DUMMY_HAND_REST];
+            if (handRest.x == 0.0f && handRest.y == 0.0f && handRest.z == 0.0f) {
+                return;
+            }
+            if (m_pVehicle->vehicleFlags.bLowVehicle) {
+                return;
+            }
+
+            // The hand rest has to be within a certain height above the seat
+            const auto heightAboveSeat = handRest.z - dummies[DUMMY_SEAT_FRONT].z;
+            if (CVehicleAnimGroupData::GetVehicleAnimGroup(m_pVehicle->m_pHandlingData->m_nAnimGroup).m_animFlags.bCanEnterFrontDoors) {
+                if (!(heightAboveSeat >= 0.40f) || heightAboveSeat > 0.44f) {
+                    return;
+                }
+            } else {
+                if (!(heightAboveSeat >= 0.39f) || heightAboveSeat > 0.46f) {
+                    return;
+                }
+            }
+            if (!canStart) {
+                return;
+            }
+        }
+
+        CAnimManager::BlendAnimation(ped->GetRpClump(), ANIM_GROUP_DEFAULT, animId, 4.0f);
+        if (m_nBoppingStartTime == -1) {
+            StartBopping(ped);
+            m_nArmBoppingStartTime = m_nBoppingStartTime;
+        } else {
+            m_nArmBoppingStartTime = CTimer::GetTimeInMS();
+        }
+        m_b02 = true;
+        return;
+    }
+
+    if (!assoc) {
+        m_b02 = false;
+        return;
+    }
+
+    if (a4 < 64.0f) {
+        // Rotate the arm during the last quarter of the bopping cycle
+        const auto angle = m_fBoppingProgress >= 0.75f ? (m_fBoppingProgress - 0.75f) * 45.0f : 0.0f;
+        const auto node  = animId == 0xA2 ? PED_NODE_LEFT_HAND : PED_NODE_RIGHT_HAND;
+        RwV3d axisZ{ 0.0f, 0.0f, 1.0f };
+        RwFrameRotate(ped->m_apBones[node]->Frame, &axisZ, -angle, rwCOMBINEPRECONCAT);
+        ped->bUpdateMatricesRequired = true;
+    }
+
+    if (CTimer::GetTimeInMS() - (uint32)m_nArmBoppingStartTime > 5000 && CGeneral::GetRandomNumberInRange(0, 1000) > 995) {
+        assoc->SetBlendDelta(-4.0f);
+        m_b02 = false;
+    }
 }
 
 // 0x642E70
