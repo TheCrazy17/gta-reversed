@@ -1,5 +1,7 @@
 #include "StdInc.h"
 #include "PedStats.h"
+#include "Tasks/TaskTypes/TaskSimpleFight.h"
+#include "Localisation.h"
 
 #include <reversiblebugfixes/Bugs.hpp>
 #include "PedDamageResponseCalculator.h"
@@ -11,7 +13,7 @@ void CPedDamageResponseCalculator::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x4AD3F0);
     RH_ScopedInstall(AccountForPedDamageStats, 0x4AD430);
     RH_ScopedInstall(AccountForPedArmour, 0x4AD550);
-    RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610, { .Reversed = false });
+    RH_ScopedInstall(ComputeWillForceDeath, 0x4AD610);
     RH_ScopedInstall(ComputeWillKillPed, 0x4B3210);
     RH_ScopedInstall(IsBleedingWeapon, 0x4B5C2A);
     RH_ScopedInstall(ComputeDamageResponse, 0x4B5AC0, { .Reversed = false });
@@ -139,7 +141,73 @@ void CPedDamageResponseCalculator::AdjustPedDamage(CPed* ped) {
  * @addr 0x4AD610
  */
 bool CPedDamageResponseCalculator::ComputeWillForceDeath(CPed* ped, CPedDamageResponse& response) {
-    return plugin::CallMethodAndReturn<bool, 0x4AD610, CPedDamageResponseCalculator*, CPed*, CPedDamageResponse&>(this, ped, response);
+    if (ped->bNoCriticalHits) {
+        return false;
+    }
+
+    const auto damagerPed = m_pDamager && m_pDamager->GetIsTypePed() ? static_cast<const CPed*>(m_pDamager) : nullptr;
+
+    switch (m_weaponType) {
+    case WEAPON_KATANA: {
+        // The player's special katana moves have a chance to kill outright
+        if (!damagerPed || !damagerPed->IsPlayer()) {
+            return false;
+        }
+        const auto fight = const_cast<CPed*>(damagerPed)->GetIntelligence()->GetTaskFighting();
+        if (!fight || fight->m_nComboSet != 11) {
+            return false;
+        }
+        if (fight->m_nCurrentMove == 2 && (CGeneral::GetRandomNumber() & 1)) {
+            return true;
+        }
+        return (CGeneral::GetRandomNumber() & 7) == 0;
+    }
+    case WEAPON_GRENADE:
+    case WEAPON_RLAUNCHER:
+    case WEAPON_RLAUNCHER_HS:
+    case WEAPON_REMOTE_SATCHEL_CHARGE:
+    case WEAPON_EXPLOSION:
+        if (!CLocalisation::KillPeds() || ped->IsPlayer() || ped->bInVehicle) {
+            return false;
+        }
+        return ped->m_fHealth < m_fDamageFactor + 1.0f;
+    case WEAPON_PISTOL:
+    case WEAPON_PISTOL_SILENCED:
+    case WEAPON_DESERT_EAGLE:
+    case WEAPON_SHOTGUN:
+    case WEAPON_SAWNOFF_SHOTGUN:
+    case WEAPON_SPAS12_SHOTGUN:
+    case WEAPON_MICRO_UZI:
+    case WEAPON_MP5:
+    case WEAPON_AK47:
+    case WEAPON_M4:
+    case WEAPON_TEC9:
+    case WEAPON_COUNTRYRIFLE:
+    case WEAPON_SNIPERRIFLE:
+    case WEAPON_MINIGUN:
+    case WEAPON_UZI_DRIVEBY: {
+        // Headshots kill, but only now and then unless the ped is hit with a rifle
+        uint32 chance = 1;
+        if (!ped->IsPlayer() && !ped->bNoCriticalHits) {
+            chance = m_weaponType == WEAPON_SNIPERRIFLE || m_weaponType == WEAPON_COUNTRYRIFLE
+                ? 0
+                : (uint32)(CGeneral::GetRandomNumber() & 7);
+        }
+
+        // Peds that are driving can't be one shot this way, neither can they when the player aims on purpose
+        const auto isDrivingNpc = ped->bInVehicle && ped->m_pVehicle && !ped->IsPlayer() && !ped->bNoCriticalHits;
+        const auto isAimedAt    = !ped->IsPlayer()
+            && damagerPed
+            && damagerPed->IsPlayer()
+            && (damagerPed->GetPlayerData()->m_nTargetBone == 5 || damagerPed->GetPlayerData()->m_bFreeAiming);
+        if (!isDrivingNpc && !isAimedAt && chance != 0) {
+            return false;
+        }
+        return m_bodyPart == PED_PIECE_HEAD;
+    }
+    default:
+        return false;
+    }
 }
 
 /*!
