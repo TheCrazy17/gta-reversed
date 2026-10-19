@@ -115,7 +115,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(UpdateTargetEntity, 0x50C360);
     RH_ScopedInstall(TakeControl, 0x50C7C0);
     RH_ScopedInstall(TakeControlNoEntity, 0x50C8B0);
-    RH_ScopedInstall(TakeControlAttachToEntity, 0x50C910, { .Reversed = false });
+    RH_ScopedInstall(TakeControlAttachToEntity, 0x50C910);
     RH_ScopedInstall(TakeControlWithSpline, 0x50CAE0);
     RH_ScopedInstall(SetCamCollisionVarDataSet, 0x50CB60);
     RH_ScopedInstall(SetNearClipBasedOnPedCollision, 0x50CB90);
@@ -1202,7 +1202,35 @@ void CCamera::TakeControlNoEntity(const CVector& fixedModeVector, eSwitchType sw
 
 // 0x50C910
 void CCamera::TakeControlAttachToEntity(CEntity* target, CEntity* attached, CVector* attachedCamOffset, CVector* attachedCamLookAt, float tilt, eSwitchType switchType, int32 whoIsInControlOfTheCamera) {
-    plugin::CallMethod<0x50C910, CCamera*, CEntity*, CEntity*, CVector*, CVector*, float, eSwitchType, int32>(this, target, attached, attachedCamOffset, attachedCamLookAt, tilt, switchType, whoIsInControlOfTheCamera);
+    if (whoIsInControlOfTheCamera == 2 && m_nWhoIsInControlOfTheCamera == 1) {
+        return;
+    }
+    m_nWhoIsInControlOfTheCamera = whoIsInControlOfTheCamera;
+
+    if (!attached) {
+        attached = FindPlayerVehicle(-1, false);
+        if (!attached) {
+            attached = CWorld::Players[CWorld::PlayerInFocus].m_pPed;
+        }
+    }
+
+    if (target) {
+        CEntity::ChangeEntityReference(m_pTargetEntity, target);
+        m_bLookingAtVector = false;
+    } else {
+        m_bLookingAtVector = true;
+        // The look-at point is only taken when it differs from the camera offset
+        m_vecAttachedCamLookAt = *attachedCamLookAt != *attachedCamOffset ? *attachedCamLookAt : CVector{};
+    }
+
+    m_vecAttachedCamOffset = attachedCamOffset->IsZero() ? CVector{ 0.0f, 0.0f, 2.0f } : *attachedCamOffset;
+    m_fAttachedCamAngle    = tilt;
+    CEntity::ChangeEntityReference(m_pAttachedEntity, attached);
+
+    m_nModeToGoTo       = MODE_ATTACHCAM;
+    m_nTypeOfSwitch     = switchType;
+    m_bLookingAtPlayer  = false;
+    m_bStartInterScript = true;
 }
 
 // 0x50CAE0
