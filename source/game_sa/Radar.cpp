@@ -147,7 +147,7 @@ void CRadar::InjectHooks() {
     RH_ScopedInstall(ShowRadarTraceWithHeight, 0x584070);
     RH_ScopedInstall(DrawCoordBlip, 0x586D60);
 
-    RH_ScopedInstall(SetupAirstripBlips, 0x587D20); // TEST
+    RH_ScopedInstall(SetupAirstripBlips, 0x587D20);
     RH_ScopedInstall(DrawBlips, 0x588050);
     RH_ScopedInstall(ClipRadarPoly, 0x585040);
     RH_ScopedInstall(DrawAreaOnRadar, 0x5853D0);
@@ -1873,7 +1873,7 @@ void CRadar::SetupAirstripBlips() {
                 return;
 
             const auto pos = GetAirStripLocation(airstrip_location);
-            airstrip_blip = SetCoordBlip(BLIP_AIRSTRIP, pos, BLIP_COLOUR_RED, BLIP_DISPLAY_BLIPONLY);
+            airstrip_blip = SetCoordBlip(BLIP_AIRSTRIP, pos, BLIP_COLOUR_RED, BLIP_DISPLAY_BLIPONLY, "CODEAIR");
             return;
         }
 
@@ -1896,7 +1896,7 @@ void CRadar::SetupAirstripBlips() {
         }
 
         const auto pos = GetAirStripLocation(airstrip_location);
-        airstrip_blip = SetCoordBlip(BLIP_AIRSTRIP, pos, BLIP_COLOUR_RED, BLIP_DISPLAY_BLIPONLY);
+        airstrip_blip = SetCoordBlip(BLIP_AIRSTRIP, pos, BLIP_COLOUR_RED, BLIP_DISPLAY_BLIPONLY, "CODEAIR");
         return;
     }
 
