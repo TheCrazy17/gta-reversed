@@ -62,14 +62,14 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
     RH_ScopedInstall(UpdateRespectStat, 0x55BC50, { .Reversed = false });
     RH_ScopedInstall(UpdateSexAppealStat, 0x55BF20, { .Reversed = false });
-    RH_ScopedInstall(UpdateFatAndMuscleStats, 0x55C470, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsWhenCycling, 0x55C780, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsWhenSwimming, 0x55C990, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsWhenDriving, 0x55CAC0, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsWhenFlying, 0x55CC00, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsWhenWeaponHit, 0x55CEB0, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsOnRespawn, 0x55CFC0, { .Reversed = false });
-    RH_ScopedInstall(UpdateStatsAddToHealth, 0x55D030, { .Reversed = false });
+    RH_ScopedInstall(UpdateFatAndMuscleStats, 0x55C470);
+    RH_ScopedInstall(UpdateStatsWhenCycling, 0x55C780);
+    RH_ScopedInstall(UpdateStatsWhenSwimming, 0x55C990);
+    RH_ScopedInstall(UpdateStatsWhenDriving, 0x55CAC0);
+    RH_ScopedInstall(UpdateStatsWhenFlying, 0x55CC00);
+    RH_ScopedInstall(UpdateStatsWhenWeaponHit, 0x55CEB0);
+    RH_ScopedInstall(UpdateStatsOnRespawn, 0x55CFC0);
+    RH_ScopedInstall(UpdateStatsAddToHealth, 0x55D030);
 }
 
 // 0x55C0C0
@@ -652,7 +652,44 @@ void CStats::IncrementStat(eStats stat, float value)
 
 // 0x55C470
 void CStats::UpdateFatAndMuscleStats(uint32 value) {
-    plugin::Call<0x55C470, uint32>(value);
+    // What the last change of fat and muscle was, for the message that is shown: 1 muscle gain, 2 fat loss, 3 muscle loss
+    static auto& lastChange = StaticRef<uint8>(0xB79534);
+
+    if (StatReactionValue[STAT_TIMELIMIT_FAT_ADJUST] * 1000.0f >= static_cast<float>(m_FatCounter)) {
+        m_FatCounter += (static_cast<uint32>(CTimer::GetTimeStepInMS()) * value) / 10;
+    } else {
+        m_FatCounter = 0;
+        if (StatTypesFloat[STAT_FAT] <= 0.0f) {
+            // No fat left to burn, the muscle goes instead
+            if (StatReactionValue[STAT_DEC_BODY_MUSCLE] > 0.0f) {
+                StatTypesFloat[STAT_MUSCLE] = std::max(StatTypesFloat[STAT_MUSCLE] - StatReactionValue[STAT_DEC_BODY_MUSCLE], 0.0f);
+                CheckForStatsMessage();
+            }
+            lastChange = 3;
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_DECREASE, STAT_MUSCLE, StatReactionValue[STAT_DEC_BODY_MUSCLE]);
+        } else {
+            if (StatReactionValue[STAT_DEC_FAT] > 0.0f) {
+                StatTypesFloat[STAT_FAT] = std::max(StatTypesFloat[STAT_FAT] - StatReactionValue[STAT_DEC_FAT], 0.0f);
+                CheckForStatsMessage();
+            }
+            IncrementStat(STAT_MUSCLE, StatReactionValue[STAT_INC_BODY_MUSCLE]);
+            if (lastChange == 1) {
+                lastChange = 2;
+                DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_MUSCLE, StatReactionValue[STAT_INC_BODY_MUSCLE]);
+            } else {
+                lastChange = 1;
+                DisplayScriptStatUpdateMessage(STAT_UPDATE_DECREASE, STAT_FAT, StatReactionValue[STAT_DEC_FAT]);
+            }
+        }
+    }
+
+    if (StatReactionValue[STAT_TIMELIMIT_MAX_HEALTH] * 1000.0f < static_cast<float>(m_MaxHealthCounter)) {
+        IncrementStat(STAT_MAX_HEALTH, StatReactionValue[STAT_INC_MAX_HEALTH]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_MAX_HEALTH, StatReactionValue[STAT_INC_MAX_HEALTH]);
+        m_MaxHealthCounter = 0;
+    } else {
+        m_MaxHealthCounter += static_cast<uint32>(CTimer::GetTimeStepInMS());
+    }
 }
 
 // 0x55C660
@@ -680,23 +717,111 @@ void CStats::UpdateStatsWhenRunning() {
 }
 
 // 0x55C780
-void CStats::UpdateStatsWhenCycling(bool arg0, CBmx* bmx) {
-    plugin::Call<0x55C780, bool, CBmx*>(arg0, bmx);
+void CStats::UpdateStatsWhenCycling(bool isSprinting, CBmx* bmx) {
+    if (std::abs(bmx->m_GasPedal) > 0.0f || isSprinting) {
+        UpdateFatAndMuscleStats(static_cast<uint32>(StatReactionValue[isSprinting ? STAT_EXERCISE_RATE_CYCLE_SPRINT : STAT_EXERCISE_RATE_CYCLE]));
+        if (StatReactionValue[STAT_TIMELIMIT_CYCLE_STAMINA] * 1000.0f >= static_cast<float>(m_CycleStaminaCounter)) {
+            m_CycleStaminaCounter += static_cast<uint32>(CTimer::GetTimeStepInMS());
+        } else {
+            m_CycleStaminaCounter = 0;
+            IncrementStat(STAT_STAMINA, StatReactionValue[STAT_INC_CYCLE_STAMINA]);
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_STAMINA, StatReactionValue[STAT_INC_CYCLE_STAMINA]);
+        }
+    }
+
+    if (StatReactionValue[STAT_TIMELIMIT_CYCLE_SKILL] * 1000.0f < static_cast<float>(m_CycleSkillCounter)) {
+        m_CycleSkillCounter = 0;
+        IncrementStat(STAT_CYCLING_SKILL, StatReactionValue[STAT_INC_CYCLE_SKILL]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_CYCLING_SKILL, StatReactionValue[STAT_INC_CYCLE_SKILL]);
+        return;
+    }
+
+    // The faster the bike goes the more the skill grows, in the air it grows the most
+    const auto speedSq = bmx->m_vecMoveSpeed.SquaredMagnitude();
+    float      skillRate;
+    if (bmx->m_nNoOfContactWheels < 2 && speedSq > sq(0.05f)) {
+        skillRate = 3.0f;
+    } else if (speedSq > sq(0.2f)) {
+        skillRate = isSprinting ? 1.5f : 1.0f;
+    } else {
+        return;
+    }
+
+    const auto timeStepMs = static_cast<uint32>(CTimer::GetTimeStepInMS());
+    m_CycleSkillCounter += static_cast<int32>(std::ceil(static_cast<double>(static_cast<float>(timeStepMs) * skillRate)));
 }
 
 // 0x55C990
-void CStats::UpdateStatsWhenSwimming(bool arg0, bool arg1) {
-    plugin::Call<0x55C990, bool, bool>(arg0, arg1);
+void CStats::UpdateStatsWhenSwimming(bool isUnderwater, bool isSprinting) {
+    UpdateFatAndMuscleStats(static_cast<uint32>(StatReactionValue[isUnderwater || isSprinting ? STAT_EXERCISE_RATE_SWIM_SPRINT : STAT_EXERCISE_RATE_SWIM]));
+
+    if (StatReactionValue[STAT_TIMELIMIT_SWIM_STAMINA] * 1000.0f >= static_cast<float>(m_SwimStaminaCounter)) {
+        m_SwimStaminaCounter += static_cast<uint32>(CTimer::GetTimeStepInMS());
+    } else {
+        m_SwimStaminaCounter = 0;
+        IncrementStat(STAT_STAMINA, StatReactionValue[STAT_INC_SWIM_STAMINA]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_STAMINA, StatReactionValue[STAT_INC_SWIM_STAMINA]);
+    }
+
+    if (isUnderwater) {
+        if (StatReactionValue[STAT_TIMELIMIT_BREATH_UNDERWATER] * 1000.0f >= static_cast<float>(m_SwimUnderWaterCounter)) {
+            m_SwimUnderWaterCounter += static_cast<uint32>(CTimer::GetTimeStepInMS());
+        } else {
+            m_SwimUnderWaterCounter = 0;
+            IncrementStat(STAT_LUNG_CAPACITY, StatReactionValue[STAT_INC_BREATH_UNDERWATER]);
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_LUNG_CAPACITY, StatReactionValue[STAT_INC_BREATH_UNDERWATER]);
+        }
+    }
 }
 
 // 0x55CAC0
 void CStats::UpdateStatsWhenDriving(CVehicle* vehicle) {
-    plugin::Call<0x55CAC0, CVehicle*>(vehicle);
+    const auto* const automobile = vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE ? vehicle->AsAutomobile() : nullptr;
+    const auto        counter    = static_cast<float>(m_DrivingCounter);
+
+    if (StatReactionValue[STAT_TIMELIMIT_DRIVING_SKILL] * 1000.0f < counter) {
+        m_DrivingCounter = 0;
+        IncrementStat(STAT_DRIVING_SKILL, StatReactionValue[STAT_INC_DRIVING_SKILL]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_DRIVING_SKILL, StatReactionValue[STAT_INC_DRIVING_SKILL]);
+        return;
+    }
+
+    // Driving fast or with no wheel on the ground counts more
+    const auto timeStepMs = static_cast<float>(static_cast<uint32>(CTimer::GetTimeStepInMS()));
+    const auto speed      = vehicle->m_vecMoveSpeed.Magnitude();
+    if (speed > 0.8f || (automobile && automobile->m_nNumContactWheels == 0)) {
+        m_DrivingCounter = static_cast<int32>(timeStepMs * 1.5f + counter);
+    } else if (speed > 0.2f) {
+        m_DrivingCounter = static_cast<int32>(timeStepMs * 0.5f + counter);
+    }
 }
 
 // 0x55CC00
 void CStats::UpdateStatsWhenFlying(CVehicle* vehicle) {
-    plugin::Call<0x55CC00, CVehicle*>(vehicle);
+    if (vehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE) {
+        return;
+    }
+
+    const auto counter = static_cast<float>(m_FlyingCounter);
+    if (StatReactionValue[STAT_TIMELIMIT_FLYING_SKILL] * 1000.0f < counter) {
+        m_FlyingCounter = 0;
+        IncrementStat(STAT_FLYING_SKILL, StatReactionValue[STAT_INC_FLYING_SKILL]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_FLYING_SKILL, StatReactionValue[STAT_INC_FLYING_SKILL]);
+        return;
+    }
+
+    // Only counts while no wheel touches the ground
+    if (vehicle->AsAutomobile()->m_nNumContactWheels != 0) {
+        return;
+    }
+
+    const auto timeStepMs = static_cast<float>(static_cast<uint32>(CTimer::GetTimeStepInMS()));
+    const auto speed      = vehicle->m_vecMoveSpeed.Magnitude();
+    if (speed > 1.3f || vehicle->GetUp().z < 0.0f) {
+        m_FlyingCounter = static_cast<int32>(timeStepMs * 1.5f + counter);
+    } else if (speed > 0.5f) {
+        m_FlyingCounter = static_cast<int32>(timeStepMs * 0.5f + counter);
+    }
 }
 
 // 0x55CD60
@@ -719,7 +844,29 @@ void CStats::UpdateStatsWhenOnMotorBike(CBike* bike) {
 
 // 0x55CEB0
 void CStats::UpdateStatsWhenWeaponHit(eWeaponType weaponType) {
-    plugin::Call<0x55CEB0, eWeaponType>(weaponType);
+    const auto skill = CWeaponInfo::GetSkillStatIndex(weaponType);
+    const auto index = skill - STAT_PISTOL_SKILL;
+
+    if (CGameLogic::IsCoopGameGoingOn() || GetStatValue(skill) >= 1000.0f) {
+        return;
+    }
+
+    IncrementStat(skill, StatReactionValue[STAT_INC_PISTOL_SKILL + index]);
+
+    // Hits with another weapon than the one before start the counting again
+    if (m_LastWeaponTypeFired != static_cast<uint32>(index)) {
+        m_LastWeaponTypeFired = index;
+        m_WeaponCounter       = 0;
+        return;
+    }
+
+    const auto counter = static_cast<float>(m_WeaponCounter);
+    if (StatReactionValue[STAT_TIMELIMIT_PISTOL_SKILL + index] < counter) {
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, skill, counter * StatReactionValue[STAT_INC_PISTOL_SKILL + index]);
+        m_WeaponCounter = 0;
+    } else {
+        m_WeaponCounter++;
+    }
 }
 
 // 0x55CFA0
@@ -729,12 +876,25 @@ void CStats::UpdateStatsWhenFighting() {
 
 // 0x55CFC0
 void CStats::UpdateStatsOnRespawn() {
-    plugin::Call<0x55CFC0>();
+    if (StatReactionValue[STAT_TIMELIMIT_DEATH_HEALTH] < static_cast<float>(m_DeathCounter)) {
+        if (StatTypesFloat[STAT_MAX_HEALTH] > 400.0f) {
+            IncrementStat(STAT_MAX_HEALTH, StatReactionValue[STAT_DEC_MAX_HEALTH]);
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_DECREASE, STAT_MAX_HEALTH, StatReactionValue[STAT_DEC_MAX_HEALTH]);
+        }
+        m_DeathCounter = 0;
+        return;
+    }
+    m_DeathCounter++;
 }
 
 // 0x55D030
 void CStats::UpdateStatsAddToHealth(uint32 addToHealth) {
-    plugin::Call<0x55D030, uint32>(addToHealth);
+    m_AddToHealthCounter += addToHealth;
+    if (StatReactionValue[STAT_TIMELIMIT_ADD_TO_HEALTH] < static_cast<float>(m_AddToHealthCounter)) {
+        IncrementStat(STAT_MAX_HEALTH, StatReactionValue[STAT_INC_MAX_HEALTH]);
+        DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_MAX_HEALTH, StatReactionValue[STAT_INC_MAX_HEALTH]);
+        m_AddToHealthCounter = 0;
+    }
 }
 
 // 0x55D090
