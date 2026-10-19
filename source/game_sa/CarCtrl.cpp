@@ -8,6 +8,7 @@
 #include "StdInc.h"
 
 #include "CarCtrl.h"
+#include "BMX.h"
 #include "CarAI.h"
 #include "TrafficLights.h"
 #include "ModelIndices.h"
@@ -114,7 +115,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0, { .Reversed = false });
-    RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280);
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990);
     RH_ScopedInstall(SteerAICarWithPhysics_OnlyMission, 0x436A90, { .Reversed = false });
@@ -1397,7 +1398,74 @@ void CCarCtrl::SteerAICarWithPhysicsFollowPreRecordedPath(CVehicle* vehicle, flo
 
 // 0x433280
 void CCarCtrl::SteerAICarWithPhysicsHeadingForTarget(CVehicle* vehicle, CPhysical* target, float arg3, float arg4, float* arg5, float* arg6, float* arg7, bool* arg8) {
-    plugin::Call<0x433280, CVehicle*, CPhysical*, float, float, float*, float*, float*, bool*>(vehicle, target, arg3, arg4, arg5, arg6, arg7, arg8);
+    static_assert(offsetof(CAutoPilot, m_nCarDrivingStyle) == 0x29);
+    static_assert(offsetof(CBmx, m_fControlPedaling) == 0x818);
+
+    // arg3 and arg4 are the target coordinates, arg5 steering, arg6 gas, arg7 brake, arg8 handbrake
+    *arg8 = false;
+
+    const auto& pos = vehicle->GetPosition();
+
+    CVector2D forward{ vehicle->GetForward() };
+    if (const auto len = forward.Magnitude(); len == 0.0f) {
+        forward.x = 1.0f;
+    } else {
+        forward *= 1.0f / len;
+    }
+
+    const auto headingToTarget = CGeneral::GetATanOfXY(arg3 - pos.x, arg4 - pos.y);
+    const auto currentHeading  = CGeneral::GetATanOfXY(forward.x, forward.y);
+
+    auto aimHeading = headingToTarget;
+    switch (vehicle->m_autoPilot.m_nCarDrivingStyle) {
+    case DRIVING_STYLE_AVOID_CARS:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_OBEYLIGHTS:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS:
+        aimHeading = FindAngleToWeaveThroughTraffic(vehicle, target, headingToTarget, currentHeading, 1.0f);
+        break;
+    default:
+        break;
+    }
+
+    auto turn = aimHeading - currentHeading;
+    while (turn < -3.1415927f) {
+        turn += 6.2831855f;
+    }
+    while (turn > 3.1415927f) {
+        turn -= 6.2831855f;
+    }
+
+    // Sharp turns at speed need the handbrake
+    if (vehicle->GetMoveSpeed().Magnitude() > 0.3f && std::abs(turn) > 0.7f) {
+        *arg8 = true;
+    }
+
+    const auto maxSteer = FindMaxSteerAngle(vehicle);
+    turn                = std::clamp(turn, -maxSteer, maxSteer);
+
+    // Slow down in proportion to how much the car has to turn
+    const auto speedMult = FindSpeedMultiplier(headingToTarget - currentHeading, 0.4f, 1.2f, 0.4f);
+    const auto speed     = vehicle->GetMoveSpeed().Magnitude() * 60.0f;
+    const auto speedDiff = speedMult * (float)vehicle->m_autoPilot.m_nCruiseSpeed - speed;
+
+    *arg7 = 0.0f;
+    if (speedDiff <= 0.0f) {
+        *arg6 = 0.0f;
+        *arg7 = std::min(speedDiff * -0.05f, 0.5f);
+        *arg5 = turn;
+        return;
+    }
+
+    *arg6 = speed >= 25.0f ? 1.0f : std::min(speedDiff * 0.1f, 1.0f);
+
+    // Make BMX riders pedal when they are far too slow
+    if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX && speedDiff > 3.0f) {
+        auto& pedaling = static_cast<CBmx*>(vehicle)->m_fControlPedaling;
+        if (pedaling <= 0.0f) {
+            pedaling = 10.0f;
+        }
+    }
+    *arg5 = turn;
 }
 
 // 0x4335E0
