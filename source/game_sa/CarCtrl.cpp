@@ -126,7 +126,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630, { .Reversed = false });
     RH_ScopedInstall(SteerAIPlaneToCrashAndBurn, 0x423880);
     RH_ScopedInstall(SteerAIPlaneToFollowEntity, 0x4237F0);
-    RH_ScopedInstall(SteerAIPlaneTowardsTargetCoors, 0x423790, { .Reversed = false });
+    RH_ScopedInstall(SteerAIPlaneTowardsTargetCoors, 0x423790);
     RH_ScopedInstall(StopCarIfNodesAreInvalid, 0x422590);
     RH_ScopedInstall(SwitchBetweenPhysicsAndGhost, 0x4222A0, { .Reversed = false });
     RH_ScopedInstall(SwitchVehicleToRealPhysics, 0x423FC0);
@@ -1150,7 +1150,12 @@ void CCarCtrl::SteerAIPlaneToFollowEntity(CAutomobile* automobile) {
 
 // 0x423790
 void CCarCtrl::SteerAIPlaneTowardsTargetCoors(CAutomobile* automobile) {
-    plugin::Call<0x423790, CAutomobile*>(automobile);
+    auto* const plane  = static_cast<CPlane*>(automobile);
+    const auto& target = plane->m_autoPilot.m_vecDestinationCoors;
+    const auto& pos    = plane->GetPosition();
+
+    plane->m_planeHeading = CGeneral::GetATanOfXY(target.x - pos.x, target.y - pos.y);
+    FlyAIPlaneInCertainDirection(plane);
 }
 
 // 0x422590
