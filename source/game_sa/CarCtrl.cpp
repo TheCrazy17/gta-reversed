@@ -87,7 +87,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370, { .Reversed = false });
     RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
     RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0, { .Reversed = false });
-    RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870, { .Reversed = false });
+    RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
     RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10, { .Reversed = false });
     RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80, { .Reversed = false });
     RH_ScopedInstall(PickNextNodeToChaseCar, 0x426EF0, { .Reversed = false });
@@ -687,7 +687,49 @@ void CCarCtrl::JoinCarWithRoadSystem(CVehicle* vehicle) {
 
 // 0x42F870
 bool CCarCtrl::JoinCarWithRoadSystemGotoCoors(CVehicle* vehicle, const CVector& posn, bool unused, bool bIsBoat) {
-    return plugin::CallAndReturn<bool, 0x42F870, CVehicle*, const CVector&, bool, bool>(vehicle, posn, unused, bIsBoat);
+    auto& autoPilot = vehicle->m_autoPilot;
+    autoPilot.m_vecDestinationCoors = posn;
+
+    // The same global is used as the invalid node, and as the node to avoid
+    static auto& invalidNode = StaticRef<CNodeAddress>(0x8A5F44);
+    constexpr auto MAX_DISTANCE = 999999.88f;
+
+    auto& numNodes = *reinterpret_cast<int16*>(&autoPilot.m_nPathFindNodesCount);
+    ThePaths.DoPathSearch(
+        PATH_TYPE_VEH,
+        vehicle->GetPosition(),
+        invalidNode,
+        posn,
+        autoPilot.m_aPathFindNodesInfo.data(),
+        numNodes,
+        8,
+        nullptr,
+        MAX_DISTANCE,
+        nullptr,
+        MAX_DISTANCE,
+        autoPilot.carCtrlFlags.bCantGoAgainstTraffic,
+        invalidNode,
+        vehicle->m_nModelIndex == 539, // Vortex (Hovercraft)
+        bIsBoat
+    );
+    ThePaths.RemoveBadStartNode(vehicle->GetPosition(), autoPilot.m_aPathFindNodesInfo.data(), &numNodes);
+
+    if (numNodes >= 2) {
+        // Start going towards the first node
+        autoPilot.m_currentAddress = autoPilot.m_aPathFindNodesInfo[0];
+        autoPilot.m_endingRouteNode.ResetAreaId();
+        autoPilot.RemoveOnePathNode();
+        autoPilot.m_startingRouteNode = autoPilot.m_aPathFindNodesInfo[0];
+        autoPilot.RemoveOnePathNode();
+        FindLinksToGoWithTheseNodes(vehicle);
+        autoPilot.m_nCurrentLane = 0;
+        autoPilot.m_nNextLane    = 0;
+        return false;
+    }
+
+    JoinCarWithRoadSystem(vehicle);
+    numNodes = 0;
+    return true;
 }
 
 // 0x432B10

@@ -315,6 +315,11 @@ CNodeAddress CPathFind::FindNthNodeClosestToCoors(CVector pos, uint8 nodeType, f
     return FindNodeClosestToCoors(pos, (ePathType)nodeType, maxDistance, bLowTraffic, bUnkn, 1, bBoatsOnly, false);
 }
 
+// 0x44E4F0
+void CPathFind::RemoveBadStartNode(CVector pos, CNodeAddress* address, int16* numPathFindNodes) {
+    plugin::CallMethod<0x44E4F0, CPathFind*, CVector, CNodeAddress*, int16*>(this, pos, address, numPathFindNodes);
+}
+
 // 0x451B70
 void CPathFind::FindNextNodeWandering(uint8 nodeType, CVector vecPos, CNodeAddress* originAddress, CNodeAddress* targetAddress, uint8 dir, uint8* outDir) {
     plugin::CallMethod<0x451B70, CPathFind*, uint8, CVector, CNodeAddress*, CNodeAddress*, uint8, uint8*>(this, nodeType, vecPos, originAddress, targetAddress, dir, outDir);
