@@ -12,6 +12,8 @@
 #include "CarCtrl.h"
 #include "ModelIndices.h"
 #include "Population.h"
+#include "FileMgr.h"
+#include "CustomBuildingDNPipeline.h"
 #include "Replay.h"
 #include "TaskComplexEnterCar.h"
 #include "TaskComplexLeaveCarAndWander.h"
@@ -22,14 +24,6 @@
 #include "CarEnterExit.h"
 #include "PedGroups.h"
 
-CVector CTrain::aStationCoors[6] = { // 0x8D48F8
-    CVector{ 1741.0f, -1954.0f, 15.0f },
-    CVector{ 1297.0f, -1898.0f, 3.0f  },
-    CVector{ -1945.0f, 128.0f,  29.0f },
-    CVector{ 1434.0f,  2632.0f, 13.0f },
-    CVector{ 2783.0f,  1758.0f, 12.0f },
-    CVector{ 2865.0f,  1281.0f, 12.0  }
-};
 
 auto& pTrackNodes = StaticRef<CTrainNode*[4]>(0xC38024);
 auto& NumTrackNodes = StaticRef<std::array<int32, 4>>(0xC38014);
@@ -42,7 +36,7 @@ void CTrain::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x6F6030);
     RH_ScopedInstall(InitTrains, 0x6F7440);
-    RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0, { .Reversed = false });
+    RH_ScopedInstall(ReadAndInterpretTrackFile, 0x6F55D0);
     RH_ScopedInstall(Shutdown, 0x6F58D0);
     RH_ScopedInstall(UpdateTrains, 0x6F5900);
     RH_ScopedInstall(FindCoorsFromPositionOnTrack, 0x6F59E0);
@@ -67,7 +61,7 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(RemoveAllTrains, 0x6F6AA0);
     RH_ScopedInstall(ReleaseMissionTrains, 0x6F6B60);
     RH_ScopedInstall(FindClosestTrackNode, 0x6F6BD0);
-    RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0, { .Reversed = false });
+    RH_ScopedInstall(FindPositionOnTrackFromCoors, 0x6F6CC0);
     RH_ScopedInstall(FindNearestTrain, 0x6F7090);
     RH_ScopedInstall(SetNewTrainPosition, 0x6F7140);
     RH_ScopedInstall(IsNextStationAllowed, 0x6F7260);
@@ -202,7 +196,64 @@ void CTrain::InitTrains() {
 
 // 0x6F55D0
 void CTrain::ReadAndInterpretTrackFile(const char* filename, CTrainNode** nodes, int32* lineCount, float* totalDist, int32 skipStations) {
-    ((void(__cdecl*)(const char*, CTrainNode **, int32*, float*, int32))0x6F55D0)(filename, nodes, lineCount, totalDist, skipStations);
+    if (!*nodes) {
+        const std::unique_ptr<char[]> buffer{ new char[0xB530] };
+        CFileMgr::LoadFile(filename, reinterpret_cast<uint8*>(buffer.get()), 0xB530, "rb");
+
+        // Copies the next line of the file to gString, the terminator is written only when asked for
+        size_t pos = 0;
+        const auto ReadLine = [&](bool terminate) {
+            size_t len = 0;
+            while (buffer[pos] != '\n') {
+                gString[len++] = buffer[pos++];
+            }
+            if (terminate) {
+                gString[len] = '\0';
+            }
+            pos++;
+        };
+
+        // A first line that reads "processed" is followed by the real header
+        ReadLine(true);
+        if (!std::strcmp(gString, "processed")) {
+            ReadLine(true);
+        }
+        std::sscanf(gString, "%d", lineCount);
+
+        *nodes = new CTrainNode[*lineCount];
+
+        // Stations are flagged in the nodes of the first track
+        auto* station = &aStationCoors[0];
+        for (auto i = 0; i < *lineCount; i++) {
+            // The line is left unterminated as in the original, so the parsing can see the rest of the previous line
+            ReadLine(false);
+
+            float x, y, z;
+            int32 isStation;
+            std::sscanf(gString, "%f %f %f %d", &x, &y, &z, &isStation);
+
+            (*nodes)[i].SetX(x);
+            (*nodes)[i].SetY(y);
+            (*nodes)[i].SetZ(z);
+
+            if (skipStations == 0 && isStation != 0 && station < std::end(aStationCoors)) {
+                *station++ = CVector{ x, y, z };
+            }
+        }
+    }
+
+    // Distance of every node from the start of the track
+    float total = 0.0f;
+    for (auto i = 0; i < *lineCount; i++) {
+        auto&       node     = (*nodes)[i];
+        const auto& nextNode = (*nodes)[(i + 1) % *lineCount];
+        node.m_nDistanceFromStart = static_cast<uint16>(static_cast<int32>(3.0f * total));
+
+        const auto dx = node.GetX() - nextNode.GetX();
+        const auto dy = node.GetY() - nextNode.GetY();
+        total += std::sqrt(dx * dx + dy * dy);
+    }
+    *totalDist = total;
 }
 
 // 0x6F58D0
@@ -608,7 +659,56 @@ int32 CTrain::FindClosestTrackNode(CVector posn, int32* outTrackId) {
 
 // 0x6F6CC0
 void CTrain::FindPositionOnTrackFromCoors() {
-    ((void(__thiscall*)(CTrain*))0x6F6CC0)(this);
+    const auto numNodes = NumTrackNodes[m_nTrackId];
+    auto* const nodes   = pTrackNodes[m_nTrackId];
+
+    // Brightness of a node, blending between the day and night values
+    const auto GetNodeBrightness = [](CTrainNode& node) {
+        const auto lighting = node.GetLightingFromCollision();
+        const auto balance  = CCustomBuildingDNPipeline::m_fDNBalanceParam;
+        return static_cast<float>(lighting.night) * 0.033333335f * balance + (1.0f - balance) * (static_cast<float>(lighting.day) * 0.033333335f);
+    };
+
+    for (auto i = 0; i < numNodes; i++) {
+        const auto  nextIndex = (i + 1) % NumTrackNodes[m_nTrackId];
+        auto&       node      = nodes[i];
+        auto&       nextNode  = nodes[nextIndex];
+
+        const CVector2D from{ node.GetX(), node.GetY() };
+        const CVector2D to{ nextNode.GetX(), nextNode.GetY() };
+        const auto      pos = GetPosition();
+
+        // Where along this piece of the track the train is
+        const auto segment   = to - from;
+        const auto along     = ((pos.x - from.x) * segment.x + (pos.y - from.y) * segment.y) / segment.SquaredMagnitude();
+        if (!(along > 0.001f && along < 1.001f)) {
+            continue;
+        }
+
+        const CVector2D onTrack{ segment.x * along + from.x, segment.y * along + from.y };
+        if ((onTrack - CVector2D{ pos }).Magnitude() < 3.0f) {
+            const auto distFrom = static_cast<float>(node.m_nDistanceFromStart) * 0.33333334f;
+            const auto distTo   = static_cast<float>(nextNode.m_nDistanceFromStart) * 0.33333334f;
+
+            // The rail distance is measured at the front of the train
+            const auto& bbox = CModelInfo::GetModelInfo(m_nModelIndex)->GetColModel()->GetBoundingBox();
+            m_fCurrentRailDistance = (distTo - distFrom) * along + distFrom - (bbox.m_vecMax.y - bbox.m_vecMin.y) * 0.5f;
+            if (m_fCurrentRailDistance < 0.0f) {
+                m_fCurrentRailDistance += arrTotalTrackLength[m_nTrackId];
+            }
+
+            m_fTrainSpeed = m_vecMoveSpeed.Magnitude();
+            const auto movingAlongSegment = segment.x * m_vecMoveSpeed.x + segment.y * m_vecMoveSpeed.y > 0.0f;
+            if (trainFlags.bClockwiseDirection == movingAlongSegment) {
+                m_fTrainSpeed = -m_fTrainSpeed;
+            }
+            return;
+        }
+
+        const auto brightness     = GetNodeBrightness(node);
+        const auto nextBrightness = GetNodeBrightness(nextNode);
+        m_fContactSurfaceBrightness = (nextBrightness - brightness) * along + brightness;
+    }
 }
 
 // 0x6F7090
