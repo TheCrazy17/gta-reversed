@@ -138,9 +138,9 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
     RH_ScopedInstall(WeaveForObject, 0x426BC0, { .Reversed = false });
     RH_ScopedInstall(WeaveForOtherCar, 0x426350, { .Reversed = false });
-    RH_ScopedInstall(WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D680, { .Reversed = false });
-    RH_ScopedInstall(WeaveThroughObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D950, { .Reversed = false });
-    RH_ScopedInstall(WeaveThroughPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D7E0, { .Reversed = false });
+    RH_ScopedInstall(WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D680);
+    RH_ScopedInstall(WeaveThroughObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D950);
+    RH_ScopedInstall(WeaveThroughPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D7E0);
 }
 
 // 0x4212E0
@@ -1310,27 +1310,90 @@ void CCarCtrl::WeaveForObject(CEntity* entity, CVehicle* vehicle, float* arg3, f
     plugin::Call<0x426BC0, CEntity*, CVehicle*, float*, float*>(entity, vehicle, arg3, arg4);
 }
 
+// 0x426970 (not reversed yet)
+void CCarCtrl::WeaveForPed(CPed* ped, CVehicle* vehicle, float* arg3, float* arg4) {
+    plugin::Call<0x426970, CPed*, CVehicle*, float*, float*>(ped, vehicle, arg3, arg4);
+}
+
 // 0x426350
 void CCarCtrl::WeaveForOtherCar(CEntity* entity, CVehicle* vehicle, float* arg3, float* arg4) {
     plugin::Call<0x426350, CEntity*, CVehicle*, float*, float*>(entity, vehicle, arg3, arg4);
 }
 
+// How far above or below the vehicle (in Z) an entity is
+static float AbsHeightDifference(const CEntity* entity, const CVehicle* vehicle) {
+    return std::abs(entity->GetPosition().z - vehicle->GetPosition().z);
+}
+
 // 0x42D680
 template<typename PtrListType>
-void CCarCtrl::WeaveThroughCarsSectorList(PtrListType& ptrList, CVehicle* vehicle, CPhysical* physical, float arg4, float arg5, float arg6, float arg7, float* arg8, float* arg9) {
-    plugin::Call<0x42D680, PtrListType&, CVehicle*, CPhysical*, float, float, float, float, float*, float*>(ptrList, vehicle, physical, arg4, arg5, arg6, arg7, arg8, arg9);
+void CCarCtrl::WeaveThroughCarsSectorList(PtrListType& ptrList, CVehicle* vehicle, CPhysical* physical, float minX, float minY, float maxX, float maxY, float* arg8, float* arg9) {
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        const auto entity = static_cast<CVehicle*>(node->Item);
+        if (entity->IsScanCodeCurrent() || !entity->GetUsesCollision() || entity == physical) {
+            continue;
+        }
+        entity->SetCurrentScanCode();
+
+        const auto center = entity->GetBoundCentre();
+        if (!(minX < center.x && center.x < maxX && minY < center.y && center.y < maxY)) {
+            continue;
+        }
+        if (AbsHeightDifference(entity, vehicle) < 8.0f
+            && entity != vehicle
+            && (!vehicle->vehicleFlags.bPartOfConvoy || !entity->vehicleFlags.bPartOfConvoy)
+        ) {
+            WeaveForOtherCar(entity, vehicle, arg8, arg9);
+        }
+    }
 }
 
 // 0x42D950
 template<typename PtrListType>
-void CCarCtrl::WeaveThroughObjectsSectorList(PtrListType& ptrList, CVehicle* vehicle, float arg3, float arg4, float arg5, float arg6, float* arg7, float* arg8) {
-    plugin::Call<0x42D950, PtrListType&, CVehicle*, float, float, float, float, float*, float*>(ptrList, vehicle, arg3, arg4, arg5, arg6, arg7, arg8);
+void CCarCtrl::WeaveThroughObjectsSectorList(PtrListType& ptrList, CVehicle* vehicle, float minX, float minY, float maxX, float maxY, float* arg7, float* arg8) {
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        const auto entity = static_cast<CEntity*>(node->Item);
+        if (entity->IsScanCodeCurrent() || !entity->GetUsesCollision()) {
+            continue;
+        }
+        entity->SetCurrentScanCode();
+
+        const auto& pos = entity->GetPosition();
+        if (!(minX < pos.x && pos.x < maxX && minY < pos.y && pos.y < maxY)) {
+            continue;
+        }
+        // Only upright objects are in the way
+        if (AbsHeightDifference(entity, vehicle) < 8.0f && entity->GetMatrix().GetUp().z > 0.9f) {
+            WeaveForObject(entity, vehicle, arg7, arg8);
+        }
+    }
 }
 
 // 0x42D7E0
 template<typename PtrListType>
-void CCarCtrl::WeaveThroughPedsSectorList(PtrListType& ptrList, CVehicle* vehicle, CPhysical* physical, float arg4, float arg5, float arg6, float arg7, float* arg8, float* arg9) {
-    plugin::Call<0x42D7E0, PtrListType&, CVehicle*, CPhysical*, float, float, float, float, float*, float*>(ptrList, vehicle, physical, arg4, arg5, arg6, arg7, arg8, arg9);
+void CCarCtrl::WeaveThroughPedsSectorList(PtrListType& ptrList, CVehicle* vehicle, CPhysical* physical, float minX, float minY, float maxX, float maxY, float* arg8, float* arg9) {
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        const auto ped = static_cast<CPed*>(node->Item);
+        if (ped->IsScanCodeCurrent() || !ped->GetUsesCollision() || ped == physical) {
+            continue;
+        }
+        ped->SetCurrentScanCode();
+
+        const auto& pos = ped->GetPosition();
+        if (!(minX < pos.x && pos.x < maxX && minY < pos.y && pos.y < maxY)) {
+            continue;
+        }
+        // Peds standing on or next to the vehicle don't count
+        if (AbsHeightDifference(ped, vehicle) < 4.0f && ped->m_pContactEntity != vehicle && ped->m_pAttachedTo != vehicle) {
+            WeaveForPed(ped, vehicle, arg8, arg9);
+        }
+    }
 }
 
 // 0x427FE0
