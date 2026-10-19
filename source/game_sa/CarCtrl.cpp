@@ -72,7 +72,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindSpeedMultiplier, 0x4224E0);
     RH_ScopedInstall(FindSpeedMultiplierWithSpeedFromNodes, 0x424130);
     RH_ScopedInstall(FindGhostRoadHeight, 0x422370);
-    RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270, { .Reversed = false });
+    RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270);
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70, { .Reversed = false });
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940, { .Reversed = false });
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
@@ -511,7 +511,36 @@ float CCarCtrl::FindGhostRoadHeight(CVehicle* vehicle) {
 
 // 0x42B270
 void CCarCtrl::FireHeliRocketsAtTarget(CAutomobile* entityLauncher, CEntity* entity) {
-    plugin::Call<0x42B270, CAutomobile*, CEntity*>(entityLauncher, entity);
+    static_assert(offsetof(CVehicle, m_nVehicleWeaponInUse) == 0x513);
+
+    if (entityLauncher->m_nVehicleWeaponInUse != CAR_WEAPON_DOUBLE_ROCKET && entityLauncher->m_nVehicleWeaponInUse != CAR_WEAPON_NOT_USED) {
+        return;
+    }
+
+    // One rocket every 250 ms, alternating sides
+    const auto slot = CTimer::GetTimeInMS() / 250;
+    if (slot == CTimer::GetPreviousTimeInMS() / 250) {
+        return;
+    }
+
+    const auto& pos    = entityLauncher->GetPosition();
+    const auto& matrix = entityLauncher->GetMatrix();
+    if ((pos - entity->GetPosition()).Magnitude() >= 80.0f) {
+        return;
+    }
+
+    // Only fire when the target is almost in front of the nose
+    const auto aimEnd = pos + matrix.GetForward();
+    if (CCollision::DistToMathematicalLine(&pos, &aimEnd, &entity->GetPosition()) >= 7.0f) {
+        return;
+    }
+
+    auto sideOffset = matrix.GetRight() * 1.5f;
+    if (slot & 1) {
+        sideOffset = -sideOffset;
+    }
+    const auto forward = matrix.GetForward();
+    CProjectileInfo::AddProjectile(entityLauncher, WEAPON_ROCKET, sideOffset + forward * 4.0f + pos, 1.0f, &forward, nullptr);
 }
 
 // 0x429A70
