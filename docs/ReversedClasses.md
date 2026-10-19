@@ -1,15 +1,15 @@
 # Reimplementation progress (*): 97%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 19, 2026 at 20:15:29 UTC
-(Triggered by commit [13931711](https://github.com/TheCrazy17/gta-reversed/commit/1393171167cb2492bebb089b915c112b451176a2))
+Last update was at Oct 19, 2026 at 20:20:10 UTC
+(Triggered by commit [6a1f324c](https://github.com/TheCrazy17/gta-reversed/commit/6a1f324cb18d8e2f5c7fa2bef83b11eb00fcd18b))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8116 out of 8339 functions done in 720 categories)
+## Stats (8117 out of 8339 functions done in 720 categories)
 
 #### Completely reversed categories (657/720) [91%]
 
@@ -712,7 +712,7 @@ Last update was at Oct 19, 2026 at 20:15:29 UTC
 - CGroupEventHandler (30/32) [94%]<br />
 - CEventHandler (69/72) [96%]<br />
 - CTaskSimpleChoking (6/7) [86%]<br />
-- CTaskGoToVehicleAndLean (3/7) [43%]<br />
+- CTaskGoToVehicleAndLean (4/7) [57%]<br />
 - CTaskLeanOnVehicle (4/5) [80%]<br />
 - CTaskComplexGangFollower (4/7) [57%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />

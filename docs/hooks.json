@@ -24042,7 +24042,7 @@
   {
     "Category": "CTaskGoToVehicleAndLean",
     "Name": "MakeAbortable",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskGoToVehicleAndLean",
