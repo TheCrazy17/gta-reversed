@@ -9,6 +9,7 @@
 
 #include "CarCtrl.h"
 #include "TrafficLights.h"
+#include "ModelIndices.h"
 #include "TheScripts.h"
 #include "GangWars.h"
 #include "Game.h"
@@ -136,7 +137,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(TriggerDogFightMoves, 0x429300, { .Reversed = false });
     RH_ScopedInstall(UpdateCarCount, 0x424000);
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
-    RH_ScopedInstall(WeaveForObject, 0x426BC0, { .Reversed = false });
+    RH_ScopedInstall(WeaveForObject, 0x426BC0);
     RH_ScopedInstall(WeaveForPed, 0x426970);
     RH_ScopedInstall(WeaveForOtherCar, 0x426350, { .Reversed = false });
     RH_ScopedInstall(WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D680);
@@ -1306,12 +1307,35 @@ void CCarCtrl::UpdateCarOnRails(CVehicle* vehicle) {
     plugin::Call<0x436540, CVehicle*>(vehicle);
 }
 
-// 0x426BC0
-void CCarCtrl::WeaveForObject(CEntity* entity, CVehicle* vehicle, float* arg3, float* arg4) {
-    plugin::Call<0x426BC0, CEntity*, CVehicle*, float*, float*>(entity, vehicle, arg3, arg4);
+
+// Widens the range of angles the vehicle can't steer towards, if the blocker (seen at `heading`, taking up `halfAngle` on both sides) overlaps with it
+static void ExtendBlockedAngles(float heading, float halfAngle, float* minAngle, float* maxAngle) {
+    // Brings an angle into [-pi, pi]
+    const auto Wrap = [](float angle) {
+        while (angle < -3.1415927f) {
+            angle += 6.2831855f;
+        }
+        while (angle > 3.1415927f) {
+            angle -= 6.2831855f;
+        }
+        return angle;
+    };
+
+    if (std::abs(Wrap(heading - *minAngle)) < halfAngle) {
+        *minAngle = heading - halfAngle;
+        while (*minAngle < -3.1415927f) {
+            *minAngle += 6.2831855f;
+        }
+    }
+    if (std::abs(Wrap(heading - *maxAngle)) < halfAngle) {
+        *maxAngle = halfAngle + heading;
+        while (*maxAngle > 3.1415927f) {
+            *maxAngle -= 6.2831855f;
+        }
+    }
 }
 
-// 0x426970 (not reversed yet)
+// 0x426970
 void CCarCtrl::WeaveForPed(CPed* ped, CVehicle* vehicle, float* arg3, float* arg4) {
     // Vehicles ramming or hunting this very ped don't try to go around it
     const auto mission = vehicle->m_autoPilot.m_nCarMission;
@@ -1328,33 +1352,42 @@ void CCarCtrl::WeaveForPed(CPed* ped, CVehicle* vehicle, float* arg3, float* arg
         return;
     }
 
-    // Brings an angle into [-pi, pi]
-    const auto Wrap = [](float angle) {
-        while (angle < -3.1415927f) {
-            angle += 6.2831855f;
-        }
-        while (angle > 3.1415927f) {
-            angle -= 6.2831855f;
-        }
-        return angle;
-    };
-
     // Half of the angle the vehicle takes up when seen from the ped
     const auto halfAngle = ((CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox().m_vecMax.x * 2.4f + 0.8f) / dist) * 0.5f;
+    ExtendBlockedAngles(heading, halfAngle, arg3, arg4);
+}
 
-    // Extend the range of angles that are blocked
-    if (std::abs(Wrap(heading - *arg3)) < halfAngle) {
-        *arg3 = heading - halfAngle;
-        while (*arg3 < -3.1415927f) {
-            *arg3 += 6.2831855f;
-        }
+// 0x426BC0
+void CCarCtrl::WeaveForObject(CEntity* entity, CVehicle* vehicle, float* arg3, float* arg4) {
+    // Where the part that's in the way is, relative to the object (right, forward)
+    float right{}, forward{};
+    const auto modelIndex = entity->m_nModelIndex;
+    if (modelIndex == ModelIndices::MI_TRAFFICLIGHTS) {
+        right   = 2.957f;
+        forward = 0.147f;
+    } else if (modelIndex == ModelIndices::MI_SINGLESTREETLIGHTS1) {
+        right = 0.744f;
+    } else if (modelIndex == ModelIndices::MI_SINGLESTREETLIGHTS2) {
+        right = 0.043f;
+    } else if (modelIndex == ModelIndices::MI_SINGLESTREETLIGHTS3) {
+        right   = 1.143f;
+        forward = 0.145f;
+    } else if (modelIndex == ModelIndices::MI_DOUBLESTREETLIGHTS) {
+        forward = -0.048f;
+    } else if (!CModelInfo::GetModelInfo(modelIndex)->SwaysInWind()) {
+        return;
     }
-    if (std::abs(Wrap(heading - *arg4)) < halfAngle) {
-        *arg4 = halfAngle + heading;
-        while (*arg4 > 3.1415927f) {
-            *arg4 -= 6.2831855f;
-        }
-    }
+
+    const auto& mat    = entity->GetMatrix();
+    const auto& pos    = entity->GetPosition();
+    const auto  delta  = CVector2D{
+        right * mat.GetRight().x + forward * mat.GetForward().x + pos.x,
+        forward * mat.GetForward().y + right * mat.GetRight().y + pos.y
+    } - CVector2D{ vehicle->GetPosition() };
+    const auto heading = CGeneral::GetATanOfXY(delta.x, delta.y);
+
+    const auto halfAngle = ((CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox().m_vecMax.x * 2.4f + 0.3f) / delta.Magnitude()) * 0.5f;
+    ExtendBlockedAngles(heading, halfAngle, arg3, arg4);
 }
 
 // 0x426350
