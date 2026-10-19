@@ -11,6 +11,12 @@
 #include "PedClothesDesc.h"
 #include "PedStats.h"
 #include "TaskSimpleUseGun.h"
+#include "TaskSimpleFight.h"
+#include "Clothes.h"
+#include "VisibilityPlugins.h"
+#include "WeaponModelInfo.h"
+#include "PedModelInfo.h"
+#include "Animation/AnimManager.h"
 #include "EntryExitManager.h"
 #include "MBlur.h"
 #include "GangWars.h"
@@ -28,7 +34,10 @@
 #include "TaskComplexFacial.h"
 #include "Plugins/RpAnimBlendPlugin/RpAnimBlend.h"
 #include "Fire.h"
+#include "Darkel.h"
+#include "GameLogic.h"
 #include "AEPedSpeechAudioEntity.h"
+#include "EventGunAimedAt.h"
 
 bool CPlayerPed::bDebugPlayerInvincible;
 bool CPlayerPed::bDebugTargeting;
@@ -91,9 +100,9 @@ void CPlayerPed::InjectHooks() {
 
     RH_ScopedVMTInstall(ProcessControl, 0x60EA90);
     RH_ScopedVMTInstall(SetMoveAnim, 0x609490);
-    RH_ScopedInstall(ProcessAnimGroups, 0x6098F0, { .Reversed = false });
+    RH_ScopedInstall(ProcessAnimGroups, 0x6098F0);
     RH_ScopedInstall(ControlButtonSprint, 0x60A610);
-    RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650, { .Reversed = false });
+    RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650);
     RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80, { .Reversed = false });
     RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0, { .Reversed = false });
     RH_ScopedInstall(MakeThisPedJoinOurGroup, 0x60C840);
@@ -101,7 +110,7 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedInstall(SetInitialState, 0x60CD20);
     RH_ScopedInstall(EvaluateNeighbouringTarget, 0x60D1C0);
     RH_ScopedInstall(ProcessGroupBehaviour, 0x60D350);
-    RH_ScopedInstall(ProcessWeaponSwitch, 0x60D850, { .Reversed = false });
+    RH_ScopedInstall(ProcessWeaponSwitch, 0x60D850);
     RH_ScopedInstall(FindWeaponLockOnTarget, 0x60DC50, { .Reversed = false });
     RH_ScopedInstall(FindNextWeaponLockOnTarget, 0x60E530, { .Reversed = false });
 }
@@ -374,7 +383,127 @@ void CPlayerPed::UpdateCameraWeaponModes(CPad* pad) {
 
 // 0x6098F0
 void CPlayerPed::ProcessAnimGroups() {
-    plugin::CallMethod<0x6098F0, CPlayerPed *>(this);
+    auto* const playerData = GetPlayerData();
+
+    // The player specific groups come in sets; the clothes pick the member of the set
+    const auto GetGroupForBase = [](int32 base) -> AssocGroupId {
+        return static_cast<AssocGroupId>(base - ANIM_GROUP_PLAYER + CClothes::GetDefaultPlayerMotionGroup());
+    };
+    const auto GetPlainPlayerGroup = [&]() -> AssocGroupId {
+        if (m_nPedType == PED_TYPE_PLAYER2) {
+            const auto modelGroup = static_cast<AssocGroupId>(CModelInfo::GetModelInfo(m_nModelIndex)->AsPedModelInfoPtr()->m_nAnimType);
+            if (modelGroup != ANIM_GROUP_PLAYER) {
+                return modelGroup;
+            }
+        }
+        return GetGroupForBase(ANIM_GROUP_PLAYER);
+    };
+
+    const auto heading  = playerData->m_fFPSMoveHeading;
+    const auto strafing = !(heading > -0.87266463f && heading < 0.87266463f)
+        && TheCamera.GetActiveCam().Using3rdPersonMouseCam()
+        && CanStrafeOrMouseControl();
+
+    AssocGroupId newGroup;
+    if (strafing) {
+        newGroup = m_nAnimGroup == ANIM_GROUP_PLAYER ? GetPlainPlayerGroup() : GetGroupForBase(m_nAnimGroup);
+    } else {
+        // Type of the weapon whose model is held
+        auto weaponType = WEAPON_UNARMED;
+        if (m_pWeaponObject) {
+            if (auto* const mi = CVisibilityPlugins::GetClumpModelInfo(m_pWeaponObject); mi && mi->GetModelType() == MODEL_INFO_WEAPON) {
+                weaponType = reinterpret_cast<CWeaponModelInfo*>(mi)->GetWeaponInfo();
+            }
+        }
+
+        if (weaponType == WEAPON_RLAUNCHER || weaponType == WEAPON_RLAUNCHER_HS) {
+            newGroup = GetGroupForBase(ANIM_GROUP_PLAYERROCKET);
+        } else if (GetIntelligence()->GetTaskJetPack()) {
+            newGroup = ANIM_GROUP_PLAYERJETPACK;
+        } else {
+            switch (weaponType) {
+            case WEAPON_BASEBALLBAT:
+            case WEAPON_SHOVEL:
+            case WEAPON_POOL_CUE:
+                newGroup = GetGroupForBase(ANIM_GROUP_PLAYERBBBAT);
+                break;
+            case WEAPON_CHAINSAW:
+            case WEAPON_FLAMETHROWER:
+            case WEAPON_MINIGUN:
+                newGroup = GetGroupForBase(ANIM_GROUP_PLAYERCSAW);
+                break;
+            case WEAPON_M4:
+            case WEAPON_AK47:
+            case WEAPON_SPAS12_SHOTGUN:
+            case WEAPON_SHOTGUN:
+            case WEAPON_SNIPERRIFLE:
+            case WEAPON_COUNTRYRIFLE:
+                newGroup = GetGroupForBase(ANIM_GROUP_PLAYER2ARMED);
+                break;
+            default:
+                newGroup = playerData->m_pPedClothesDesc->GetIsWearingBalaclava() ? ANIM_GROUP_PLAYERSNEAK : GetPlainPlayerGroup();
+                break;
+            }
+        }
+    }
+    if (m_nAnimGroup != newGroup) {
+        m_nAnimGroup = newGroup;
+        ReApplyMoveAnims();
+    }
+
+    // Keep the animation blocks of the melee styles in use loaded and referenced
+    const auto& weaponInfo = *CWeaponInfo::GetWeaponInfo(GetActiveWeapon().m_Type, GetWeaponSkill());
+
+    bool releaseFirst{};
+    bool releaseSecond{};
+    if (weaponInfo.m_nWeaponFire != WEAPON_FIRE_MELEE || bInVehicle) {
+        releaseFirst  = true;
+        releaseSecond = true;
+    } else {
+        static_assert(MELEE_COMBO_UNARMED_1 == STYLE_STANDARD);
+
+        // Requests the animation block of a melee style and references it once it is loaded
+        const auto UpdateReference = [](int32 style, uint32& referencedGroup, bool& release) {
+            if (style == STYLE_STANDARD) {
+                release = referencedGroup != 0;
+                return;
+            }
+            const AssocGroupId group = CTaskSimpleFight::m_aComboData[style - MELEE_COMBO_UNARMED_1].m_nAnimGroup;
+            if (group == referencedGroup) {
+                return;
+            }
+            release = referencedGroup != 0;
+
+            auto* block = CAnimManager::GetAnimationBlock(group);
+            if (!block) {
+                block = CAnimManager::GetAnimationBlock(CAnimManager::GetAnimBlockName(group));
+            }
+            const auto blockIdx = CAnimManager::GetAnimationBlockIndex(block);
+            if (block->IsLoaded) {
+                if (referencedGroup == 0) {
+                    CAnimManager::AddAnimBlockRef(blockIdx);
+                    referencedGroup = group;
+                }
+            } else {
+                CStreaming::RequestModel(IFPToModelId(blockIdx), STREAMING_KEEP_IN_MEMORY);
+            }
+        };
+        UpdateReference(weaponInfo.m_nBaseCombo, playerData->m_nMeleeWeaponAnimReferenced, releaseFirst);
+        UpdateReference(m_nFightingStyle, playerData->m_nMeleeWeaponAnimReferencedExtra, releaseSecond);
+    }
+
+    const auto ReleaseReference = [](auto& referencedGroup) {
+        if (referencedGroup != 0) {
+            CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex(static_cast<AssocGroupId>(referencedGroup)));
+            referencedGroup = 0;
+        }
+    };
+    if (releaseFirst) {
+        ReleaseReference(playerData->m_nMeleeWeaponAnimReferenced);
+    }
+    if (releaseSecond) {
+        ReleaseReference(playerData->m_nMeleeWeaponAnimReferencedExtra);
+    }
 }
 
 // 0x609C80
@@ -1079,8 +1208,95 @@ bool LOSBlockedBetweenPeds(CEntity* entity1, CEntity* entity2) {
 }
 
 // 0x60B650
-void CPlayerPed::Compute3rdPersonMouseTarget(bool meleeWeapon) {
-    plugin::CallMethod<0x60B650, CPlayerPed *, bool>(this, meleeWeapon);
+void CPlayerPed::Compute3rdPersonMouseTarget(bool weaponIsNotMelee) {
+    CPed* target{};
+    if (CCamera::m_bUseMouse3rdPerson) {
+        const auto& weaponInfo = *CWeaponInfo::GetWeaponInfo(GetActiveWeapon().m_Type, GetWeaponSkill());
+        const auto  range      = weaponInfo.m_fTargetRange;
+        const auto  origin     = GetPosition();
+
+        // Line from the camera, or from the crosshair for ranged weapons, through the aimed point
+        CVector start, end;
+        if (weaponIsNotMelee) {
+            TheCamera.Find3rdPersonCamTargetVector(range, origin, start, end);
+        } else {
+            auto& cam = TheCamera.GetActiveCam();
+            start     = cam.m_vecSource;
+
+            // Keep the line from starting behind the player
+            const auto behind = DotProduct(start - origin, cam.m_vecFront);
+            if (behind < 0.0f) {
+                start -= cam.m_vecFront * behind;
+            }
+            end = start + cam.m_vecFront * range;
+        }
+
+        CWorld::pIgnoreEntity  = this;
+        CWorld::bIncludeBikers = true;
+        CColPoint colPoint;
+        CEntity*  hitEntity{};
+        if (CWorld::ProcessLineOfSight(start, end, colPoint, hitEntity, false, false, true, false, false, false, false, false)
+            && hitEntity != this
+            && hitEntity->AsPed()->IsAlive()
+        ) {
+            target = hitEntity->AsPed();
+        }
+        CWorld::ResetLineTestOptions();
+
+        if (target) {
+            if (target != m_p3rdPersonMouseTarget) {
+                if (m_p3rdPersonMouseTarget) {
+                    m_p3rdPersonMouseTarget->CleanUpOldReference(reinterpret_cast<CEntity**>(&m_p3rdPersonMouseTarget));
+                }
+                m_p3rdPersonMouseTarget = target;
+                target->RegisterReference(reinterpret_cast<CEntity**>(&m_p3rdPersonMouseTarget));
+            }
+            field_7A0 = CTimer::GetTimeInMS() + 1000;
+
+            // Aiming at someone tells them (and their group) about it
+            if (CWeaponInfo::GetWeaponInfo(GetActiveWeapon().m_Type, eWeaponSkill::STD)->m_nWeaponFire == WEAPON_FIRE_MELEE) {
+                return;
+            }
+            if (!CWeaponInfo::GetWeaponInfo(GetActiveWeapon().m_Type, GetWeaponSkill())->flags.bCanAim) {
+                return;
+            }
+            if (!target->GetIntelligence()->IsInSeeingRange(GetPosition())) {
+                return;
+            }
+
+            // Already reacting to being aimed at
+            auto* const targetTasks = &target->GetIntelligence()->GetTaskManager();
+            for (const auto slot : { TASK_PRIMARY_PHYSICAL_RESPONSE, TASK_PRIMARY_EVENT_RESPONSE_TEMP, TASK_PRIMARY_EVENT_RESPONSE_NONTEMP }) {
+                if (auto* const task = targetTasks->GetPrimaryTasks()[slot]) {
+                    if (task->GetTaskType() == TASK_COMPLEX_REACT_TO_GUN_AIMED_AT) {
+                        return;
+                    }
+                    break;
+                }
+            }
+
+            if (GetActiveWeapon().m_Type != WEAPON_PISTOL_SILENCED) {
+                Say(CTX_GLOBAL_PULL_GUN);
+            }
+
+            if (auto* const group = CPedGroups::GetPedsGroup(target)) {
+                if (CPedGroups::AreInSameGroup(target, this)) {
+                    return;
+                }
+                CEventGroupEvent groupEvent{ target, new CEventGunAimedAt(this) };
+                group->GetIntelligence().AddEvent(&groupEvent);
+            } else {
+                CEventGunAimedAt aimedAtEvent{ this };
+                target->GetIntelligence()->m_eventGroup.Add(&aimedAtEvent, false);
+            }
+            return;
+        }
+    }
+
+    // The mouse target is dropped once it has not been aimed at for a while
+    if (m_p3rdPersonMouseTarget && static_cast<uint32>(field_7A0) < CTimer::GetTimeInMS()) {
+        m_p3rdPersonMouseTarget = nullptr;
+    }
 }
 
 // 0x60BA80
@@ -1542,7 +1758,120 @@ void CPlayerPed::SetupPlayerPed(int32 playerId) {
 
 // 0x60D850
 void CPlayerPed::ProcessWeaponSwitch(CPad* pad) {
-    plugin::CallMethod<0x60D850, CPlayerPed *, CPad*>(this, pad);
+    auto* const playerData = GetPlayerData();
+
+    // Checks whether the slot holds a weapon that can be selected
+    const auto IsSlotSelectable = [this](int8 slot) {
+        auto& weapon = m_aWeapons[slot];
+        return weapon.m_Type != WEAPON_UNARMED
+            && weapon.HasWeaponAmmoToBeUsed()
+            && (!CGameLogic::IsCoopGameGoingOn() || weapon.CanBeUsedFor2Player());
+    };
+
+    // Camera modes in which the weapon cannot be changed with the cycle buttons
+    const auto camMode = TheCamera.m_PlayerWeaponMode.m_nMode;
+
+    if (!CDarkel::FrenzyOnGoing() && !m_pAttachedTo && !GetIntelligence()->GetTaskJetPack()) {
+        if (!m_pTargetedObject && !playerData->m_bFreeAiming && !playerData->m_bDontAllowWeaponChange && !playerData->m_bInVehicleDontAllowWeaponChange) {
+            if (pad->CycleWeaponRightJustDown()) {
+                switch (camMode) {
+                case MODE_M16_1STPERSON:
+                case MODE_M16_1STPERSON_RUNABOUT:
+                case MODE_SNIPER:
+                case MODE_SNIPER_RUNABOUT:
+                case MODE_ROCKETLAUNCHER:
+                case MODE_ROCKETLAUNCHER_RUNABOUT:
+                case MODE_ROCKETLAUNCHER_HS:
+                case MODE_ROCKETLAUNCHER_RUNABOUT_HS:
+                case MODE_CAMERA:
+                    break;
+                default: {
+                    auto slot = static_cast<int8>(m_nActiveWeaponSlot + 1);
+                    while (slot < NUM_WEAPON_SLOTS && !IsSlotSelectable(slot)) {
+                        slot++;
+                    }
+                    playerData->m_nChosenWeapon = slot < NUM_WEAPON_SLOTS ? slot : 0;
+                    break;
+                }
+                }
+            } else if (pad->CycleWeaponLeftJustDown()) {
+                switch (camMode) {
+                case MODE_M16_1STPERSON:
+                case MODE_SNIPER:
+                case MODE_ROCKETLAUNCHER:
+                case MODE_ROCKETLAUNCHER_HS:
+                case MODE_CAMERA:
+                    break;
+                default: {
+                    auto slot = static_cast<int8>(m_nActiveWeaponSlot - 1);
+                    while (true) {
+                        if (slot < 0) {
+                            slot = NUM_WEAPON_SLOTS - 1;
+                        }
+                        if (slot == 0 || IsSlotSelectable(slot)) {
+                            break;
+                        }
+                        slot--;
+                    }
+                    playerData->m_nChosenWeapon = slot;
+                    break;
+                }
+                }
+            }
+        }
+
+        // Out of ammo: fall back to the closest lower slot that still has some
+        const auto& activeWeapon = GetWeaponInSlot(m_nActiveWeaponSlot);
+        if (CWeaponInfo::GetWeaponInfo(activeWeapon.m_Type, eWeaponSkill::STD)->m_nWeaponFire != WEAPON_FIRE_MELEE
+            && !(pad->GetWeapon(this) && activeWeapon.m_Type == WEAPON_MINIGUN)
+            && static_cast<int32>(activeWeapon.m_TotalAmmo) <= 0
+        ) {
+            switch (camMode) {
+            case MODE_M16_1STPERSON:
+            case MODE_SNIPER:
+            case MODE_ROCKETLAUNCHER:
+            case MODE_ROCKETLAUNCHER_HS:
+                return;
+            default:
+                break;
+            }
+
+            // The detonator is paired with the remote charges in slot 8
+            auto slot = (activeWeapon.m_Type == WEAPON_DETONATOR && GetWeaponInSlot(8).m_Type == WEAPON_REMOTE_SATCHEL_CHARGE)
+                ? int8{ 8 }
+                : static_cast<int8>(m_nActiveWeaponSlot - 1);
+            while (slot >= 0) {
+                if (slot == 5 && GetWeaponInSlot(5).m_Type == WEAPON_BASEBALLBAT) {
+                    break;
+                }
+                if (static_cast<int32>(GetWeaponInSlot(slot).m_TotalAmmo) > 0 && slot != 0x12 && slot != 0x11 && slot != 0x10) {
+                    break;
+                }
+                slot--;
+            }
+            playerData->m_nChosenWeapon = slot >= 0 ? slot : 0;
+        }
+    }
+
+    if (playerData->m_nChosenWeapon == m_nActiveWeaponSlot) {
+        return;
+    }
+
+    // Do not interrupt a shot or a reload that is in progress
+    if (auto* const gunTask = GetIntelligence()->GetTaskUseGun()) {
+        const auto lastCmd = gunTask->GetLastGunCommand();
+        if (lastCmd == eGunCommand::FIRE || lastCmd == eGunCommand::FIREBURST) {
+            return;
+        }
+        if (lastCmd == eGunCommand::RELOAD && gunTask->m_Anim) {
+            return;
+        }
+    }
+
+    RemoveWeaponAnims(m_nActiveWeaponSlot, -4000.0f);
+    if (static_cast<int8>(playerData->m_nChosenWeapon) != -1) {
+        MakeChangesForNewWeapon(GetWeaponInSlot(static_cast<int8>(playerData->m_nChosenWeapon)).m_Type);
+    }
 }
 
 // 0x60DC50

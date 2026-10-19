@@ -76,7 +76,7 @@ public:
     void HandlePlayerBreath(bool bDecreaseAir, float fMultiplier);
     void SetRealMoveAnim();
     void MakeChangesForNewWeapon(eWeaponType weaponType);
-    void Compute3rdPersonMouseTarget(bool meleeWeapon);
+    void Compute3rdPersonMouseTarget(bool weaponIsNotMelee);
     void DrawTriangleForMouseRecruitPed();
     bool DoesTargetHaveToBeBroken(CEntity* entity, CWeapon* weapon);
     void KeepAreaAroundPlayerClear();
