@@ -88,7 +88,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
     RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0, { .Reversed = false });
     RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
-    RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10, { .Reversed = false });
+    RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10);
     RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80, { .Reversed = false });
     RH_ScopedInstall(PickNextNodeToChaseCar, 0x426EF0, { .Reversed = false });
     RH_ScopedInstall(PickNextNodeToFollowPath, 0x427740, { .Reversed = false });
@@ -734,7 +734,41 @@ bool CCarCtrl::JoinCarWithRoadSystemGotoCoors(CVehicle* vehicle, const CVector& 
 
 // 0x432B10
 bool CCarCtrl::PickNextNodeAccordingStrategy(CVehicle* vehicle) {
-    return plugin::CallAndReturn<bool, 0x432B10, CVehicle*>(vehicle);
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    // Remember what kind of road the next node is on (-1 for the parking like ones)
+    const auto* const node = ThePaths.GetPathNode(autoPilot.m_startingRouteNode);
+    autoPilot.field_41 = (char)(node->m_bNotHighway | (node->m_bHighway << 1));
+    if (node->m_nBehaviourType == 8 || node->m_nBehaviourType == 9) {
+        autoPilot.field_41 = (char)0xFF;
+    }
+
+    switch (autoPilot.m_nCarMission) {
+    case MISSION_RAMPLAYER_FARAWAY:
+    case MISSION_BLOCKPLAYER_FARAWAY:
+    case MISSION_APPROACHPLAYER_FARAWAY: {
+        const auto playerPos = FindPlayerCoors();
+        return PickNextNodeToChaseCar(vehicle, playerPos.x, playerPos.y, playerPos.z);
+    }
+    case MISSION_GOTOCOORDINATES:
+    case MISSION_GOTOCOORDINATES_ACCURATE:
+        return PickNextNodeToFollowPath(vehicle);
+    case MISSION_RAMCAR_FARAWAY:
+    case MISSION_BLOCKCAR_FARAWAY:
+    case MISSION_FOLLOWCAR_FARAWAY:
+    case MISSION_KILLPED_FARAWAY:
+    case MISSION_DO_DRIVEBY_FARAWAY:
+    case MISSION_ESCORT_LEFT_FARAWAY:
+    case MISSION_ESCORT_RIGHT_FARAWAY:
+    case MISSION_ESCORT_REAR_FARAWAY:
+    case MISSION_ESCORT_FRONT_FARAWAY: {
+        const auto& targetPos = autoPilot.m_TargetEntity->GetPosition();
+        return PickNextNodeToChaseCar(vehicle, targetPos.x, targetPos.y, targetPos.z);
+    }
+    default:
+        PickNextNodeRandomly(vehicle);
+        return false;
+    }
 }
 
 // 0x421740
