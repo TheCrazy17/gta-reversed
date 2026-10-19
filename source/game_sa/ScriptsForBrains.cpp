@@ -13,12 +13,12 @@ void CScriptsForBrains::InjectHooks() {
     RH_ScopedInstall(AddNewStreamedScriptBrainForCodeUse, 0x46A9C0);
     RH_ScopedInstall(GetIndexOfScriptBrainWithThisName, 0x46AA30);
     RH_ScopedInstall(HasAttractorScriptBrainWithThisNameLoaded, 0x46AB20);
-    RH_ScopedInstall(StartNewStreamedScriptBrain, 0x46B270, { .Reversed = false });
+    RH_ScopedInstall(StartNewStreamedScriptBrain, 0x46B270);
     RH_ScopedInstall(StartAttractorScriptBrainWithThisName, 0x46B390);
-    RH_ScopedInstall(StartOrRequestNewStreamedScriptBrain, 0x46CD80, {.Reversed = false});
+    RH_ScopedInstall(StartOrRequestNewStreamedScriptBrain, 0x46CD80);
     //RH_ScopedInstall(StartOrRequestNewStreamedScriptBrainWithThisName, 0x46CED0, {.Reversed = false});
     RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0);
-    RH_ScopedInstall(CheckIfNewEntityNeedsScript, 0x46FF20, { .Reversed = false });
+    RH_ScopedInstall(CheckIfNewEntityNeedsScript, 0x46FF20);
     RH_ScopedInstall(MarkAttractorScriptBrainWithThisNameAsNoLongerNeeded, 0x46AAE0);
     RH_ScopedInstall(RequestAttractorScriptBrainWithThisName, 0x46AA80);
 }
@@ -77,7 +77,29 @@ void CScriptsForBrains::AddNewStreamedScriptBrainForCodeUse(int16 ImgIndex, char
 }
 
 void CScriptsForBrains::CheckIfNewEntityNeedsScript(CEntity* entity, int8 attachType, void* unused) {
-    plugin::CallMethod<0x46FF20, CScriptsForBrains*, CEntity*, int8, void*>(this, entity, attachType, unused);
+    // Entities that already have a brain, or are waiting for it to load, are left alone
+    if (attachType == 0) {
+        auto* const ped = entity->AsPed();
+        if (ped->bHasAScriptBrain || ped->bWaitingForScriptBrainToLoad) {
+            return;
+        }
+    } else if (entity->AsObject()->objectFlags.b0x100000_0x200000) {
+        return;
+    }
+
+    for (uint8 i = 0; i < m_aScriptForBrains.size(); i++) {
+        const auto& script = m_aScriptForBrains[i];
+        if (script.m_TypeOfBrain != attachType || script.m_PedModelOrPedGeneratorIndex != entity->m_nModelIndex) {
+            continue;
+        }
+
+        // The chance is a percentage
+        const auto roll = static_cast<int32>(static_cast<float>(CGeneral::GetRandomNumber() & 0xFFFF) * (1.0f / 32768.0f) * 100.0f);
+        if (roll < script.m_PercentageChance) {
+            StartOrRequestNewStreamedScriptBrain(i, entity, attachType, true);
+            return;
+        }
+    }
 }
 
 void CScriptsForBrains::MarkAttractorScriptBrainWithThisNameAsNoLongerNeeded(const char* name) {
@@ -100,11 +122,88 @@ void CScriptsForBrains::RequestAttractorScriptBrainWithThisName(const char* name
 }
 
 void CScriptsForBrains::StartNewStreamedScriptBrain(uint8 index, CEntity* entity, bool bHasAScriptBrain) {
-    plugin::CallMethodAndReturn<void, 0x46B270, CScriptsForBrains*, uint8, CEntity*, uint8>(this, index, entity, bHasAScriptBrain);
+    const auto& brain  = m_aScriptForBrains[index];
+    auto* const script = CTheScripts::StreamedScripts.StartNewStreamedScript(brain.m_StreamedScriptIndex);
+    script->m_ExternalType = brain.m_TypeOfBrain;
+
+    switch (brain.m_TypeOfBrain) {
+    case 0:
+    case 3:
+    case 5: {
+        auto* const ped = entity->AsPed();
+        script->m_LocalVars[0].iParam = GetPedPool()->GetRef(ped);
+        ped->bHasAScriptBrain = true;
+        if (brain.m_TypeOfBrain == 5) {
+            script->m_LocalVars[1].iParam = bHasAScriptBrain;
+        }
+        ped->bWaitingForScriptBrainToLoad = false;
+        CTheScripts::RemoveFromWaitingForScriptBrainArray(ped, ped->m_StreamedScriptBrainToLoad);
+        ped->m_StreamedScriptBrainToLoad = -1;
+        break;
+    }
+    case 1:
+    case 4: {
+        auto* const object = entity->AsObject();
+        script->m_LocalVars[0].iParam = GetObjectPool()->GetRef(object);
+        object->objectFlags.b0x100000_0x200000 = 3;
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 void CScriptsForBrains::StartOrRequestNewStreamedScriptBrain(uint8 index, CEntity* entity, int8 attachType, bool bAddToWaitingArray) {
-    NOTSA_UNREACHABLE();
+    const auto& brain = m_aScriptForBrains[index];
+
+    if (bAddToWaitingArray) {
+        if (!brain.m_bBrainActive) {
+            return;
+        }
+        switch (attachType) {
+        case 0:
+        case 3: {
+            const auto* const ped = entity->AsPed();
+            if (ped->bHasAScriptBrain || ped->bWaitingForScriptBrainToLoad) {
+                return;
+            }
+            break;
+        }
+        case 1:
+        case 4:
+            if (entity->AsObject()->objectFlags.b0x100000_0x200000) {
+                return;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (attachType == 1) {
+        auto* const object = entity->AsObject();
+        if (!bAddToWaitingArray) {
+            object->objectFlags.b0x100000_0x200000 = 2;
+        } else {
+            object->m_nStreamedScriptBrainToLoad = index;
+            object->objectFlags.b0x100000_0x200000           = 1;
+            CTheScripts::AddToWaitingForScriptBrainArray(object, index);
+        }
+    }
+
+    if (!CStreaming::IsModelLoaded(SCMToModelId(brain.m_StreamedScriptIndex))) {
+        CStreaming::RequestModel(SCMToModelId(brain.m_StreamedScriptIndex), STREAMING_MISSION_REQUIRED);
+
+        const bool isPed = attachType == 0 || (attachType > 2 && attachType < 5);
+        if (isPed && bAddToWaitingArray) {
+            auto* const ped = entity->AsPed();
+            ped->m_StreamedScriptBrainToLoad = index;
+            ped->bWaitingForScriptBrainToLoad = true;
+            CTheScripts::AddToWaitingForScriptBrainArray(ped, index);
+        }
+        return;
+    }
+    StartNewStreamedScriptBrain(index, entity, false);
 }
 
 // 0x46CED0
