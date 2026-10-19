@@ -16,7 +16,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(PlayerArrestedOrDied, 0x449E60);
     RH_ScopedInstall(AllRespraysCloseOrOpen, 0x448B30);
     RH_ScopedInstall(IsModelIndexADoor, 0x448AF0);
-    RH_ScopedInstall(FindSafeHouseIndexForGarageType, 0x4489F0, { .Reversed = false });
+    RH_ScopedInstall(FindSafeHouseIndexForGarageType, 0x4489F0);
     RH_ScopedInstall(FindGarageForObject, 0x44A240);
     RH_ScopedInstall(IsPointWithinHideOutGarage, 0x448900);
     RH_ScopedInstall(IsGarageOpen, 0x447D00);
@@ -35,7 +35,7 @@ void CGarages::InjectHooks() {
     RH_ScopedInstall(CountCarsInHideoutGarage, 0x44A210);
     RH_ScopedInstall(Load, 0x5D3270);
     RH_ScopedInstall(Save, 0x5D3160);
-    RH_ScopedInstall(StopCarFromBlowingUp, 0x448890, { .Reversed = false });
+    RH_ScopedInstall(StopCarFromBlowingUp, 0x448890);
 }
 
 // 0x447120
@@ -227,11 +227,8 @@ bool CGarages::IsModelIndexADoor(int32 model) {
     return false;
 }
 
-// wrong
 // 0x4489F0
 int32 CGarages::FindSafeHouseIndexForGarageType(eGarageType type) {
-    return plugin::CallAndReturn<int32, 0x4489F0, eGarageType>(type);
-
     switch (type) {
     case SAFEHOUSE_SANTAMARIA:     return 1;
     case SAGEHOUSE_ROCKSHORE:      return 2;
