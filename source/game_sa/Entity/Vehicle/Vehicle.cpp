@@ -216,8 +216,8 @@ void CVehicle::InjectHooks() {
     // RH_ScopedInstall(GetPlaneWeaponFiringStatus, 0x6E3440);
     // RH_ScopedInstall(ProcessWeapons, 0x6E3950);
     RH_ScopedInstall(DoFixedMachineGuns, 0x73F400);
-    RH_ScopedInstall(FireFixedMachineGuns, 0x73DF00, { .Reversed = false });
-    RH_ScopedInstall(DoDriveByShootings, 0x741FD0, { .Reversed = false });
+    RH_ScopedInstall(FireFixedMachineGuns, 0x73DF00);
+    RH_ScopedInstall(DoDriveByShootings, 0x741FD0);
     RH_ScopedInstall(ReleasePickedUpEntityWithWinch, 0x6D3CB0);
     RH_ScopedInstall(PickUpEntityWithWinch, 0x6D3CD0);
     RH_ScopedInstall(QueryPickedUpEntityWithWinch, 0x6D3CF0);
@@ -5307,12 +5307,145 @@ void CVehicle::DoFixedMachineGuns() {
 
 // 0x73DF00
 void CVehicle::FireFixedMachineGuns() {
-    plugin::CallMethod<0x73DF00, CVehicle*>(this);
+    if (CTimer::GetTimeInMS() <= m_nGunFiringTime + 150) {
+        return;
+    }
+
+    const auto& forward = GetForward();
+    const auto  planarLength = std::max(std::sqrt(forward.x * forward.x + forward.y * forward.y), 0.1f);
+    const auto  scale        = 1.0f / planarLength;
+
+    m_nGunFiringTime = CTimer::GetTimeInMS();
+
+    // One round from each side of the nose, aimed along the heading with a bit of spread
+    const auto aimX = scale * forward.x * 60.0f;
+    const auto aimY = scale * forward.y * 60.0f;
+    for (const auto offset : { CVector{ 2.0f, 2.5f, 1.0f }, CVector{ -2.0f, 2.5f, 1.0f } }) {
+        const auto start = GetMatrix().TransformPoint(offset);
+
+        // The order of the three draws matters: y, x, then z
+        const auto spreadY = static_cast<float>((CGeneral::GetRandomNumber() & 0xFF) - 0x80) * 0.015f;
+        const auto spreadX = static_cast<float>((CGeneral::GetRandomNumber() & 0xFF) - 0x80) * 0.015f;
+        const auto spreadZ = static_cast<float>((CGeneral::GetRandomNumber() & 0xFF) - 0x80) * 0.02f;
+
+        CVector startPoint = start;
+        CVector endPoint{ aimX + start.x + spreadX, start.y + aimY + spreadY, start.z + spreadZ };
+        CWeapon::DoTankDoomAiming(this, m_pDriver, &startPoint, &endPoint);
+        FireOneInstantHitRound(startPoint, endPoint, 15);
+    }
+
+    AudioEngine.ReportWeaponEvent(0x95, WEAPON_M4, this);
+
+    if (--m_nAmmoInClip == 0) {
+        m_nAmmoInClip    = 20;
+        m_nGunFiringTime = CTimer::GetTimeInMS() + 1400;
+    }
 }
 
 // 0x741FD0
 void CVehicle::DoDriveByShootings() {
-    plugin::CallMethod<0x741FD0, CVehicle*>(this);
+    auto* const driver = m_pDriver;
+    if (!driver) {
+        return;
+    }
+    auto* const playerInfo = driver->AsPlayer()->GetPlayerInfoForThisPlayerPed();
+    if (!playerInfo || !playerInfo->m_bCanDoDriveBy) {
+        return;
+    }
+    auto* const pad = driver->AsPlayer()->GetPadFromPlayer();
+    if (!pad) {
+        return;
+    }
+
+    auto& weapon = driver->GetActiveWeapon();
+    if (CWeaponInfo::GetWeaponInfo(weapon.m_Type, eWeaponSkill::STD)->m_nSlot != 4) {
+        return;
+    }
+
+    const auto firePressed = m_nVehicleSubType == VEHICLE_TYPE_BMX ? pad->GetCarGunFired() == 1 : pad->GetCarGunFired() != 0;
+
+    // Bikes have their own animation group and a forward shooting animation
+    AssocGroupId animGroup{};
+    AnimationId  animLeft, animRight, animForward{};
+    const auto*  rideAnimData = GetRideAnimData();
+    const auto   isBike       = rideAnimData != nullptr;
+    if (isBike) {
+        animGroup   = rideAnimData->AnimGroup;
+        animLeft    = ANIM_ID_BIKE_DRIVEBYLHS;
+        animRight   = ANIM_ID_BIKE_DRIVEBYRHS;
+        animForward = ANIM_ID_BIKE_DRIVEBYFT;
+    } else if (vehicleFlags.bLowVehicle) {
+        animLeft  = ANIM_ID_DRIVEBYL_L;
+        animRight = ANIM_ID_DRIVEBYL_R;
+    } else {
+        animLeft  = ANIM_ID_DRIVEBY_L;
+        animRight = ANIM_ID_DRIVEBY_R;
+    }
+
+    weapon.Update(nullptr);
+
+    // Which side the player is shooting to
+    bool lookLeft{}, lookRight{};
+    auto& cam = TheCamera.GetActiveCam();
+    if (cam.m_nMode == MODE_TOPDOWN || TheCamera.m_bObbeCinematicCarCamOn || cam.m_nMode == MODE_TWOPLAYER_IN_CAR_AND_SHOOTING) {
+        lookLeft  = pad->GetLookLeft();
+        lookRight = pad->GetLookRight();
+    } else {
+        lookLeft  = cam.m_bLookingLeft;
+        lookRight = cam.m_bLookingRight;
+    }
+
+    RpClump* const clump = driver->GetRpClump();
+    const auto shooting  = isBike ? firePressed : (lookLeft || lookRight);
+    if (!shooting || static_cast<int32>(weapon.m_TotalAmmo) <= 0) {
+        if (weapon.m_TotalAmmo != 0) {
+            weapon.m_AmmoInClip = std::min<uint32>(weapon.m_TotalAmmo, CWeaponInfo::GetWeaponInfo(weapon.m_Type, eWeaponSkill::STD)->m_nAmmoClip);
+        }
+
+        // Fade out the aiming animations
+        auto* assoc = RpAnimBlendClumpGetAssociation(clump, animLeft);
+        if (assoc) {
+            assoc->m_BlendDelta = -8.0f;
+        }
+        assoc = RpAnimBlendClumpGetAssociation(clump, animRight);
+        if (assoc) {
+            assoc->m_BlendDelta = -8.0f;
+        }
+        if (isBike) {
+            assoc = RpAnimBlendClumpGetAssociation(clump, animForward);
+        }
+        if (assoc) {
+            assoc->m_BlendDelta = -8.0f;
+        }
+        return;
+    }
+
+    // Make sure the aiming animation of the chosen side is playing
+    std::optional<AnimationId> aimAnim;
+    if (lookLeft) {
+        aimAnim = animLeft;
+    } else if (lookRight) {
+        aimAnim = animRight;
+    } else if (isBike) {
+        aimAnim = animForward;
+    }
+    if (aimAnim) {
+        auto* assoc = RpAnimBlendClumpGetAssociation(clump, *aimAnim);
+        if (!assoc || assoc->m_BlendDelta < 0.0f) {
+            assoc = CAnimManager::BlendAnimation(clump, animGroup, *aimAnim, 16.0f);
+        }
+        if (assoc) {
+            if ((assoc->m_Flags & ANIMATION_IS_PLAYING) || assoc->m_BlendAmount <= 0.99f) {
+                return;
+            }
+        }
+    }
+
+    if (firePressed && CTimer::GetTimeInMS() > weapon.m_TimeForNextShotMs) {
+        weapon.FireFromCar(this, lookLeft, lookRight);
+        weapon.m_TimeForNextShotMs = CTimer::GetTimeInMS() + 70;
+        driver->DoGunFlash(250, false);
+    }
 }
 
 // NOTSA
