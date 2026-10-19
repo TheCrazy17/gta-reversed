@@ -103,7 +103,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0);
-    RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090, { .Reversed = false });
+    RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090);
     RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
     RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0, { .Reversed = false });
@@ -1211,12 +1211,9 @@ void CCarCtrl::SlowCarOnRailsDownForTrafficAndLights(CVehicle* vehicle) {
     }
 }
 
-// 0x428DE0
-void CCarCtrl::SteerAIBoatWithPhysicsAttackingPlayer(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    // arg2: steering, arg3: gas / brake, arg4: handbrake
-    const auto& pos       = vehicle->GetPosition();
-    const auto  playerPos = FindPlayerCoors();
-    const auto  dist      = (playerPos - pos).Magnitude();
+// Shared by the boat steering that follows the player. Returns the signed heading difference toward the aim point.
+static float SteerBoatTowardsPoint(CVehicle* vehicle, const CVector2D& aim, float* steering, float* gas, float* handbrake, bool* reverse) {
+    const auto& pos = vehicle->GetPosition();
 
     CVector2D forward{ vehicle->GetForward() };
     if (const auto len = forward.Magnitude(); len == 0.0f) {
@@ -1225,11 +1222,7 @@ void CCarCtrl::SteerAIBoatWithPhysicsAttackingPlayer(CVehicle* vehicle, float* a
         forward *= 1.0f / len;
     }
 
-    // Aim ahead of where the player is going, the further the more
-    const auto lookAhead  = std::min(dist * 0.05f, 2.0f);
-    const auto playerVel  = FindPlayerSpeed();
-    const auto targetHead = CGeneral::GetATanOfXY(lookAhead * playerVel.x * 60.0f + playerPos.x - pos.x, lookAhead * playerVel.y * 60.0f + playerPos.y - pos.y);
-    auto       turn       = targetHead - CGeneral::GetATanOfXY(forward.x, forward.y);
+    auto turn = CGeneral::GetATanOfXY(aim.x - pos.x, aim.y - pos.y) - CGeneral::GetATanOfXY(forward.x, forward.y);
     while (turn < -3.1415927f) {
         turn += 6.2831855f;
     }
@@ -1241,13 +1234,31 @@ void CCarCtrl::SteerAIBoatWithPhysicsAttackingPlayer(CVehicle* vehicle, float* a
     const auto speedDiff   = cruiseSpeed - vehicle->GetMoveSpeed().Magnitude2D() * 60.0f;
     if (speedDiff > 0.0f) {
         const auto ratio = speedDiff / cruiseSpeed;
-        *arg3            = ratio <= 0.25f ? 1.0f - (0.25f - ratio) * 4.0f : 1.0f;
+        *gas             = ratio <= 0.25f ? 1.0f - (0.25f - ratio) * 4.0f : 1.0f;
     } else {
-        *arg3 = speedDiff < -5.0f ? -0.2f : -0.1f;
+        *gas = speedDiff < -5.0f ? -0.2f : -0.1f;
     }
-    *arg4 = 0.0f;
-    *arg2 = turn;
-    *arg5 = false;
+    *handbrake = 0.0f;
+    *steering  = turn;
+    *reverse   = false;
+    return turn;
+}
+
+// 0x428DE0
+void CCarCtrl::SteerAIBoatWithPhysicsAttackingPlayer(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
+    // arg2: steering, arg3: gas / brake, arg4: handbrake
+    const auto& pos       = vehicle->GetPosition();
+    const auto  playerPos = FindPlayerCoors();
+    const auto  dist      = (playerPos - pos).Magnitude();
+
+    // Aim ahead of where the player is going, the further the more
+    const auto lookAhead = std::min(dist * 0.05f, 2.0f);
+    const auto playerVel = FindPlayerSpeed();
+    const auto turn      = SteerBoatTowardsPoint(
+        vehicle,
+        { lookAhead * playerVel.x * 60.0f + playerPos.x, lookAhead * playerVel.y * 60.0f + playerPos.y },
+        arg2, arg3, arg4, arg5
+    );
 
     // The Predator opens fire once it is close and roughly facing the player
     if (vehicle->m_nModelIndex == 430 && dist < 40.0f && turn < 0.15f) {
@@ -1257,7 +1268,20 @@ void CCarCtrl::SteerAIBoatWithPhysicsAttackingPlayer(CVehicle* vehicle, float* a
 
 // 0x429090
 void CCarCtrl::SteerAIBoatWithPhysicsCirclingPlayer(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x429090, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    const auto& pos       = vehicle->GetPosition();
+    const auto  playerPos = FindPlayerCoors();
+
+    // Direction to the player on the ground plane
+    CVector2D toPlayer{ playerPos.x - pos.x, playerPos.y - pos.y };
+    if (const auto len = toPlayer.Magnitude(); len == 0.0f) {
+        toPlayer.x = 1.0f;
+    } else {
+        toPlayer *= 1.0f / len;
+    }
+
+    // Each boat circles to a fixed side, picked from its random seed, aiming at a point off to that side of the player
+    const auto side = (vehicle->m_nRandomSeed & 1) ? -12.0f : 26.0f;
+    SteerBoatTowardsPoint(vehicle, { toPlayer.y * side + playerPos.x, -toPlayer.x * side + playerPos.y }, arg2, arg3, arg4, arg5);
 }
 
 // 0x428BE0
