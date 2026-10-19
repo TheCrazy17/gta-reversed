@@ -31,7 +31,6 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(KnockOffRider, 0x6B5F40);
     RH_ScopedInstall(SetRemoveAnimFlags, 0x6B5F50);
     RH_ScopedInstall(ReduceHornCounter, 0x6B5F90);
-    RH_ScopedInstall(ProcessAI, 0x6BC930);
     RH_ScopedInstall(ProcessBuoyancy, 0x6B5FB0);
     RH_ScopedInstall(ResetSuspension, 0x6B6740);
     RH_ScopedInstall(GetAllWheelsOffGround, 0x6B6790);
@@ -48,7 +47,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(ProcessDrivingAnims, 0x6BF400);
     RH_ScopedVMTInstall(BurstTyre, 0x6BEB20);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6BE310);
-    RH_ScopedVMTInstall(ProcessAI, 0x6BC930, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessAI, 0x6BC930);
     RH_ScopedVMTInstall(ProcessEntityCollision, 0x6BDEA0);
     RH_ScopedVMTInstall(Render, 0x6BDE20);
     RH_ScopedVMTInstall(PreRender, 0x6BD090, { .Reversed = false });
@@ -399,53 +398,52 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
         extraHandlingFlags += 2;
         bikeFlags.bGettingPickedUp = false;
 
-        auto* const player = FindPlayerPed();
-        if (player->m_nPedState != PEDSTATE_EXIT_CAR && player->m_nPedState != PEDSTATE_DRAGGED_FROM_CAR) {
+        const auto pedState = FindPlayerPed()->m_nPedState;
+        if (pedState != PEDSTATE_EXIT_CAR && pedState != PEDSTATE_DRAGGED_FROM_CAR) {
             if (m_pDriver) {
                 if (m_pDriver == CWorld::Players[0].m_pPed) {
                     ProcessControlInputs(0);
                 } else if (m_pDriver == CWorld::Players[1].m_pPed) {
                     ProcessControlInputs(1);
                 }
-
-                const auto speedFrac = std::min(0.1f, GetMoveSpeed().Magnitude());
-                if (0.0f <= m_RideAnimData.LeanFwd) {
-                    m_vecCentreOfMass.y = m_BikeHandling->m_fLeanFwdCOM * m_RideAnimData.LeanFwd + m_pHandlingData->m_vecCentreOfMass.y;
-
-                    if (m_BrakePedal < 0.0f || m_nNoOfContactWheels == 0) {
-                        const auto ratio = std::max(speedFrac / 0.1f, m_BrakePedal);
-                        const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_BrakePedal) * 0.5f);
-                        ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
-                    }
-                } else {
-                    m_vecCentreOfMass.y = m_BikeHandling->m_fLeanBakCOM * m_RideAnimData.LeanFwd + m_pHandlingData->m_vecCentreOfMass.y;
-
-                    if ((m_BrakePedal == 0.0f && !vehicleFlags.bIsHandbrakeOn) || m_nNoOfContactWheels == 0) {
-                        const auto ratio = std::max(speedFrac / 0.1f, m_GasPedal);
-                        const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_GasPedal) * 0.5f);
-                        ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
-                    }
-                }
-
-                PruneReferences();
-                if (GetStatus() == STATUS_PLAYER) {
-                    DoDriveByShootings();
-                }
-                DoSoftGroundResistance(extraHandlingFlags);
             }
+
+            const auto speedFrac = std::min(0.1f, GetMoveSpeed().Magnitude());
+            if (m_RideAnimData.LeanFwd >= 0.0f) {
+                m_vecCentreOfMass.y = m_BikeHandling->m_fLeanFwdCOM * m_RideAnimData.LeanFwd + m_pHandlingData->m_vecCentreOfMass.y;
+
+                if (m_BrakePedal < 0.0f || m_nNoOfContactWheels == 0) {
+                    const auto ratio = std::max(speedFrac / 0.1f, m_BrakePedal);
+                    const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanFwdForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_BrakePedal) * 0.5f);
+                    ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
+                }
+            } else {
+                m_vecCentreOfMass.y = m_BikeHandling->m_fLeanBakCOM * m_RideAnimData.LeanFwd + m_pHandlingData->m_vecCentreOfMass.y;
+
+                if ((m_BrakePedal == 0.0f && !vehicleFlags.bIsHandbrakeOn) || m_nNoOfContactWheels == 0) {
+                    const auto ratio = std::max(speedFrac / 0.1f, m_GasPedal);
+                    const auto force = -(CTimer::GetTimeStep() * CStats::GetFatAndMuscleModifier(STAT_MOD_11) * m_BikeHandling->m_fLeanBakForce * m_fTurnMass * m_RideAnimData.LeanFwd * speedFrac * (ratio + m_GasPedal) * 0.5f);
+                    ApplyTurnForce(force * GetUp(), m_vecCentreOfMass + GetForward());
+                }
+            }
+
+            PruneReferences();
+            if (GetStatus() == STATUS_PLAYER) {
+                DoDriveByShootings();
+            }
+            DoSoftGroundResistance(extraHandlingFlags);
         }
 
         if (CPad::GetPad(0)->CarGunJustDown()) {
             ActivateBomb();
-            return true;
         }
-        break;
+        return true;
     }
     case STATUS_PLAYER_PLAYBACK_FROM_BUFFER:
         extraHandlingFlags += 2;
         return true;
     case STATUS_SIMPLE: {
-        plugin::CallMethod<0x403C48, CBike*>(this); // NOTSA: shared AI dispatcher, unreversible/SecuROM internals - forwarded only
+        CCarAI::UpdateCarAI(this);
         CPhysical::ProcessControl();
         CCarCtrl::UpdateCarOnRails(this);
 
@@ -461,13 +459,14 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
 
         PlayHornIfNecessary();
         ReduceHornCounter();
-        bikeFlags.bWheelieForCamera = false;
+        vehicleFlags.bVehicleColProcessed = false;
         vehicleFlags.bAudioChangingGear = false;
+        bikeFlags.bWheelieForCamera = false;
         return true;
     }
     case STATUS_PHYSICS:
     case STATUS_GHOST: {
-        plugin::CallMethod<0x403C48, CBike*>(this); // NOTSA: shared AI dispatcher, unreversible/SecuROM internals - forwarded only
+        CCarAI::UpdateCarAI(this);
         CCarCtrl::SteerAICarWithPhysics(this);
         PlayHornIfNecessary();
         extraHandlingFlags += 2;
@@ -490,30 +489,29 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
         if ((m_pDriver || m_apPassengers[0] || vehicleFlags.bIsBeingCarJacked) && !bikeFlags.bOnSideStand) {
             extraHandlingFlags += 2;
         }
+        bikeFlags.bWheelieForCamera = false;
         m_RideAnimData.AnimLeanLeft = 0.0f;
         m_RideAnimData.AnimLeanFwd  = 0.0f;
-        bikeFlags.bWheelieForCamera = false;
         if (vehicleFlags.bIsBeingCarJacked) {
             vehicleFlags.bIsHandbrakeOn = true;
             m_GasPedal   = 0.0f;
             m_BrakePedal = 1.0f;
-            return true;
         }
-        break;
+        return true;
     case STATUS_WRECKED:
-        m_BrakePedal = 0.05f;
         vehicleFlags.bIsHandbrakeOn = true;
+        m_BrakePedal = 0.05f;
         m_fSteerAngle = 0.0f;
         m_GasPedal    = 0.0f;
         m_HornCounter = 0;
         bikeFlags.bWheelieForCamera = false;
         m_RideAnimData.AnimLeanLeft = 0.0f;
         m_RideAnimData.AnimLeanFwd  = 0.0f;
-        break;
+        return true;
     case STATUS_FORCED_STOP:
         if (GetMoveSpeed().SquaredMagnitude() >= 0.01f) {
-            m_BrakePedal = 0.0f;
             vehicleFlags.bIsHandbrakeOn = false;
+            m_BrakePedal = 0.0f;
         } else {
             vehicleFlags.bIsHandbrakeOn = true;
             m_BrakePedal = 1.0f;
@@ -525,10 +523,8 @@ bool CBike::ProcessAI(uint32& extraHandlingFlags) {
         bikeFlags.bWheelieForCamera = false;
         return true;
     default:
-        break;
+        return true;
     }
-
-    return true;
 }
 
 // 0x6BF400
