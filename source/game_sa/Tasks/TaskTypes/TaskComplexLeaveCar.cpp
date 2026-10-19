@@ -1,11 +1,23 @@
 #include "StdInc.h"
 
 #include "TaskComplexLeaveCar.h"
+#include "TaskComplexLeaveBoat.h"
+#include "TaskComplexGetUpAndStandStill.h"
+#include "TaskComplexCarSlowBeDraggedOut.h"
+#include "TaskSimpleCarWaitForDoorNotToBeInUse.h"
+#include "TaskSimpleCarWaitToSlowDown.h"
+#include "TaskSimpleCarCloseDoorFromOutside.h"
+#include "TaskSimpleCarGetOut.h"
+#include "TaskSimpleCarJumpOut.h"
+#include "TaskSimpleCarSetPedOut.h"
+#include "TaskSimpleCarDriveTimed.h"
+#include "TaskSimpleDie.h"
+#include "TaskSimplePause.h"
 
 void CTaskComplexLeaveCar::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexLeaveCar, 0x86E828, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
-    RH_ScopedInstall(CreateSubTask, 0x641530, { .Reversed = false });
+    RH_ScopedInstall(CreateSubTask, 0x641530);
 }
 
 // 0x62F1A0
@@ -88,5 +100,43 @@ CTask* CTaskComplexLeaveCar::ControlSubTask(CPed* ped) {
 
 // 0x641530
 CTask* CTaskComplexLeaveCar::CreateSubTask(eTaskType taskType, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x641530, CTaskComplexLeaveCar*, eTaskType, CPed*>(this, taskType, ped);
+    switch (taskType) {
+    case TASK_SIMPLE_CAR_WAIT_FOR_DOOR_NOT_TO_BE_IN_USE:
+        return new CTaskSimpleCarWaitForDoorNotToBeInUse{ m_pTargetVehicle, (uint32)m_nTargetDoor, 0 };
+    case TASK_COMPLEX_LEAVE_BOAT:
+        return new CTaskComplexLeaveBoat{ m_pTargetVehicle, 0 };
+    case TASK_SIMPLE_PAUSE:
+        return new CTaskSimplePause{ -1 };
+    case TASK_COMPLEX_GET_UP_AND_STAND_STILL:
+        return new CTaskComplexGetUpAndStandStill{};
+    case TASK_SIMPLE_DIE:
+        return new CTaskSimpleDie{ ANIM_GROUP_DEFAULT, (AnimationId)m_nDieAnimID, m_fDieAnimBlendDelta, m_fDieAnimSpeed };
+    case TASK_SIMPLE_CAR_DRIVE_TIMED:
+        return new CTaskSimpleCarDriveTimed{ m_pTargetVehicle, m_nDelayTime };
+    case TASK_SIMPLE_CAR_CLOSE_DOOR_FROM_OUTSIDE:
+        return new CTaskSimpleCarCloseDoorFromOutside{ m_pTargetVehicle, (uint32)m_nTargetDoor, m_pTaskUtilityLineUpPedWithCar };
+    case TASK_SIMPLE_CAR_WAIT_TO_SLOW_DOWN: {
+        using SlowDownType = CTaskSimpleCarWaitToSlowDown::SlowDownType;
+        if (m_bDie || !m_bSensibleLeaveCar) {
+            return new CTaskSimpleCarWaitToSlowDown{ m_pTargetVehicle, SlowDownType::DONT_WAIT };
+        }
+        return new CTaskSimpleCarWaitToSlowDown{ m_pTargetVehicle, ped->IsPlayer() ? SlowDownType::SLOW_ENOUGH_TO_STEP_OR_JUMP : SlowDownType::SLOW_ENOUGH_TO_STEP };
+    }
+    case TASK_SIMPLE_CAR_SET_PED_OUT:
+        return new CTaskSimpleCarSetPedOut{ m_pTargetVehicle, (eTargetDoor)m_nTargetDoor, m_bSensibleLeaveCar };
+    case TASK_SIMPLE_CAR_GET_OUT:
+        return new CTaskSimpleCarGetOut{ m_pTargetVehicle, (uint32)m_nTargetDoor, m_pTaskUtilityLineUpPedWithCar };
+    case TASK_SIMPLE_CAR_JUMP_OUT:
+        return new CTaskSimpleCarJumpOut{ m_pTargetVehicle, (uint32)m_nTargetDoor, m_pTaskUtilityLineUpPedWithCar };
+    case TASK_SIMPLE_CAR_FORCE_PED_OUT: {
+        // No class for this one yet, so build it with the original constructor
+        const auto task = (CTask*)CTask::operator new(0x10);
+        plugin::CallMethod<0x647710, CTask*, CVehicle*, int32>(task, m_pTargetVehicle, m_nTargetDoor);
+        return task;
+    }
+    case TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT:
+        return new CTaskComplexCarSlowBeDraggedOut{ m_pTargetVehicle, (eTargetDoor)m_nTargetDoor, true };
+    default:
+        return nullptr;
+    }
 }
