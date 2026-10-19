@@ -313,6 +313,15 @@ void CAECollisionAudioEntity::PlayBulletHitCollisionSound(eSurfaceType surface, 
             .FrequencyVariance = 0.02f
         });
     };
+    // FIX(#1548):
+    // For BMX the surface is `AE_SURFACE_TYPE_BMX`, which is not an actual surface,
+    // so looking it up in `g_surfaceInfos` reads past the end of the array.
+    // None of the surface flags apply to it, so use the default sound.
+    if (notsa::bugfixes::CAECollisionAudioEntity_PlayBulletHitCollisionSound_InvalidSurfaceType && surface >= TOTAL_NUM_SURFACE_TYPES) {
+        PlayRandomSound(1, 3);
+        return;
+    }
+
     if (surface == SURFACE_PED) {
         PlayRandomSound(7, 9);
     } else if (g_surfaceInfos.IsAudioWater(surface)) {
