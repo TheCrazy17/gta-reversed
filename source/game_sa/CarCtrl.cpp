@@ -117,7 +117,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysics_OnlyMission, 0x436A90, { .Reversed = false });
-    RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0);
     RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToCrashAndBurn, 0x4238E0);
     RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750, { .Reversed = false });
@@ -1239,7 +1239,26 @@ void CCarCtrl::SteerAICarWithPhysics_OnlyMission(CVehicle* vehicle, float* arg2,
 
 // 0x42AAD0
 void CCarCtrl::SteerAIHeliAsPoliceHeli(CAutomobile* automobile) {
-    plugin::Call<0x42AAD0, CAutomobile*>(automobile);
+    auto* const heli      = static_cast<CHeli*>(automobile);
+    const auto& targetPos = heli->m_autoPilot.m_TargetEntity->GetPosition();
+    const auto  toTarget  = CVector2D{ targetPos } - CVector2D{ heli->GetPosition() };
+
+    const auto heading = CGeneral::GetATanOfXY(toTarget.x, toTarget.y);
+    const auto dist    = toTarget.Magnitude();
+
+    // Stay above the target, and further away it should be higher up
+    heli->m_fMaxAltitude = std::max(targetPos.z, 6.0f);
+    if (dist > 50.0f) {
+        heli->m_fMaxAltitude = std::max(heli->m_fMaxAltitude, 25.0f);
+    }
+    heli->m_autoPilot.m_vecDestinationCoors = targetPos;
+
+    FlyAIHeliInCertainDirection(heli, heading, dist, true);
+
+    // Leave if the heli is badly damaged
+    if (heli->m_fHealth < 230.0f) {
+        heli->m_autoPilot.m_nCarMission = MISSION_HELI_FLY_AWAY_FROM_PLAYER;
+    }
 }
 
 // 0x42ACB0
