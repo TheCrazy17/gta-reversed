@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 96%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 19, 2026 at 13:12:37 UTC
-(Triggered by commit [c60bd472](https://github.com/TheCrazy17/gta-reversed/commit/c60bd472b9e1515c21d300ed4936f1a3a34a0e69))
+Last update was at Oct 19, 2026 at 14:17:14 UTC
+(Triggered by commit [a3eef888](https://github.com/TheCrazy17/gta-reversed/commit/a3eef888f5b10a97260cbaaad24c4418c216d10a))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (7999 out of 8339 functions done in 720 categories)
+## Stats (8021 out of 8339 functions done in 720 categories)
 
-#### Completely reversed categories (636/720) [88%]
+#### Completely reversed categories (638/720) [89%]
 
 <details>
 <summary>See list of categories</summary>
@@ -136,6 +136,7 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - CSpecialFX (7)<br />
 - CFallingGlassPane (2)<br />
 - CGlass (19)<br />
+- CPedGroups (11)<br />
 - CClock (9)<br />
 - CCoronas (11)<br />
 - CRegisteredCorona (1)<br />
@@ -638,6 +639,7 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - CAESoundManager (14)<br />
 - CAEUserRadioTrackManager (15)<br />
 - CAutomobile (100)<br />
+- CBike (40)<br />
 - CBmx (10)<br />
 - CBoat (23)<br />
 - CHeli (11)<br />
@@ -654,7 +656,7 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 
 </details>
 
-#### Partially reversed categories (79/720) [11%]
+#### Partially reversed categories (77/720) [11%]
 
 <details>
 <summary>See list of categories</summary>
@@ -670,7 +672,7 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - CPedDamageResponseCalculator (5/7) [71%]<br />
 - CWaterLevel (29/37) [78%]<br />
 - CWeapon (36/41) [88%]<br />
-- CStats (32/51) [63%]<br />
+- CStats (42/51) [82%]<br />
 - CCarCtrl (22/110) [20%]<br />
 - CGarages (26/28) [93%]<br />
 - CPostEffects (35/38) [92%]<br />
@@ -679,7 +681,6 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - CCamera (113/115) [98%]<br />
 - CGangWars (33/35) [94%]<br />
 - CRoadBlocks (7/8) [88%]<br />
-- CPedGroups (3/11) [27%]<br />
 - CClouds (20/21) [95%]<br />
 - CCustomCarPlateMgr (14/15) [93%]<br />
 - CEntryExit (10/11) [91%]<br />
@@ -697,7 +698,7 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - FxInfoManager_c (4/5) [80%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
 - CPed (137/145) [94%]<br />
-- CPlayerPed (52/65) [80%]<br />
+- CPlayerPed (53/65) [82%]<br />
 - CPhysical (54/56) [96%]<br />
 - CGroupEventHandler (30/32) [94%]<br />
 - CEventHandler (69/72) [96%]<br />
@@ -729,10 +730,9 @@ Last update was at Oct 19, 2026 at 13:12:37 UTC
 - CAEStaticChannel (7/8) [88%]<br />
 - CAEStreamingChannel (22/24) [92%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
-- CBike (38/40) [95%]<br />
 - CPlane (15/23) [65%]<br />
 - CTrain (34/41) [83%]<br />
-- CVehicle (146/149) [98%]<br />
+- CVehicle (147/149) [99%]<br />
 - Interior_c (48/52) [92%]<br />
 - InteriorGroup_c (22/24) [92%]<br />
 - CRunningScript (37/39) [95%]<br />

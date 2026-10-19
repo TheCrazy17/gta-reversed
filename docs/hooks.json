@@ -8222,7 +8222,7 @@
   {
     "Category": "CStats",
     "Name": "GetFatAndMuscleModifier",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
@@ -8242,47 +8242,47 @@
   {
     "Category": "CStats",
     "Name": "UpdateSexAppealStat",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateFatAndMuscleStats",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsWhenCycling",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsWhenSwimming",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsWhenDriving",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsWhenFlying",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsWhenWeaponHit",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsOnRespawn",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
     "Name": "UpdateStatsAddToHealth",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -12552,42 +12552,42 @@
   {
     "Category": "CPedGroups",
     "Name": "RemoveAllFollowersFromGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "Init",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "CleanUpForShutDown",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "IsGroupLeader",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "GetPedsGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "GetGroupId",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "IsInPlayersGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroups",
     "Name": "AreInSameGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClock",
@@ -19367,7 +19367,7 @@
   {
     "Category": "CPlayerPed",
     "Name": "ControlButtonSprint",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
@@ -38917,7 +38917,7 @@
   {
     "Category": "CBike",
     "Name": "PreRender",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CBike",
@@ -38927,7 +38927,7 @@
   {
     "Category": "CBike",
     "Name": "ProcessControl",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CBike",
@@ -40267,7 +40267,7 @@
   {
     "Category": "CVehicle",
     "Name": "ProcessBikeWheel",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CVehicle",
