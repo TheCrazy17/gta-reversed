@@ -22,7 +22,7 @@ void CCustomCarPlateMgr::InjectHooks() {
     RH_ScopedInstall(AtomicSetCarplateTextureCB, 0x6FE0D0);
     RH_ScopedInstall(SetupClump, 0x6FE0F0);
     RH_ScopedInstall(RenderLicenseplateTextToRaster, 0x6FDD70);
-    RH_ScopedInstall(LoadPlatecharsetDat, 0x6FDC00, { .Reversed = false });
+    RH_ScopedInstall(LoadPlatecharsetDat, 0x6FDC00);
 }
 
 // 0x6FD500
@@ -95,7 +95,37 @@ int8 CCustomCarPlateMgr::GetMapRegionPlateDesign() {
 // 0x6FDC00
 // unused
 int8 CCustomCarPlateMgr::LoadPlatecharsetDat(const char* filename, uint8* data) {
-    return plugin::CallAndReturn<int8, 0x6FDC00, const char*, uint8*>(filename, data);
+    CFileMgr::SetDir("DATA");
+    auto* file = CFileMgr::OpenFile(filename, "r");
+    CFileMgr::SetDir("");
+
+    auto* out = reinterpret_cast<uint32*>(data);
+    for (char* line = CFileLoader::LoadLine(file); line; line = CFileLoader::LoadLine(file)) {
+        if (std::strcmp(line, ";the end") == 0) {
+            break;
+        }
+        if (line[0] == ';') {
+            continue;
+        }
+
+        // Three components separated by spaces or tabs, each one goes up to 255
+        uint8  components[3]{};
+        size_t numComponents = 0;
+        for (const char* token = std::strtok(line, " \t"); token; token = std::strtok(nullptr, " \t")) {
+            if (numComponents < 3) {
+                components[numComponents] = static_cast<uint8>(std::min<uint16>(static_cast<uint16>(std::atoi(token)), 0xFF));
+            }
+            numComponents++;
+        }
+        if (numComponents < 3) {
+            return false;
+        }
+
+        *out++ = 0x80000000u | (components[2] << 16) | (components[1] << 8) | components[0];
+    }
+
+    CFileMgr::CloseFile(file);
+    return true;
 }
 
 auto ResolvePlateType(uint8 plateType) {
