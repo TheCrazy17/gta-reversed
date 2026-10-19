@@ -39,7 +39,7 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(DoSoftGroundResistance, 0x6B6D40);
     RH_ScopedInstall(PlayHornIfNecessary, 0x6B7130);
     RH_ScopedInstall(CalculateLeanMatrix, 0x6B7150);
-    RH_ScopedInstall(ProcessRiderAnims, 0x6B7280, { .Reversed = false });
+    RH_ScopedInstall(ProcessRiderAnims, 0x6B7280);
     RH_ScopedInstall(FixHandsToBars, 0x6B7F90);
     RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0);
     RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230);
@@ -541,7 +541,260 @@ void CBike::ProcessDrivingAnims(CPed* driver, bool blend) {
 
 // 0x6B7280
 void CBike::ProcessRiderAnims(CPed* rider, CVehicle* vehicle, CRideAnimData* rideData, tBikeHandlingData* handling, int16 a5) {
-    plugin::Call<0x6B7280, CPed*, CVehicle*, CRideAnimData*, tBikeHandlingData*, int16>(rider, vehicle, rideData, handling, a5);
+    const auto isPlayer = rider->IsPlayer();
+    auto* const clump = rider->m_pRwClump;
+
+    CBike*       bike{};
+    CAutomobile* quad{};
+    uint8        contactWheels{};
+    if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        bike          = vehicle->AsBike();
+        contactWheels = bike->m_nNoOfContactWheels;
+    } else if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+        quad          = vehicle->AsAutomobile();
+        contactWheels = quad->m_nNumContactWheels;
+    }
+
+    // Share of the idle pose that is left once the other blending anims took theirs
+    float animWeight = 1.0f;
+    // Target for the forward lean; -1 means leaning back
+    float leanFwdTarget = 0.0f;
+
+    const auto GetAnim = [&](AnimationId id) { return RpAnimBlendClumpGetAssociation(clump, (uint32)id); };
+
+    auto* leftAnim  = GetAnim(ANIM_ID_BIKE_LEFT);
+    auto* rightAnim = GetAnim(ANIM_ID_BIKE_RIGHT);
+    auto* stillAnim = GetAnim(ANIM_ID_BIKE_STILL);
+
+    CAnimBlendAssociation *fwdAnim{}, *backAnim{};
+    if (isPlayer) {
+        fwdAnim  = GetAnim(ANIM_ID_BIKE_FWD);
+        backAnim = GetAnim(ANIM_ID_BIKE_BACK);
+    }
+
+    auto* pushesAnim  = GetAnim(ANIM_ID_BIKE_PUSHES);
+    auto* driveByAnim = GetAnim(ANIM_ID_BIKE_DRIVEBYLHS);
+    if (!driveByAnim) {
+        driveByAnim = GetAnim(ANIM_ID_BIKE_DRIVEBYRHS);
+        if (!driveByAnim) {
+            driveByAnim = GetAnim(ANIM_ID_BIKE_DRIVEBYFT);
+        }
+    }
+
+    const auto fwdSpeed = DotProduct(vehicle->m_vecMoveSpeed, vehicle->GetForward());
+
+    if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX && (pushesAnim || driveByAnim)) {
+        static_cast<CBike*>(vehicle)->m_nFixRightHand = 0;
+    }
+
+    const auto KnockOffBoth = [&] {
+        const CVector impactVelocity{ 0.0f, 0.0f, 1.0f };
+        rider->GetEventGroup().Add(CEventKnockOffBike{
+            vehicle, vehicle->m_vecMoveSpeed, impactVelocity, 0.0f, 0.0f, KNOCK_OFF_TYPE_SKIDBACK_FALLR, 2, 0, nullptr, true, false
+        });
+        if (auto* const passenger = vehicle->m_apPassengers[0]; passenger && passenger != rider) {
+            passenger->GetEventGroup().Add(CEventKnockOffBike{
+                vehicle, vehicle->m_vecMoveSpeed, impactVelocity, 0.0f, 0.0f, KNOCK_OFF_TYPE_SKIDBACK_FALLR, 2, 0, nullptr, false, false
+            });
+        }
+    };
+
+    // Spinning too fast for the rider's skill throws everyone off
+    const auto skill        = rider->GetBikeRidingSkill();
+    const auto maxTurnSpeed = (skill + 1.0f) * 0.3f;
+    if (sq(maxTurnSpeed) < vehicle->m_vecTurnSpeed.SquaredMagnitude()) {
+        KnockOffBoth();
+    }
+
+    // True when the anim is missing or not on its way in
+    const auto NeedsBlendIn = [](const CAnimBlendAssociation* a) {
+        return !a || (a->m_BlendAmount < 1.0f && a->m_BlendDelta <= 0.0f);
+    };
+    const auto FadeOut = [](CAnimBlendAssociation* a) {
+        if (a && a->m_BlendDelta >= 0.0f) {
+            a->m_BlendDelta = -4.0f;
+        }
+    };
+
+    if (driveByAnim || std::abs(fwdSpeed) >= 0.02f) {
+        if (fwdSpeed >= 0.0f) {
+            FadeOut(stillAnim);
+            FadeOut(pushesAnim);
+        } else {
+            const auto maxReverseSpeed = vehicle->m_pHandlingData->m_transmissionData.m_MaxReverseVelocity;
+
+            auto reverseLimit = (skill + 1.0f) * 3.5f;
+            if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_QUAD) {
+                reverseLimit *= 2.0f;
+            }
+
+            const auto tooFastInReverse = reverseLimit * maxReverseSpeed > fwdSpeed
+                && (contactWheels > 0 || (vehicle->GetUp().z < -0.5f && CTimer::GetTimeInMS() - vehicle->m_nLastCollisionTime < 100));
+            if (tooFastInReverse) {
+                KnockOffBoth();
+            } else if (vehicle->m_GasPedal >= 0.0f || fwdSpeed <= maxReverseSpeed * 1.5f) {
+                if (isPlayer && fwdSpeed < maxReverseSpeed * 1.5f) {
+                    leanFwdTarget = -1.0f;
+                }
+                FadeOut(stillAnim);
+                FadeOut(pushesAnim);
+            } else if (NeedsBlendIn(pushesAnim)) {
+                pushesAnim = CAnimManager::BlendAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_PUSHES, 4.0f);
+            }
+        }
+    } else if (NeedsBlendIn(stillAnim)) {
+        stillAnim = CAnimManager::BlendAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_STILL, 2.0f);
+    }
+
+    // What is left of the idle pose after the blending anims of this frame
+    for (const auto* const anim : { stillAnim, driveByAnim, pushesAnim }) {
+        if (anim) {
+            const auto blend = CTimer::GetTimeStepNonClipped() * 0.02f * anim->m_BlendDelta + anim->m_BlendAmount;
+            animWeight -= std::min(blend, animWeight);
+        }
+    }
+
+    // Sideways lean
+    float lean = rideData->LeanAngle / handling->m_fFullAnimLean;
+    lean = leanFwdTarget == -1.0f ? 0.0f : std::clamp(lean, -1.0f, 1.0f);
+
+    const auto sideSmoothing = std::pow(0.86f, CTimer::GetTimeStep());
+    rideData->AnimLeanLeft = sideSmoothing * rideData->AnimLeanLeft + (1.0f - sideSmoothing) * lean;
+
+    // Forward lean
+    if (!isPlayer || vehicle->m_apPassengers[0]) {
+        leanFwdTarget = 0.0f;
+        if (bike) {
+            bike->bikeFlags.bWheelieForCamera = false;
+        }
+    } else if (leanFwdTarget > -1.0f) {
+        leanFwdTarget = rideData->LeanFwd;
+
+        // Distance of the nose to the wheelie angle, when the front is lifted
+        float wheelieGap{};
+        auto  isLifted = false;
+        if (bike) {
+            bike->bikeFlags.bWheelieForCamera = false;
+
+            const auto& wheelCounts = bike->m_WheelCounts;
+            const auto  noseZ       = bike->GetForward().z;
+            if (wheelCounts[0] <= 0.0f && wheelCounts[1] <= 0.0f && noseZ > 0.0f && (wheelCounts[2] > 0.0f || wheelCounts[3] > 0.0f)) {
+                wheelieGap = handling->m_fWheelieAng - noseZ;
+                if (wheelieGap < handling->m_fWheelieAng * 0.5f) {
+                    bike->bikeFlags.bWheelieForCamera = true;
+                }
+                isLifted = true;
+            } else if (wheelCounts[2] <= 0.0f && wheelCounts[3] <= 0.0f && noseZ < 0.0f && (wheelCounts[0] > 0.0f || wheelCounts[1] > 0.0f)) {
+                if (handling->m_fStoppieAng * 0.6f < handling->m_fStoppieAng - noseZ) {
+                    bike->bikeFlags.bWheelieForCamera = true;
+                }
+            }
+        } else if (quad) {
+            const auto& wheelCounts = quad->m_WheelCounts;
+            const auto  noseZ       = quad->GetForward().z;
+            if (wheelCounts[0] <= 0.0f && wheelCounts[1] <= 0.0f && noseZ > 0.0f && (wheelCounts[2] > 0.0f || wheelCounts[3] > 0.0f)) {
+                wheelieGap = handling->m_fWheelieAng - noseZ;
+                isLifted   = true;
+            }
+        }
+
+        if (isLifted && wheelieGap < 0.15f) {
+            leanFwdTarget = std::max(leanFwdTarget, 0.25f);
+        } else if (vehicle->m_BrakePedal > 0.5f && fwdSpeed > 0.01f) {
+            leanFwdTarget = std::max(leanFwdTarget, 0.1f);
+        } else if (vehicle->m_GasPedal > 0.5f && leanFwdTarget <= 0.0f
+                   && fwdSpeed < vehicle->m_pHandlingData->m_transmissionData.m_MaxFlatVelocity * 0.3f
+                   && leanFwdTarget >= -0.3f) {
+            leanFwdTarget = -0.3f;
+        }
+
+        // Leaning far to the side leaves less room to lean forward
+        if (std::abs(lean) > 0.3f) {
+            const auto room = std::max(0.0f, 1.0f - (std::abs(lean) - 0.3f) / (0.56f - 0.3f));
+            leanFwdTarget *= room;
+        }
+    }
+
+    if (isPlayer) {
+        const auto fwdSmoothing = std::pow(0.89f, CTimer::GetTimeStep());
+        rideData->AnimLeanFwd = fwdSmoothing * rideData->AnimLeanFwd + (1.0f - fwdSmoothing) * leanFwdTarget;
+    } else {
+        rideData->AnimLeanFwd = 0.0f;
+    }
+
+    // How the lean is split between the sideways and the forward anims
+    float sideShare = 1.0f, fwdShare = 0.0f;
+    if (isPlayer && std::abs(rideData->AnimLeanLeft) <= 0.56f) {
+        if (std::abs(rideData->AnimLeanFwd) > 0.56f) {
+            sideShare = 0.0f;
+            fwdShare  = 1.0f;
+        } else {
+            const auto x   = rideData->AnimLeanLeft;
+            const auto y   = rideData->AnimLeanFwd;
+            const auto len = std::sqrt(y * y + x * x);
+            if (len <= 0.01f) {
+                sideShare = std::abs(x);
+                fwdShare  = std::abs(y);
+            } else {
+                const auto invLen = 1.0f / len;
+                sideShare = std::abs(invLen * x);
+                fwdShare  = std::abs(y * invLen);
+            }
+        }
+    }
+    sideShare *= animWeight;
+    fwdShare  *= animWeight;
+
+    // These anims are never played; their time is set by hand from the amount of lean
+    const auto PoseAnim = [](CAnimBlendAssociation* anim, float share, float time) {
+        anim->m_BlendAmount = share;
+        anim->SetCurrentTime(time);
+        anim->m_Flags &= ~ANIMATION_IS_PLAYING;
+    };
+
+    if (isPlayer) {
+        if (!fwdAnim) {
+            fwdAnim = CAnimManager::AddAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_FWD);
+        }
+        if (!backAnim) {
+            backAnim = CAnimManager::AddAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_BACK);
+        }
+        if (rideData->AnimLeanFwd < 0.0f) {
+            PoseAnim(backAnim, fwdShare, -(backAnim->m_BlendHier->m_fTotalTime * rideData->AnimLeanFwd));
+            fwdAnim->m_BlendAmount = 0.0f;
+        } else {
+            PoseAnim(fwdAnim, fwdShare, fwdAnim->m_BlendHier->m_fTotalTime * rideData->AnimLeanFwd);
+            backAnim->m_BlendAmount = 0.0f;
+        }
+    }
+
+    if (!leftAnim) {
+        leftAnim = CAnimManager::AddAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_LEFT);
+    }
+    if (!rightAnim) {
+        rightAnim = CAnimManager::AddAnimation(clump, rideData->AnimGroup, ANIM_ID_BIKE_RIGHT);
+    }
+    if (rideData->AnimLeanLeft < 0.0f) {
+        PoseAnim(leftAnim, sideShare, -(leftAnim->m_BlendHier->m_fTotalTime * rideData->AnimLeanLeft));
+        rightAnim->m_BlendAmount = 0.0f;
+    } else {
+        PoseAnim(rightAnim, sideShare, rightAnim->m_BlendHier->m_fTotalTime * rideData->AnimLeanLeft);
+        leftAnim->m_BlendAmount = 0.0f;
+    }
+
+    // At speed the wind shakes the head around
+    if (fwdSpeed > 0.3f) {
+        auto* const headOrientation = &rider->m_apBones[PED_NODE_HEAD]->KeyFrame->q;
+        const auto  maxAngle        = fwdSpeed * 6.0f;
+
+        RwV3d axisX{ 1.0f, 0.0f, 0.0f };
+        RtQuatRotate(headOrientation, &axisX, CGeneral::GetRandomNumberInRange(-maxAngle, maxAngle), rwCOMBINEPOSTCONCAT);
+
+        RwV3d axisY{ 0.0f, 1.0f, 0.0f };
+        RtQuatRotate(headOrientation, &axisY, CGeneral::GetRandomNumberInRange(-maxAngle, maxAngle), rwCOMBINEPOSTCONCAT);
+
+        rider->bUpdateMatricesRequired = true;
+    }
 }
 
 // 0x6BEB20
