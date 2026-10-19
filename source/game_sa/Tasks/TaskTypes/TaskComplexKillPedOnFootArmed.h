@@ -71,6 +71,11 @@ public:
     CTask*    ControlSubTask(CPed* ped) override;
 
  
+private:
+    CTask* CreateSeekSubTask(CPed* ped);
+    void   SayWhenChasingPlayer(CPed* ped);
+    CTask* StartAttackTimers(CTask* task, CPed* ped, bool sayWhenGrouped);
+
 private: // Wrappers for hooks
     // 0x621190
     CTaskComplexKillPedOnFootArmed* Constructor(CPed* target, uint32 duckingConditions, uint32 duckTime, uint32 duckChancePerc, int8 competence) {

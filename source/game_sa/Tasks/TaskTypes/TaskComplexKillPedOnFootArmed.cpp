@@ -5,6 +5,11 @@
 #include "TaskSimpleDuck.h"
 #include "TaskSimpleGunControl.h"
 #include "TaskSimpleUseGun.h"
+#include "TaskSimpleThrowControl.h"
+#include "TaskSimpleStandStill.h"
+#include "TaskSimplePause.h"
+#include "TaskComplexGoToPointAndStandStill.h"
+#include "SeekEntity/TaskComplexSeekEntityStandard.h"
 #include <extensions/utility.hpp>
 
 void CTaskComplexKillPedOnFootArmed::InjectHooks() {
@@ -16,7 +21,7 @@ void CTaskComplexKillPedOnFootArmed::InjectHooks() {
 
     RH_ScopedInstall(LineOfSightClearForAttack, 0x621500);
     RH_ScopedInstall(IsPedInLeaderFiringLine, 0x621300);
-    RH_ScopedInstall(CreateSubTask, 0x626FC0, {.Reversed = false});
+    RH_ScopedInstall(CreateSubTask, 0x626FC0);
 
     RH_ScopedVMTInstall(Clone, 0x6234C0);
     RH_ScopedVMTInstall(GetTaskType, 0x621240);
@@ -185,7 +190,103 @@ bool CTaskComplexKillPedOnFootArmed::IsPedInLeaderFiringLine(CPed* ped) {
 
 // 0x626FC0
 CTask* CTaskComplexKillPedOnFootArmed::CreateSubTask(eTaskType taskType, CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x626FC0, CTaskComplexKillPedOnFootArmed*, int32, CPed*>(this, taskType, ped);
+    switch (taskType) {
+    case TASK_SIMPLE_PAUSE:
+        // The original runs a throwaway stand still task on the ped first
+        CTaskSimpleStandStill{ 0, false, false, 8.0f }.ProcessPed(ped);
+        return new CTaskSimplePause{ 100 };
+    case TASK_SIMPLE_STAND_STILL:
+        return new CTaskSimpleStandStill{ 20000, false, false, 8.0f };
+    case TASK_SIMPLE_DUCK:
+        return new CTaskSimpleDuck{ DUCK_STANDALONE, (uint16)m_lengthOfDuck, -1 };
+    case TASK_COMPLEX_SEEK_ENTITY: {
+        const auto task = CreateSeekSubTask(ped);
+        SayWhenChasingPlayer(ped);
+        return task;
+    }
+    case TASK_SIMPLE_GUN_CTRL: {
+        if (ped->GetActiveWeapon().GetWeaponInfo(ped).flags.bThrow) {
+            return StartAttackTimers(new CTaskSimpleThrowControl{ m_target, nullptr }, ped, false);
+        }
+        const auto gunTask = new CTaskSimpleGunControl{
+            m_target,
+            {},
+            {},
+            LineOfSightClearForAttack(ped) ? eGunCommand::FIREBURST : eGunCommand::NONE,
+            5,
+            -1
+        };
+        gunTask->m_aimImmidiately = m_aimImmediate;
+        m_aimImmediate = false;
+        m_shootTimer = CTimer::GetTimeInMS() + CGeneral::GetRandomNumberInRange(4000, 8000);
+        return StartAttackTimers(gunTask, ped, true);
+    }
+    default:
+        return nullptr;
+    }
+}
+
+// Part of 0x626FC0. The seek task gets more aggressive the longer the target has been out of reach,
+// after 8 seconds the ped tries to flank the target instead.
+CTask* CTaskComplexKillPedOnFootArmed::CreateSeekSubTask(CPed* ped) {
+    const auto seek = [&](float radius) -> CTask* {
+        return new CTaskComplexSeekEntityStandard{ m_target, 50'000, 1000, radius, 2.0f, 2.0f, true, true };
+    };
+
+    if (m_needToMoveInCloserTime == 0) {
+        return seek(6.0f);
+    }
+
+    const auto waited = (float)(uint32)(CTimer::GetTimeInMS() - m_needToMoveInCloserTime);
+    if (waited < 3000.0f) {
+        return seek(6.0f);
+    }
+    if (waited <= 8000.0f) {
+        return seek(6.0f - (waited - 3000.0f) * 0.001f);
+    }
+
+    const auto& ourPos    = ped->GetPosition();
+    const auto& targetPos = m_target->GetPosition();
+
+    CVector dir{ targetPos.x - ourPos.x, targetPos.y - ourPos.y, 0.0f };
+    dir.Normalise();
+    const CVector side{ -dir.y * 1.5f, dir.x * 1.5f, 0.0f };
+
+    const CVector candidates[]{
+        { targetPos.x + side.x, targetPos.y + side.y, targetPos.z },
+        { targetPos.x - side.x, targetPos.y - side.y, targetPos.z },
+    };
+    for (const auto& candidate : candidates) {
+        if (CWorld::GetIsLineOfSightClear(targetPos, candidate, true, true, false, false, true, false, false)) {
+            return new CTaskComplexGoToPointAndStandStill{ PEDMOVE_RUN, candidate, 0.5f, 2.0f, false, false };
+        }
+    }
+    return seek(1.0f);
+}
+
+// Part of 0x626FC0. The ped shouts at the player while chasing.
+void CTaskComplexKillPedOnFootArmed::SayWhenChasingPlayer(CPed* ped) {
+    if (!m_target || !m_target->IsPlayer()) {
+        return;
+    }
+    if (ped->m_nPedType == PED_TYPE_COP) {
+        const auto ctx = FindPlayerWanted(-1)->m_NumCopsInPursuit > 1 ? CTX_GLOBAL_CHASE_FOOT : CTX_GLOBAL_SOLO;
+        if (ped->Say(ctx) >= 0) {
+            m_target->Say(CTX_GLOBAL_CHASED, 3500);
+        }
+    } else if (CPedGroups::GetPedsGroup(ped)) {
+        ped->Say(CTX_GLOBAL_CHASE_FOOT);
+    }
+}
+
+// Part of 0x626FC0. Common end of the gun and throw control tasks.
+CTask* CTaskComplexKillPedOnFootArmed::StartAttackTimers(CTask* task, CPed* ped, bool sayWhenGrouped) {
+    if (sayWhenGrouped && CPedGroups::GetPedsGroup(ped)) {
+        ped->Say(CTX_GLOBAL_SURROUNDED);
+    }
+    m_lastAttackTime = CTimer::GetTimeInMS();
+    m_losBlockedTime = 0;
+    return task;
 }
 
 // 0x6212B0
