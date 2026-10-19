@@ -128,7 +128,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIPlaneToFollowEntity, 0x4237F0);
     RH_ScopedInstall(SteerAIPlaneTowardsTargetCoors, 0x423790);
     RH_ScopedInstall(StopCarIfNodesAreInvalid, 0x422590);
-    RH_ScopedInstall(SwitchBetweenPhysicsAndGhost, 0x4222A0, { .Reversed = false });
+    RH_ScopedInstall(SwitchBetweenPhysicsAndGhost, 0x4222A0);
     RH_ScopedInstall(SwitchVehicleToRealPhysics, 0x423FC0);
     RH_ScopedInstall(TestCollisionBetween2MovingRects, 0x425B30, { .Reversed = false });
     RH_ScopedInstall(TestCollisionBetween2MovingRects_OnlyFrontBumper, 0x425F70, { .Reversed = false });
@@ -1286,7 +1286,39 @@ bool CCarCtrl::StopCarIfNodesAreInvalid(CVehicle* vehicle) {
 
 // 0x4222A0
 void CCarCtrl::SwitchBetweenPhysicsAndGhost(CVehicle* vehicle) {
-    plugin::Call<0x4222A0, CVehicle*>(vehicle);
+    // Only mission vehicles that wait for the collision to load around them
+    if (!vehicle->physicalFlags.bDontLoadCollision || vehicle->m_nCreatedBy != MISSION_VEHICLE) {
+        return;
+    }
+    if (const auto type = vehicle->m_nVehicleSubType; type == VEHICLE_TYPE_BOAT || type == VEHICLE_TYPE_PLANE || type == VEHICLE_TYPE_HELI) {
+        return;
+    }
+
+    switch (vehicle->GetStatus()) {
+    case STATUS_PHYSICS:
+        // Collision around the vehicle isn't there, so don't let it fall through the world
+        if (!CColStore::HasCollisionLoaded(vehicle->GetPosition(), AREA_CODE_NORMAL_WORLD)) {
+            vehicle->SetStatus(STATUS_GHOST);
+            if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE) {
+                for (auto wheel = 0; wheel <= 3; wheel++) {
+                    vehicle->AsAutomobile()->GetDamageManager().SetWheelStatus((eCarWheel)wheel, WHEEL_STATUS_OK);
+                }
+            }
+        }
+        break;
+    case STATUS_GHOST:
+        if (CColStore::HasCollisionLoaded(vehicle->GetPosition(), AREA_CODE_NORMAL_WORLD)) {
+            vehicle->SetStatus(STATUS_PHYSICS);
+            if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+                vehicle->AsBike()->PlaceOnRoadProperly();
+            } else if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+                vehicle->AsAutomobile()->PlaceOnRoadProperly();
+            }
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 // 0x423FC0
