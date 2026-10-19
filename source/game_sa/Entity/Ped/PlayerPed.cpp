@@ -76,7 +76,7 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedVMTInstall(ProcessControl, 0x60EA90);
     RH_ScopedVMTInstall(SetMoveAnim, 0x609490);
     RH_ScopedInstall(ProcessAnimGroups, 0x6098F0, { .Reversed = false });
-    RH_ScopedInstall(ControlButtonSprint, 0x60A610, { .Reversed = false });
+    RH_ScopedInstall(ControlButtonSprint, 0x60A610);
     RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650, { .Reversed = false });
     RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80, { .Reversed = false });
     RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0, { .Reversed = false });
@@ -689,7 +689,43 @@ constexpr struct tPlayerSprintSet { // From 0x8D2460
 
 // 0x60A610
 float CPlayerPed::ControlButtonSprint(eSprintType sprintType) {
-    return plugin::CallMethodAndReturn<float, 0x60A610, CPlayerPed *, eSprintType>(this, sprintType);
+    auto* const playerData = GetPlayerData();
+    if (!playerData) {
+        return 0.0f;
+    }
+
+    auto* const pad = GetPadFromPlayer();
+    const auto& set = PLAYER_SPRINT_SET[sprintType];
+
+    // The player can sprint while there is speed left or energy to keep going
+    const auto canSprint = !playerData->m_bPlayerSprintDisabled && (playerData->m_fMoveSpeed > 0.0f || playerData->m_fTimeCanRun > 0.0f);
+
+    auto& moveSpeed = playerData->m_fMoveSpeed;
+    if (pad->SprintJustDown() && canSprint) {
+        moveSpeed = std::min(set.field_0 + moveSpeed, set.field_10);
+    } else if (pad->GetSprint() && canSprint) {
+        moveSpeed = std::max(moveSpeed - CTimer::GetTimeStep() * set.field_4, 1.0f);
+    } else if (moveSpeed > 0.0f) {
+        moveSpeed = std::max(moveSpeed - CTimer::GetTimeStep() * set.field_8, 0.0f);
+    }
+
+    float sprintShare;
+    float energyUse;
+    if (moveSpeed > set.field_C) {
+        sprintShare = moveSpeed / set.field_C;
+        energyUse   = set.field_18;
+    } else if (moveSpeed > 0.0f && canSprint) {
+        sprintShare = 1.0f;
+        energyUse   = set.field_14;
+    } else {
+        return 0.0f;
+    }
+
+    if (!HandleSprintEnergy(true, energyUse)) {
+        playerData->m_fMoveSpeed = 0.0f;
+        return 0.0f;
+    }
+    return std::max(sprintShare - 1.0f, 0.0f) * set.field_1C + 1.0f;
 }
 
 // 0x60A820
