@@ -123,7 +123,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToKeepEntityInView, 0x42AEB0, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToLand, 0x42AD30, { .Reversed = false });
-    RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630);
     RH_ScopedInstall(SteerAIPlaneToCrashAndBurn, 0x423880);
     RH_ScopedInstall(SteerAIPlaneToFollowEntity, 0x4237F0);
     RH_ScopedInstall(SteerAIPlaneTowardsTargetCoors, 0x423790);
@@ -469,8 +469,8 @@ void CCarCtrl::FlyAIHeliInCertainDirection(CHeli* heli, float arg2, float arg3, 
 }
 
 // 0x423940
-void CCarCtrl::FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float Orientation, CVector posn) {
-    plugin::Call<0x423940, CHeli*, float, CVector>(heli, Orientation, posn);
+void CCarCtrl::FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float Orientation, CVector posn, bool arg4) {
+    plugin::Call<0x423940, CHeli*, float, CVector, bool>(heli, Orientation, posn, arg4);
 }
 
 // 0x423000
@@ -1123,7 +1123,17 @@ void CCarCtrl::SteerAIHeliToLand(CAutomobile* automobile) {
 
 // 0x42A630
 void CCarCtrl::SteerAIHeliTowardsTargetCoors(CAutomobile* automobile) {
-    plugin::Call<0x42A630, CAutomobile*>(automobile);
+    auto* const heli   = static_cast<CHeli*>(automobile);
+    const auto& target = heli->m_autoPilot.m_vecDestinationCoors;
+
+    // Keep the orientation if it's forced
+    if (heli->m_fForcedOrientation >= 0.0f) {
+        FlyAIHeliToTarget_FixedOrientation(heli, heli->m_fForcedOrientation, target, true);
+        return;
+    }
+
+    const auto toTarget = CVector2D{ target } - CVector2D{ heli->GetPosition() };
+    FlyAIHeliInCertainDirection(heli, CGeneral::GetATanOfXY(toTarget.x, toTarget.y), toTarget.Magnitude(), true);
 }
 
 // 0x423880
