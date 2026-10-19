@@ -31,7 +31,7 @@ void CPlane::InjectHooks() {
     RH_ScopedVMTInstall(ProcessControl, 0x6C9260);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6CADD0, { .Reversed = false });
     RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6CB7C0, { .Reversed = false });
-    RH_ScopedVMTInstall(VehicleDamage, 0x6CC4B0, { .Reversed = false });
+    RH_ScopedVMTInstall(VehicleDamage, 0x6CC4B0);
     RH_ScopedInstall(CountPlanesAndHelis, 0x6CCA50);
     RH_ScopedInstall(AreWeInNoPlaneZone, 0x6CCAA0);
     RH_ScopedInstall(AreWeInNoBigPlaneZone, 0x6CCBB0);
@@ -281,7 +281,157 @@ void CPlane::SetupDamageAfterLoad() {
 
 // 0x6CC4B0
 void CPlane::VehicleDamage(float damageIntensity, eVehicleCollisionComponent component, CEntity* damager, CVector* vecCollisionCoors, CVector* vecCollisionDirection, eWeaponType weapon) {
-    plugin::CallMethod<0x6CC4B0, CPlane*, float, eVehicleCollisionComponent, CEntity*, CVector*, CVector*, eWeaponType>(this, damageIntensity, component, damager, vecCollisionCoors, vecCollisionDirection, weapon);
+    if (m_nModelIndex == MODEL_VORTEX) {
+        CAutomobile::VehicleDamage(damageIntensity, component, damager, vecCollisionCoors, vecCollisionDirection, weapon);
+        return;
+    }
+
+    if (!vehicleFlags.bCanBeDamaged) {
+        return;
+    }
+
+    // An invulnerable plane only takes damage from the player or the player's vehicle.
+    // The original checks the last damaging entity here, not the damager argument.
+    if (GetStatus() != STATUS_PLAYER && physicalFlags.bInvulnerable) {
+        if (m_pDamageEntity != FindPlayerPed(-1) && m_pDamageEntity != FindPlayerVehicle(-1, false)) {
+            return;
+        }
+    }
+
+    float minDamage    = 0.333f;
+    float blowUpDamage = PLANE_DAMAGE_THRESHHOLD;
+    float forceMult    = 1.0f; // The original leaves this unset when the damage comes from an explosion, where it is multiplied by zero
+    bool  isExplosion  = false;
+
+    if (damageIntensity == 0.0f) {
+        // Collision damage, taken from what the physics code left behind
+        const auto massRatio = m_fMass / PLANE_DAMAGE_SCALE_MASS;
+        minDamage    *= std::max(1.0f, massRatio);
+        blowUpDamage *= massRatio;
+
+        damageIntensity   = m_fDamageIntensity;
+        vecCollisionCoors = &m_vecLastCollisionPosn;
+
+        if (!(damageIntensity > 0.0f) || physicalFlags.bCollisionProof) {
+            return;
+        }
+        if (m_pDamageEntity && m_pDamageEntity->GetIsTypeBuilding()) {
+            return;
+        }
+    } else {
+        bool unused{};
+        if (!CanVehicleBeDamaged(damager, weapon, unused)) {
+            return;
+        }
+
+        // Only explosive weapons hurt a plane through this path, and they do not carry an intensity
+        switch (weapon) {
+        case WEAPON_ROCKET:
+        case WEAPON_ROCKET_HS:
+        case WEAPON_FREEFALL_BOMB:
+        case WEAPON_EXPLOSION:
+            break;
+        default:
+            return;
+        }
+        isExplosion     = true;
+        damageIntensity = 0.0f;
+    }
+
+    const auto prevHealth = m_fHealth;
+    float      healthLoss = damageIntensity * m_pHandlingData->m_fCollisionDamageMultiplier;
+    auto* const playerVeh = FindPlayerVehicle(-1, false);
+    if (this == playerVeh) {
+        healthLoss *= vehicleFlags.bTakeLessDamage ? 1.0f / 6.0f : 0.5f;
+    } else if (vehicleFlags.bTakeLessDamage) {
+        healthLoss *= 1.0f / 12.0f;
+    } else if (m_pDamageEntity && m_pDamageEntity == playerVeh) {
+        healthLoss *= 2.0f / 3.0f;
+    } else {
+        healthLoss *= 0.25f;
+    }
+
+    m_fHealth -= healthLoss;
+    if (m_fHealth <= 0.0f && prevHealth > 0.0f) {
+        m_fHealth = 1.0f;
+    }
+
+    // The plane is not blown up on the hit that takes its health to the limit, it explodes on the next one.
+    // The original passes the plane itself as the damager here.
+    if (damageIntensity > blowUpDamage || (m_fHealth <= 1.0f && prevHealth > 0.0f)) {
+        BlowUpCar(this, false);
+        return;
+    }
+
+    if (damageIntensity <= minDamage && !isExplosion) {
+        return;
+    }
+    if (GetStatus() == STATUS_WRECKED) {
+        return;
+    }
+    if (!(m_fMass > 1000.0f)) {
+        return;
+    }
+
+    // Find the component that is closest to the point of impact
+    const auto impactLocal = GetMatrix().InverseTransformPoint(*vecCollisionCoors);
+    int32      hitNode     = -1;
+    float      hitDist     = 1000.0f;
+    for (int32 i = 12; i < 25; i++) {
+        auto* const node = m_aCarNodes[i];
+        if (!node) {
+            continue;
+        }
+        const auto sqDist = (CVector{ RwFrameGetMatrix(node)->pos } - impactLocal).SquaredMagnitude();
+        if (sqDist < hitDist * hitDist) {
+            hitDist = std::sqrt(sqDist);
+            hitNode = i;
+        }
+    }
+    if (hitNode <= -1) {
+        return;
+    }
+
+    // Hits on the middle part can end up on one of the parts next to it
+    if (hitNode == 0x10 && (CGeneral::GetRandomNumber() & 1)) {
+        if (m_aCarNodes[0x11] && (CGeneral::GetRandomNumber() & 1)) {
+            hitNode = 0x11;
+        } else if (m_aCarNodes[0x12]) {
+            hitNode = 0x12;
+        }
+    }
+
+    if (m_damageManager.ProgressAeroplaneDamage(hitNode)) {
+        const auto state = m_damageManager.GetAeroplaneCompStatus(hitNode);
+        if (state == DAMSTATE_OPENED && hitNode >= 0x10 && hitNode <= 0x16) {
+            if (auto* const panel = CheckIfExistsGetFree(static_cast<eCarNodes>(hitNode))) {
+                panel->SetPanel(hitNode, 0, -0.02f);
+            }
+        } else if (m_damageManager.GetAeroplaneCompStatus(hitNode) == DAMSTATE_DAMAGED) {
+            SetComponentVisibility(m_aCarNodes[hitNode], ATOMIC_DAMAGED);
+        }
+    }
+
+    dmgDrawCarCollidingParticles(*vecCollisionCoors, forceMult * damageIntensity, weapon);
+
+    // Set the part that was hit on fire
+    const CVector nodePos = RwFrameGetMatrix(m_aCarNodes[hitNode])->pos;
+    if (m_pSmokeParticle) {
+        m_pSmokeParticle->Kill();
+        m_pSmokeParticle = nullptr;
+    }
+    auto* const matrix = GetModellingMatrix();
+    if (!matrix) {
+        return;
+    }
+    m_pSmokeParticle = g_fxMan.CreateFxSystem("fire", nodePos, matrix, false);
+    if (!m_pSmokeParticle) {
+        return;
+    }
+    m_pSmokeParticle->Play();
+    m_pSmokeParticle->SetVelAdd(-m_vecMoveSpeed * 5.0f);
+    m_pSmokeParticle->SetLocalParticles(true);
+    m_nSmokeTimer = CGeneral::GetRandomNumberInRange(2000, 4000);
 }
 
 // 0x6CAB90
