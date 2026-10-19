@@ -17,7 +17,7 @@ void CScriptsForBrains::InjectHooks() {
     RH_ScopedInstall(StartAttractorScriptBrainWithThisName, 0x46B390);
     RH_ScopedInstall(StartOrRequestNewStreamedScriptBrain, 0x46CD80, {.Reversed = false});
     //RH_ScopedInstall(StartOrRequestNewStreamedScriptBrainWithThisName, 0x46CED0, {.Reversed = false});
-    RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0, {.Reversed = false});
+    RH_ScopedInstall(IsObjectWithinBrainActivationRange, 0x46B3D0);
     RH_ScopedInstall(CheckIfNewEntityNeedsScript, 0x46FF20, { .Reversed = false });
     RH_ScopedInstall(MarkAttractorScriptBrainWithThisNameAsNoLongerNeeded, 0x46AAE0, { .Reversed = false });
     RH_ScopedInstall(RequestAttractorScriptBrainWithThisName, 0x46AA80, { .Reversed = false });

@@ -17,7 +17,7 @@ void CTaskComplexGoToPointAndStandStillAndAchieveHeading::InjectHooks() {
     RH_ScopedInstall(CreateNextSubTask, 0x66DFD0);
     RH_ScopedInstall(CreateSubTask, 0x668D50);
     RH_ScopedInstall(CreateFirstSubTask, 0x66E030);
-    RH_ScopedInstall(ControlSubTask, 0x668E80, { .Reversed = false });
+    RH_ScopedInstall(ControlSubTask, 0x668E80);
 }
 
 // 0x668CD0

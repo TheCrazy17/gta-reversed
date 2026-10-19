@@ -8,7 +8,7 @@ void CPedGroups::InjectHooks() {
 
     RH_ScopedInstall(Process, 0x5FC800);
     RH_ScopedInstall(RemoveGroup, 0x5FB870);
-    RH_ScopedInstall(AddGroup, 0x5FB800, { .Reversed = false });
+    RH_ScopedInstall(AddGroup, 0x5FB800);
     RH_ScopedInstall(RemoveAllFollowersFromGroup, 0x5FB8A0, { .Reversed = false });
     RH_ScopedInstall(Init, 0x5FB8C0, { .Reversed = false });
     RH_ScopedInstall(CleanUpForShutDown, 0x5FB930, { .Reversed = false });

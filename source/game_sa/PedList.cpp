@@ -14,9 +14,9 @@ void CPedList::InjectHooks() {
     RH_ScopedInstall(BuildListFromGroup_NoLeader, 0x699DD0);
     RH_ScopedInstall(FillUpHoles, 0x699E20);
     RH_ScopedInstall(ExtractPedsWithGuns, 0x69A4C0);
-    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340, { .Reversed = false });
+    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340);
     RH_ScopedInstall(BuildListOfPedsOfPedType, 0x69A3B0);
-    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450, { .Reversed = false });
+    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450);
     RH_ScopedInstall(RemovePedsThatDontListenToPlayer, 0x69A420);
 }
 
@@ -83,7 +83,8 @@ void CPedList::BuildListOfPedsOfPedType(int32 pedType) {
 
 // 0x69A450
 void CPedList::RemovePedsAttackingPedType(int32 pedType) {
-    for (auto i = 0u; i < m_count; i++) {
+    // The loop bound is the count at entry, even though removals shrink `m_count`
+    for (auto i = 0u, numPeds = m_count; i < numPeds; i++) {
         auto* task = m_peds[i]->GetIntelligence()->FindTaskByType(TASK_COMPLEX_KILL_PED_ON_FOOT);
         auto* target = task ? static_cast<CTaskComplexKillPedOnFoot*>(task)->m_target : nullptr;
         if (!target || target->m_nPedType != pedType) {
