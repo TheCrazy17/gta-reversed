@@ -55,7 +55,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(Teleport, 0x6BCFC0);
     RH_ScopedVMTInstall(ProcessControl, 0x6B9250, { .Reversed = false });
     RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0);
-    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0, { .Reversed = false });
+    RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0);
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
     RH_ScopedVMTInstall(PlayCarHorn, 0x6B7080);
     RH_ScopedVMTInstall(SetupDamageAfterLoad, 0x6B7070);
@@ -1170,7 +1170,95 @@ void CBike::VehicleDamage(float damageIntensity, eVehicleCollisionComponent comp
 
 // 0x6B89B0
 void CBike::SetupSuspensionLines() {
-    plugin::CallMethod<0x6B89B0, CBike*>(this);
+    // Collision lines that were never set up (see CVehicleModelInfo) are marked by this value in `start.z`
+    constexpr float UNSET_LINE_Z = 99999.992f; // 0x47C34FFF
+
+    auto& mi = *GetVehicleModelInfo();
+    auto& cm = *mi.GetColModel();
+    auto& cd = *cm.m_pColData;
+    const auto& handling = *m_pHandlingData;
+
+    const bool linesAreSetUp     = cd.m_pLines[0].m_vecStart.z != UNSET_LINE_Z;
+    const bool linesWereNotSetUp = cd.m_pLines[1].m_vecStart.z == UNSET_LINE_Z; // NOTSA: The original really checks the 2nd line here
+
+    // Position of `frame` with its ancestors' matrices concatenated in, up to (not including) `stopFrame`
+    const auto GetFramePosn = [](RwFrame* frame, RwFrame* stopFrame) {
+        RwMatrix mat = *RwFrameGetMatrix(frame);
+        for (auto* parent = RwFrameGetParent(frame); parent;) {
+            RwMatrixTransform(&mat, RwFrameGetMatrix(parent), rwCOMBINEPOSTCONCAT);
+            parent = RwFrameGetParent(parent);
+            if (parent == stopFrame) {
+                break;
+            }
+        }
+        return mat.pos;
+    };
+    auto* const rootFrame = RpClumpGetFrame(GetRpClump());
+
+    for (auto i = 0; i < NUM_SUSP_LINES; i++) {
+        const auto isFront   = i < 2;
+        const auto wheelSize = isFront ? mi.m_fWheelSizeFront : mi.m_fWheelSizeRear;
+
+        CVector pos;
+        if (linesAreSetUp) {
+            pos = CVector{ cd.m_pLines[i].m_vecStart.x, cd.m_pLines[i].m_vecStart.y, m_aWheelOrigHeights[isFront ? 0 : 1] };
+        } else {
+            pos = GetFramePosn(m_aBikeNodes[isFront ? BIKE_WHEEL_FRONT : BIKE_WHEEL_REAR], rootFrame);
+
+            if (i == 0) {
+                m_aWheelOrigHeights[0] = pos.z;
+            } else if (i == 2) {
+                m_aWheelOrigHeights[1] = pos.z;
+                if (auto* const forkRear = m_aBikeNodes[BIKE_FORKS_REAR]) {
+                    const auto forkPos = GetFramePosn(forkRear, rootFrame);
+                    m_fSwingArmLength  = std::hypot(pos.y - forkPos.y, pos.z - forkPos.z);
+                } else {
+                    m_fSwingArmLength = 0.0f;
+                }
+            }
+
+            // Move the line to the front/rear of the wheel
+            pos.y += (i % 2 == 0 ? 0.25f : -0.25f) * wheelSize;
+        }
+        pos.z += handling.m_fSuspensionUpperLimit;
+
+        auto& line      = cd.m_pLines[i];
+        line.m_vecStart = pos;
+        line.m_vecEnd   = CVector{ pos.x, pos.y, ((handling.m_fSuspensionLowerLimit - handling.m_fSuspensionUpperLimit) - wheelSize * 0.5f) + pos.z };
+
+        m_fSuspensionLength[i] = handling.m_fSuspensionUpperLimit - handling.m_fSuspensionLowerLimit;
+        m_fLineLength[i]       = line.m_vecStart.z - line.m_vecEnd.z;
+    }
+
+    if (!linesAreSetUp) {
+        // NOTE: The original walks all the way up here, including the root frame
+        const auto forkPos = GetFramePosn(m_aBikeNodes[BIKE_FORKS_FRONT], nullptr);
+        m_fForkYOffset     = forkPos.y;
+        m_fForkZOffset     = forkPos.z;
+    }
+
+    m_fHeightAboveRoad = (mi.m_fWheelSizeFront * 0.5f - cd.m_pLines[0].m_vecStart.z)
+        + (1.0f - 1.0f / (handling.m_fSuspensionForceLevel * 4.0f)) * m_fSuspensionLength[0];
+
+    m_aWheelSuspensionHeights[0] = mi.m_fWheelSizeFront * 0.5f - m_fHeightAboveRoad;
+    m_aWheelSuspensionHeights[1] = mi.m_fWheelSizeRear * 0.5f - m_fHeightAboveRoad;
+
+    if (cd.m_pLines[0].m_vecEnd.z < cm.m_boundBox.m_vecMin.z) {
+        cm.m_boundBox.m_vecMin.z = cd.m_pLines[0].m_vecEnd.z;
+    }
+    cm.m_boundSphere.m_fRadius = std::max({ cm.m_boundSphere.m_fRadius, cm.m_boundBox.m_vecMin.Magnitude(), cm.m_boundBox.m_vecMax.Magnitude() });
+
+    if (handling.m_bForceGroundClearance && linesWereNotSetUp) {
+        const auto sphereBottomMinZ = 0.25f - m_fHeightAboveRoad;
+        for (auto&& sph : cd.GetSpheres()) {
+            if (sph.m_vecCenter.z - sph.m_fRadius < sphereBottomMinZ) {
+                if (sph.m_fRadius > 0.4f) {
+                    sph.m_fRadius = std::max(0.4f, sph.m_vecCenter.z - sphereBottomMinZ);
+                }
+                sph.m_vecCenter.z = sphereBottomMinZ + sph.m_fRadius;
+            }
+        }
+    }
 }
 
 // 0x6B8970
