@@ -1793,8 +1793,6 @@ void CCamera::Process() {
         m_bJust_Switched = true;
     }
 
-    ProcessShake();
-
     CVector camSource{};
     CVector camFront{};
     CVector camUp{};
@@ -1867,7 +1865,8 @@ void CCamera::Process() {
             m_vecUpWhenInterPol = camUp;
             m_fFOVWhenInterPol = fov;
         }
-        StoreValuesDuringInterPol(&camSource, &target, &camUp, &fov);
+        // While the source is still stopping, the original hands over the stored target and not the one computed above
+        StoreValuesDuringInterPol(&camSource, stopping ? &m_vecTargetWhenInterPol : &target, &camUp, &fov);
         camFront = target - camSource;
         camFront.Normalise();
         if (m_bLookingAtPlayer) {

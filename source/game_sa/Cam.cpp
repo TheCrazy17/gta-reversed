@@ -2101,20 +2101,20 @@ void CCam::Process_Cam_TwoPlayer() {
     }
 
     if (focus == eFocusedPlayer::PLAYER1 || focus == eFocusedPlayer::PLAYER2) {
-        const auto player        = (int32)focus;
-        CPed*      playerPed     = FindPlayerPed(player);
-        const auto player1PedRef = FindPlayerPed(PED_TYPE_PLAYER1);
+        auto* const playerPed     = FindPlayerPed((int32)focus);
+        auto* const player1PedRef = FindPlayerPed(PED_TYPE_PLAYER1);
         if (playerPed->bInVehicle && playerPed->m_pVehicle) {
             m_pCamTargetEntity = playerPed->m_pVehicle;
             Process_FollowCar_SA(playerPed->m_pVehicle->GetPosition(), 0.0f, 0.0f, 0.0f, false);
+            m_pCamTargetEntity = player1PedRef;
+        } else if (focus == eFocusedPlayer::PLAYER2) {
+            m_pCamTargetEntity = playerPed;
+            Process_FollowPed_SA(playerPed->GetPosition(), 0.0f, 0.0f, 0.0f, false);
+            m_pCamTargetEntity = player1PedRef;
         } else {
-            if (focus == eFocusedPlayer::PLAYER2) {
-                m_pCamTargetEntity = playerPed;
-            }
             Process_FollowPed_SA(playerPed->GetPosition(), 0.0f, 0.0f, 0.0f, false);
         }
-        m_pCamTargetEntity = player1PedRef;
-        m_bResetStatics   = false;
+        m_bResetStatics = false;
         return;
     }
     if (focus != eFocusedPlayer::NONE) {
@@ -2144,6 +2144,7 @@ void CCam::Process_Cam_TwoPlayer() {
         outSource.z += dist * 0.1f;
     };
     const auto IsClearForBothPlayers = [](const CVector& source) {
+        gCurCamColVars = 5;
         const CVector player1Pos = FindPlayerPed(PED_TYPE_PLAYER1)->GetPosition();
         const CVector player2Pos = FindPlayerPed(PED_TYPE_PLAYER2)->GetPosition();
         CColPoint colPoint;
@@ -2232,7 +2233,7 @@ void CCam::Process_Cam_TwoPlayer() {
     auto angularVelocity = wrapAngle(rate + smoothedAngle, m_fHorizontalAngle);
     angularVelocity = (angularVelocity - m_fHorizontalAngle) / std::max(CTimer::GetTimeStep(), 1.0f);
 
-    const auto rnd = static_cast<float>(CGeneral::GetRandomNumber()) / static_cast<float>(RAND_MAX);
+    const auto damping = std::pow(StaticRef<float>(0x8CC5E0), CTimer::GetTimeStep());
 
     if (tryIndex == 0 && gLastTime2PlayerCameraCollided + 1000 <= CTimer::GetTimeInMS()) {
         const auto aim0 = (float) CPad::GetPad(0)->AimWeaponLeftRight(player1);
@@ -2258,7 +2259,7 @@ void CCam::Process_Cam_TwoPlayer() {
         angularVelocity += rate;
     }
 
-    m_fBetaSpeed = rnd * m_fBetaSpeed + (1.0f - rnd) * std::clamp(angularVelocity, -0.1f, 0.1f); // 0x8CC5E4
+    m_fBetaSpeed = damping * m_fBetaSpeed + (1.0f - damping) * std::clamp(angularVelocity, -0.1f, 0.1f); // 0x8CC5E4
     const auto newAngle = m_fBetaSpeed * CTimer::GetTimeStep() + m_fHorizontalAngle;
     m_fHorizontalAngle  = newAngle;
     GetCamPos(newAngle, m_vecSource, m_vecFront);
@@ -2270,12 +2271,12 @@ void CCam::Process_Cam_TwoPlayer() {
         if (CWorld::ProcessLineOfSight(m_vecTargetCoorsForFudgeInter, m_vecSource, colPoint, entity, true, false, false, false, false, true, true, false)) {
             m_vecSource = colPoint.m_vecPoint;
         }
-    }
 
-    if (CTimer::GetTimeInMS() > (uint32) CGameLogic::nPrintFocusHelpTimer && CGameLogic::nPrintFocusHelpCounter < 6) {
-        CHud::SetHelpMessage(TheText.Get("WRN2_2P"), false, false, false);
-        CGameLogic::nPrintFocusHelpTimer = CTimer::GetTimeInMS() + 60000;
-        ++CGameLogic::nPrintFocusHelpCounter;
+        if (CTimer::GetTimeInMS() > (uint32) CGameLogic::nPrintFocusHelpTimer && CGameLogic::nPrintFocusHelpCounter < 6) {
+            CHud::SetHelpMessage(TheText.Get("WRN2_2P"), false, false, false);
+            CGameLogic::nPrintFocusHelpTimer = CTimer::GetTimeInMS() + 60000;
+            ++CGameLogic::nPrintFocusHelpCounter;
+        }
     }
 
     m_vecUp.Set(0.0f, 0.0f, 1.0f);
@@ -2518,31 +2519,38 @@ void CCam::Process_Cam_TwoPlayer_Separate_Cars() {
 // 0x513BE0
 void CCam::Process_Cam_TwoPlayer_Separate_Cars_TopDown() {
     m_fFOV = 80.0f;
-    const auto p1 = FindPlayerEntity(PED_TYPE_PLAYER1), p2 = FindPlayerEntity(PED_TYPE_PLAYER2);
 
-    const auto p1p2Centroid = (p1->GetPosition() + p2->GetPosition()) / 2.0f;
-    const auto p1p2Distance = DistanceBetweenPoints(p1->GetPosition(), p2->GetPosition());
+    // Unlike FindPlayerEntity, the original goes by the ped's vehicle pointer alone
+    auto* const ped1 = FindPlayerPed(PED_TYPE_PLAYER1);
+    auto* const ped2 = FindPlayerPed(PED_TYPE_PLAYER2);
+    const auto GetEntity = [](CPed* ped) -> CEntity* {
+        return ped->m_pVehicle ? static_cast<CEntity*>(ped->m_pVehicle) : ped;
+    };
+    const auto pos1 = GetEntity(ped1)->GetPosition();
+    const auto pos2 = GetEntity(ped2)->GetPosition();
+    const auto centroid = (pos1 + pos2) * 0.5f;
 
-    auto camHeightMult = std::abs([&] {
-        if (FindPlayerVehicle(PED_TYPE_PLAYER1)) {
-            return FindPlayerVehicle(PED_TYPE_PLAYER2) ? 1.0f : 0.75f;
-        }
-        return FindPlayerVehicle(PED_TYPE_PLAYER2) ? 0.75f : 0.45f;
-    }() - m_fCameraHeightMultiplier);
+    const float desiredMult = ped1->m_pVehicle
+        ? (ped2->m_pVehicle ? 1.0f : 0.75f)
+        : (ped2->m_pVehicle ? 0.75f : 0.45f);
 
-    if (const auto s = CTimer::GetTimeStep() / 200.0f; camHeightMult >= s) {
-        camHeightMult = (camHeightMult >= 0.0f ? s : -s) + m_fCameraHeightMultiplier;
+    // Approach the desired multiplier at a fixed rate
+    const float diff = desiredMult - m_fCameraHeightMultiplier;
+    const float step = CTimer::GetTimeStep() * 0.005f;
+    float newMult = desiredMult;
+    if (std::abs(diff) >= step) {
+        newMult = diff >= 0.0f ? m_fCameraHeightMultiplier + step : m_fCameraHeightMultiplier - step;
     }
-    m_fCameraHeightMultiplier = camHeightMult;
+    m_fCameraHeightMultiplier = newMult;
 
-    const auto v21 = std::max(p1p2Distance + 10.0f, 30.0f);
-    m_vecSource.Set(
-        p1p2Centroid.x,
-        p1p2Centroid.y - v21 * std::sin(0.4f),
-        p1p2Centroid.z - v21 * -std::cos(0.4f)
-    );
-    m_vecFront.Set(0.0f, std::sin(0.4f), -std::cos(0.4f));
-    m_vecUp.Set(0.0f, m_vecSource.y, std::sin(0.4f));
+    const float distance = std::max(DistanceBetweenPoints(pos1, pos2) + 10.0f, 30.0f) * newMult;
+    const float pitch    = StaticRef<float>(0x8CCCB8);
+    const float sine     = std::sin(pitch);
+    const float cosine   = std::cos(pitch);
+
+    m_vecSource = CVector{ centroid.x, centroid.y - sine * distance, centroid.z + cosine * distance };
+    m_vecFront  = CVector{ 0.0f, sine, -cosine };
+    m_vecUp     = CVector{ 0.0f, cosine, sine };
     m_vecTargetCoorsForFudgeInter = m_vecSource;
 }
 
