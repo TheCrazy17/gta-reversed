@@ -10,6 +10,8 @@
 #include "Stats.h"
 #include "MenuSystem.h"
 #include "Hud.h"
+#include "TagManager.h"
+#include "GangWars.h"
 
 void CStats::InjectHooks() {
     RH_ScopedClass(CStats);
@@ -51,16 +53,16 @@ void CStats::InjectHooks() {
 
     RH_ScopedInstall(Load, 0x5D3BF0);
     RH_ScopedInstall(Save, 0x5D3B40);
-    RH_ScopedInstall(PopulateFavoriteRadioStationList, 0x558EC0, { .Reversed = false });
-    RH_ScopedInstall(FindMostFavoriteRadioStation, 0x558FA0, { .Reversed = false });
-    RH_ScopedInstall(FindLeastFavoriteRadioStation, 0x559010, { .Reversed = false });
+    RH_ScopedInstall(PopulateFavoriteRadioStationList, 0x558EC0);
+    RH_ScopedInstall(FindMostFavoriteRadioStation, 0x558FA0);
+    RH_ScopedInstall(FindLeastFavoriteRadioStation, 0x559010);
     RH_ScopedInstall(BuildStatLine, 0x559230, { .Reversed = false });
-    RH_ScopedInstall(CheckForStatsMessage, 0x559760, { .Reversed = false });
+    RH_ScopedInstall(CheckForStatsMessage, 0x559760);
     RH_ScopedInstall(LoadStatUpdateConditions, 0x559860, { .Reversed = false });
     RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0);
-    RH_ScopedInstall(FindCriminalRatingString, 0x55A210, { .Reversed = false });
+    RH_ScopedInstall(FindCriminalRatingString, 0x55A210);
     RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
-    RH_ScopedInstall(UpdateRespectStat, 0x55BC50, { .Reversed = false });
+    RH_ScopedInstall(UpdateRespectStat, 0x55BC50);
     RH_ScopedInstall(UpdateSexAppealStat, 0x55BF20);
     RH_ScopedInstall(UpdateFatAndMuscleStats, 0x55C470);
     RH_ScopedInstall(UpdateStatsWhenCycling, 0x55C780);
@@ -132,17 +134,44 @@ bool CStats::IsStatFloat(eStats stat) {
 
 // 0x558EC0
 bool CStats::PopulateFavoriteRadioStationList() {
-    return plugin::CallAndReturn<bool, 0x558EC0>();
+    const auto* const listenTimes = AudioEngine.GetRadioStationListenTimes();
+
+    // Returns whether nothing has been listened to yet
+    bool nothingListenedTo = true;
+    for (size_t i = 0; i < FavoriteRadioStationList.size(); i++) {
+        FavoriteRadioStationList[i] = listenTimes[i];
+        if (listenTimes[i] != 0) {
+            nothingListenedTo = false;
+        }
+    }
+    return nothingListenedTo;
 }
 
 // 0x558FA0
 eRadioID CStats::FindMostFavoriteRadioStation() {
-    return plugin::CallAndReturn<eRadioID, 0x558FA0>();
+    // The first and the last slot (the emergency station and the radio being off) are not looked at
+    auto best     = static_cast<int32>(RADIO_CLASSIC_HIP_HOP);
+    auto bestTime = 0;
+    for (int32 i = RADIO_CLASSIC_HIP_HOP; i <= RADIO_USER_TRACKS; i++) {
+        if (bestTime < FavoriteRadioStationList[i]) {
+            best     = i;
+            bestTime = FavoriteRadioStationList[i];
+        }
+    }
+    return static_cast<eRadioID>(best);
 }
 
 // 0x559010
 int32 CStats::FindLeastFavoriteRadioStation() {
-    return plugin::CallAndReturn<int32, 0x559010>();
+    auto best     = static_cast<int32>(RADIO_CLASSIC_HIP_HOP);
+    auto bestTime = FavoriteRadioStationList[RADIO_CLASSIC_HIP_HOP];
+    for (int32 i = RADIO_CLASSIC_HIP_HOP; i <= RADIO_USER_TRACKS; i++) {
+        if (FavoriteRadioStationList[i] < bestTime) {
+            best     = i;
+            bestTime = FavoriteRadioStationList[i];
+        }
+    }
+    return best;
 }
 
 // 0x559080
@@ -276,7 +305,34 @@ bool CStats::IsStatCapped(eStats stat) {
 
 // 0x559760
 void CStats::CheckForStatsMessage() {
-    plugin::Call<0x559760>();
+    if (CPad::GetPad(0)->JustOutOfFrontEnd
+        || !bShowUpdateStats
+        || TheCamera.m_bWideScreenOn
+        || CCutsceneMgr::ms_cutsceneProcessing
+        || CHud::HelpMessageDisplayed()
+        || CMenuSystem::num_menus_in_use
+    ) {
+        return;
+    }
+
+    for (size_t i = 0; i < std::min<size_t>(TotalNumStatMessages, StatMessage.size()); i++) {
+        auto& message = StatMessage[i];
+        if (message.displayed) {
+            continue;
+        }
+
+        const auto value = GetStatValue(static_cast<eStats>(message.stat_num));
+        const auto reached = message.condition == STATMESSAGE_LESSTHAN
+            ? value <= message.value
+            : value >= message.value;
+        if (!reached) {
+            continue;
+        }
+
+        message.displayed = true;
+        CHud::SetHelpMessage(TheText.Get(message.text_id), false, false, false);
+        bStatUpdateMessageDisplayed = true;
+    }
 }
 
 // 0x559860
@@ -462,8 +518,45 @@ void CStats::RegisterBestPosition(eStats stat, int32 position) {
 }
 
 // 0x55A210
-GxtChar* CStats::FindCriminalRatingString() {
-    return plugin::CallAndReturn<GxtChar*, 0x55A210>();
+const GxtChar* CStats::FindCriminalRatingString() {
+    const auto rating = FindCriminalRatingNumber();
+
+    if (rating < 0) {
+        if (rating > -500)  return TheText.Get("RATNG53");
+        if (rating > -2000) return TheText.Get("RATNG54");
+        if (rating > -4000) return TheText.Get("RATNG55");
+        if (rating > -6000) return TheText.Get("RATNG56");
+        return TheText.Get("RATNG57");
+    }
+
+    // A rating below the limit gets the text next to it, the `nullptr` one depends on the player's record
+    static constexpr struct { int32 limit; const char* key; } LADDER[] = {
+        { 20, "RATNG1" }, { 50, "RATNG2" }, { 75, "RATNG3" }, { 100, "RATNG4" }, { 120, "RATNG5" }, { 150, "RATNG6" },
+        { 200, "RATNG7" }, { 240, "RATNG8" }, { 270, "RATNG9" }, { 300, "RATNG10" }, { 335, "RATNG11" },
+        { 370, "RATNG12" }, { 400, "RATNG13" }, { 450, "RATNG14" }, { 500, "RATNG15" }, { 550, "RATNG16" },
+        { 600, "RATNG17" }, { 610, "RATNG18" }, { 650, "RATNG19" }, { 700, "RATNG20" }, { 850, "RATNG21" },
+        { 1000, "RATNG22" }, { 1005, "RATNG23" }, { 1150, "RATNG24" }, { 1300, nullptr }, { 1500, "RATNG26" },
+        { 1700, "RATNG27" }, { 2000, "RATNG28" }, { 2100, "RATNG29" }, { 2300, "RATNG30" }, { 2500, "RATNG31" },
+        { 2750, "RATNG32" }, { 3000, "RATNG33" }, { 3500, "RATNG34" }, { 4000, "RATNG35" }, { 5000, "RATNG36" },
+        { 7500, "RATNG37" }, { 10000, "RATNG38" }, { 20000, "RATNG39" }, { 30000, "RATNG40" }, { 40000, "RATNG41" },
+        { 50000, "RATNG42" }, { 65000, "RATNG43" }, { 80000, "RATNG44" }, { 100000, "RATNG45" },
+        { 150000, "RATNG46" }, { 200000, "RATNG47" }, { 300000, "RATNG48" }, { 375000, "RATNG49" },
+    };
+    for (const auto& [limit, key] : LADDER) {
+        if (rating < limit) {
+            return TheText.Get(key ? key : StatTypesInt[STAT_TIMES_BUSTED - FIRST_INT_STAT] > 0 ? "RATNG25" : "RATNG24");
+        }
+    }
+
+    if (rating < 500000) {
+        // Hours spent flying
+        const auto flightHours = static_cast<int32>(static_cast<float>(StatTypesInt[STAT_FLIGHT_TIME - FIRST_INT_STAT]) * (1.0f / 60000.0f) * (1.0f / 60.0f));
+        return TheText.Get(flightHours > 10 ? "RATNG50" : "RATNG49");
+    }
+    if (rating >= 1000000 && CWorld::Players[CWorld::PlayerInFocus].m_nDisplayMoney > 10000000) {
+        return TheText.Get("RATNG52");
+    }
+    return TheText.Get("RATNG51");
 }
 
 // 0x55A780
@@ -572,8 +665,70 @@ void CStats::DisplayScriptStatUpdateMessage(eStatUpdateState state, eStats stat,
 }
 
 // 0x55BC50
-void CStats::UpdateRespectStat(uint8 arg0) {
-    plugin::Call<0x55BC50, uint8>(arg0);
+void CStats::UpdateRespectStat(uint8 reset) {
+    // The respect the player had on the previous update, and the one a message was last shown about
+    static auto& lastRespect      = StaticRef<float>(0x8CDEC8);
+    static auto& lastShownRespect = StaticRef<float>(0x8CDEC4);
+
+    constexpr float NO_RESPECT = -99.0f;
+
+    if (reset) {
+        lastRespect      = NO_RESPECT;
+        lastShownRespect = NO_RESPECT;
+        return;
+    }
+
+    const auto missionRespect      = static_cast<float>(StatTypesInt[STAT_RESPECT_MISSION - FIRST_INT_STAT]);
+    const auto missionRespectTotal = static_cast<float>(StatTypesInt[STAT_RESPECT_MISSION_TOTAL - FIRST_INT_STAT]);
+    const auto territory           = std::max(0.0f, CGangWars::TerritoryUnderControlPercentage - 0.2f);
+    const auto money               = std::min(1.0f, static_cast<float>(CWorld::Players[CWorld::PlayerInFocus].m_nMoney) * 1.0e-7f);
+    const auto tagged              = static_cast<float>(CTagManager::GetPercentageTagged() * 10);
+
+    auto respect = StatTypesFloat[STAT_RESPECT] * 0.4f
+                 + (missionRespect * 1000.0f / std::max(1.0f, missionRespectTotal)) * 0.36f
+                 + StatTypesFloat[STAT_GIRLFRIEND_RESPECT] * 0.03f
+                 + territory * 1250.0f * 0.05f
+                 + money * 1000.0f * 0.05f
+                 + StatTypesFloat[STAT_MUSCLE] * 0.03f
+                 + StatTypesFloat[STAT_CLOTHES_RESPECT] * 0.03f
+                 + tagged * 0.05f;
+    if (respect < 0.0f) {
+        respect = 0.0f;
+    }
+    if (CCheat::IsActive(CHEAT_MAX_RESPECT)) {
+        respect = 1000.0f;
+    }
+
+    // Nothing to do while the whole number stays the same
+    if (static_cast<int32>(lastRespect) == static_cast<int32>(respect)) {
+        return;
+    }
+
+    StatTypesFloat[STAT_TOTAL_RESPECT] = respect;
+    CheckForStatsMessage();
+
+    const auto CanShowMessage = [&] {
+        return lastRespect != NO_RESPECT && lastShownRespect != NO_RESPECT;
+    };
+
+    if (respect <= lastShownRespect && lastRespect >= 2.0f) {
+        // Dropped
+        if (CanShowMessage() && (CheckForThreshold(&lastShownRespect, respect) || respect < 2.0f)) {
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_DECREASE, STAT_TOTAL_RESPECT, respect);
+        }
+        if (lastRespect < respect) {
+            lastShownRespect = respect;
+        }
+    } else {
+        // Went up
+        if (CanShowMessage() && (CheckForThreshold(&lastShownRespect, respect) || lastRespect < 2.0f)) {
+            DisplayScriptStatUpdateMessage(STAT_UPDATE_INCREASE, STAT_TOTAL_RESPECT, respect);
+        }
+        if (respect < lastRespect) {
+            lastShownRespect = respect;
+        }
+    }
+    lastRespect = respect;
 }
 
 // 0x55BF20
