@@ -77,7 +77,6 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedVMTInstall(SetMoveAnim, 0x609490);
     RH_ScopedInstall(ProcessAnimGroups, 0x6098F0, { .Reversed = false });
     RH_ScopedInstall(ControlButtonSprint, 0x60A610, { .Reversed = false });
-    RH_ScopedInstall(SetRealMoveAnim, 0x60A9C0, { .Reversed = false });
     RH_ScopedInstall(Compute3rdPersonMouseTarget, 0x60B650, { .Reversed = false });
     RH_ScopedInstall(DrawTriangleForMouseRecruitPed, 0x60BA80, { .Reversed = false });
     RH_ScopedInstall(KeepAreaAroundPlayerClear, 0x60C1E0, { .Reversed = false });
@@ -762,7 +761,7 @@ void CPlayerPed::SetRealMoveAnim() {
         if (CAnimBlendAssociation* stopAnim = runStop ? runStop : runStopR) {
             stopAnim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
             stopAnim->m_BlendAmount = 1.0f;
-            stopAnim->m_BlendDelta = -2.0f;
+            stopAnim->m_BlendDelta = -8.0f;
         }
         RestoreHeadingRate();
         if (!idle) {
@@ -873,7 +872,7 @@ void CPlayerPed::SetRealMoveAnim() {
                 if (playerData->m_fMoveBlendRatio >= 0.4f) {
                     if (sprint->m_BlendDelta >= 0.0f) {
                         sprint->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
-                        sprint->m_BlendDelta = -2.0f;
+                        sprint->m_BlendDelta = -1.0f;
                         run->m_BlendDelta = 1.0f;
                     }
                 } else {
@@ -897,7 +896,7 @@ void CPlayerPed::SetRealMoveAnim() {
                     run->m_BlendDelta = 0.0f;
                 }
             } else if (playerData->m_fMoveBlendRatio < 1.0f) {
-                sprint->m_BlendDelta = -2.0f;
+                sprint->m_BlendDelta = -8.0f;
                 run->m_BlendDelta = 8.0f;
             }
             if (playerData->m_fMoveBlendRatio > 1.0f) {
