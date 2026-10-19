@@ -95,7 +95,7 @@ inline const ReversibleBugFix CAECollisionAudioEntity_PlayBulletHitCollisionSoun
     .Name        = "CAECollisionAudioEntity::PlayBulletHitCollisionSound - Invalid surface type causing OOB",
     .Description = "The surface type passed in could be `AE_SURFACE_TYPE_BMX`, which is not a real surface and made `g_surfaceInfos` be read out of bounds when a BMX is shot. "
                    "The fix skips the surface lookups for those values and plays the default bullet hit sound.",
-    .Credit      = "Contributors"
+    .Credit      = "TheCrazy17"
 };
 inline const ReversibleBugFix CPool_DestructOnClear{
     .Name        = "Destroy objects before marking their memory as free",

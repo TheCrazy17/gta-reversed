@@ -26,6 +26,8 @@ public:
     CTask* CreateSubTask(eTaskType taskType, CPed* ped);
 
 private:
+    bool LeavesInsteadOfBeingDragged(const CVehicle* vehicle) const;
+
     friend void InjectHooksMain();
     static void InjectHooks();
     CTaskComplexCarSlowBeDraggedOutAndStandUp* Constructor(CVehicle* veh, int32 a3) { this->CTaskComplexCarSlowBeDraggedOutAndStandUp::CTaskComplexCarSlowBeDraggedOutAndStandUp(veh, a3); return this; }

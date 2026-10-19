@@ -245,6 +245,9 @@ public:
 private:
     friend void InjectHooksMain();
     static void InjectHooks();
+    // The game tests the whole of `eax` after calling `SwaysInWind`, so the hooked version has to return an `int32`
+    // (a `bool` only sets `al` and leaves the rest of `eax` undefined)
+    [[nodiscard]] int32 SwaysInWindHook() const { return SwaysInWind() ? 1 : 0; }
 
 };
 VALIDATE_SIZE(CBaseModelInfo, 0x20);
