@@ -66,7 +66,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470, { .Reversed = false });
     RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400, { .Reversed = false });
     RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20, { .Reversed = false });
-    RH_ScopedInstall(FindPathDirection, 0x422090, { .Reversed = false });
+    RH_ScopedInstall(FindPathDirection, 0x422090);
     RH_ScopedInstall(FindPercDependingOnDistToLink, 0x422620);
     RH_ScopedInstall(FindSequenceElement, 0x421770);
     RH_ScopedInstall(FindSpeedMultiplier, 0x4224E0);
@@ -397,7 +397,41 @@ void CCarCtrl::FindNodesThisCarIsNearestTo(CVehicle* vehicle, CNodeAddress& node
 
 // 0x422090
 int8 CCarCtrl::FindPathDirection(CNodeAddress nodeAddress1, CNodeAddress nodeAddress2, CNodeAddress nodeAddress3, bool* arg4) {
-    return plugin::CallAndReturn<int8, 0x422090, CNodeAddress, CNodeAddress, CNodeAddress, bool*>(nodeAddress1, nodeAddress2, nodeAddress3, arg4);
+    *arg4 = false;
+
+    for (const auto& addr : { nodeAddress1, nodeAddress2, nodeAddress3 }) {
+        if (!addr.IsAreaValid() || !ThePaths.IsAreaLoaded(addr.m_wAreaId)) {
+            return 0;
+        }
+    }
+
+    const CVector2D p1{ ThePaths.GetPathNode(nodeAddress1)->GetPosition() };
+    const CVector2D p2{ ThePaths.GetPathNode(nodeAddress2)->GetPosition() };
+    const CVector2D p3{ ThePaths.GetPathNode(nodeAddress3)->GetPosition() };
+
+    const auto len12 = (p2 - p1).Magnitude();
+    if (len12 == 0.0f) {
+        return 0;
+    }
+    const auto dir12 = (p2 - p1) * (1.0f / len12);
+
+    const auto len23 = (p3 - p2).Magnitude();
+    if (len23 == 0.0f) {
+        return 0;
+    }
+    const auto dir23 = (p3 - p2) * (1.0f / len23);
+
+    const auto cross = dir12.x * dir23.y - dir23.x * dir12.y;
+    const auto dot   = dir23.x * dir12.x + dir23.y * dir12.y;
+
+    // 1: nearly straight, 2 or 4: bends to either side. The last one also tells if it's a (nearly) U turn
+    if (dot > 0.4f) {
+        return 1;
+    }
+    if (dot < -0.3f) {
+        *arg4 = true;
+    }
+    return cross > 0.0f ? 4 : 2;
 }
 
 // 0x422620
