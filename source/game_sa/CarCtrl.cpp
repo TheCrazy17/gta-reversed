@@ -8,6 +8,7 @@
 #include "StdInc.h"
 
 #include "CarCtrl.h"
+#include "Tasks/TaskTypes/TaskComplexWander.h"
 #include "BMX.h"
 #include "CarAI.h"
 #include "TrafficLights.h"
@@ -122,7 +123,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0);
     RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToCrashAndBurn, 0x4238E0);
-    RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750);
     RH_ScopedInstall(SteerAIHeliToKeepEntityInView, 0x42AEB0, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToLand, 0x42AD30, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630);
@@ -1589,7 +1590,70 @@ void CCarCtrl::SteerAIHeliToCrashAndBurn(CAutomobile* automobile) {
 
 // 0x42A750
 void CCarCtrl::SteerAIHeliToFollowEntity(CAutomobile* automobile) {
-    plugin::Call<0x42A750, CAutomobile*>(automobile);
+    static_assert(offsetof(CAutoPilot, field_4A) == 0x4A);
+    static_assert(offsetof(CVehicle, m_nCreationTime) == 0x430);
+
+    auto* const heli      = static_cast<CHeli*>(automobile);
+    auto&       autoPilot = heli->m_autoPilot;
+    auto* const target    = autoPilot.m_TargetEntity;
+
+    autoPilot.m_vecDestinationCoors = target->GetPosition();
+    if (autoPilot.field_4A) {
+        // Aim ahead of the target, or behind it when the distance is negative
+        if (!target->m_matrix) {
+            target->AllocateMatrix();
+            target->m_placement.UpdateMatrix(target->m_matrix);
+        }
+        const auto distAhead = (float)autoPilot.field_4A;
+        autoPilot.m_vecDestinationCoors.x += target->GetForward().x * distAhead;
+        autoPilot.m_vecDestinationCoors.y += target->GetForward().y * distAhead;
+    }
+
+    const auto& heliPos   = heli->GetPosition();
+    const auto& targetPos = target->GetPosition();
+    const auto  heading   = CGeneral::GetATanOfXY(autoPilot.m_vecDestinationCoors.x - heliPos.x, autoPilot.m_vecDestinationCoors.y - heliPos.y);
+    const auto  dist      = (CVector2D{ targetPos } - CVector2D{ heliPos }).Magnitude();
+
+    heli->m_fMaxAltitude = std::max(targetPos.z, 6.0f);
+    if (dist > 50.0f) {
+        heli->m_fMaxAltitude = std::max(heli->m_fMaxAltitude, 25.0f);
+    }
+
+    if (heli->m_fForcedOrientation < 0.0f) {
+        FlyAIHeliInCertainDirection(heli, heading, dist, true);
+    } else {
+        FlyAIHeliToTarget_FixedOrientation(heli, heli->m_fForcedOrientation, targetPos, true);
+    }
+
+    // Once the heli has caught up, whoever it follows is told to keep going
+    if (autoPilot.carCtrlFlags.bDoTargetCatchupCheck) {
+        if ((CVector2D{ targetPos } - CVector2D{ heli->GetPosition() }).Magnitude() < 25.0f) {
+            if (target->GetType() == ENTITY_TYPE_VEHICLE) {
+                if (target->GetStatus() == STATUS_SIMPLE || target->GetStatus() == STATUS_PHYSICS) {
+                    auto* const vehicle                    = target->AsVehicle();
+                    vehicle->m_autoPilot.m_nCarMission      = MISSION_CRUISE;
+                    vehicle->m_autoPilot.m_nCruiseSpeed     = 100;
+                    vehicle->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+                    vehicle->SetStatus(STATUS_PHYSICS);
+                }
+            } else if (target->GetType() == ENTITY_TYPE_PED) {
+                if (auto* const task = target->AsPed()->GetTaskManager().GetActiveTask(); task && task->GetTaskType() == TASK_COMPLEX_WANDER) {
+                    static_cast<CTaskComplexWander*>(task)->m_nMoveState = PEDMOVE_SPRINT;
+                }
+            }
+            autoPilot.carCtrlFlags.bDoTargetCatchupCheck = false;
+        }
+    }
+
+    // Give up following after a while
+    if (autoPilot.carCtrlFlags.bHeliFollowTarget && heli->m_nCreationTime + 50000 < CTimer::GetTimeInMS()) {
+        autoPilot.carCtrlFlags.bHeliFollowTarget = false;
+        autoPilot.m_nCarMission                  = MISSION_HELI_FLY_AWAY_FROM_PLAYER;
+    }
+
+    if (autoPilot.m_nCarMission == MISSION_HELI_NEWS_BEHAVIOUR && heli->m_fHealth < 300.0f) {
+        autoPilot.m_nCarMission = MISSION_HELI_FLY_AWAY_FROM_PLAYER;
+    }
 }
 
 // 0x42AEB0
