@@ -2,6 +2,8 @@
 #include "TaskSimpleCarDrive.h"
 #include "TaskUtilityLineUpPedWithCar.h"
 #include "Ragdoll/IKChainManager.h"
+#include "TaskSimpleCarSetPedOut.h"
+#include "CarEnterExit.h"
 
 void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarDrive, 0x86E904, 9);
@@ -18,9 +20,9 @@ void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedInstall(ProcessBopping, 0x642E70);
     RH_ScopedVMTInstall(Clone, 0x63DC20);
     RH_ScopedVMTInstall(GetTaskType, 0x63C450);
-    RH_ScopedVMTInstall(MakeAbortable, 0x63C670, { .Reversed = false });
+    RH_ScopedVMTInstall(MakeAbortable, 0x63C670);
     RH_ScopedVMTInstall(ProcessPed, 0x644470, { .Reversed = false });
-    RH_ScopedVMTInstall(SetPedPosition, 0x63C770, { .Reversed = false });
+    RH_ScopedVMTInstall(SetPedPosition, 0x63C770);
 }
 
 // 0x63C340
@@ -192,7 +194,20 @@ CTask* CTaskSimpleCarDrive::Clone() const {
 
 
 bool CTaskSimpleCarDrive::MakeAbortable(CPed* ped, eAbortPriority priority, CEvent const* event) {
-    return plugin::CallMethodAndReturn<bool, 0x63C670, CTaskSimpleCarDrive*, CPed*, eAbortPriority, CEvent const*>(this, ped, priority, event);
+    if (priority != ABORT_PRIORITY_IMMEDIATE) {
+        // Wait for the door closing anim to finish, then get out of the way
+        m_b08 = true;
+        return !m_b20;
+    }
+
+    if (ped->bInVehicle && ped->m_pVehicle) {
+        const auto door = CCarEnterExit::ComputeTargetDoorToExit(ped->m_pVehicle, ped);
+        CTaskSimpleCarSetPedOut{ m_pVehicle, (eTargetDoor)door, false }.ProcessPed(ped);
+    }
+    if (g_ikChainMan.IsLooking(ped)) {
+        g_ikChainMan.AbortLookAt(ped, 250);
+    }
+    return true;
 }
 
 // 0x644470
@@ -206,6 +221,40 @@ bool CTaskSimpleCarDrive::ProcessPed(CPed* ped) {
 
 // 0x0
 bool CTaskSimpleCarDrive::SetPedPosition(CPed* ped) {
-    return plugin::CallMethodAndReturn<bool, 0x63C770, CTaskSimpleCarDrive*, CPed*>(this, ped);
+    if (m_b08) {
+        // Hand the door line up task over from the other car drive task, if there is one
+        const auto other = notsa::dyn_cast_if_present<CTaskSimpleCarDrive>(ped->GetTaskManager().FindTaskByType(TASK_PRIMARY_DEFAULT, TASK_SIMPLE_CAR_DRIVE));
+        if (other && other != this && other->m_pTaskUtilityLineUpPedWithCar) {
+            m_pTaskUtilityLineUpPedWithCar = other->m_pTaskUtilityLineUpPedWithCar;
+            other->m_pTaskUtilityLineUpPedWithCar = nullptr;
+        }
+        m_b08 = false;
+    }
+
+    if (!m_pTaskUtilityLineUpPedWithCar) {
+        if (m_pVehicle && ped->m_pVehicle == m_pVehicle && ped->bInVehicle) {
+            ped->SetPedPositionInCar();
+        }
+        return true;
+    }
+
+    static constexpr AnimationId anims[]{
+        ANIM_ID_CAR_GETIN_LHS_0, ANIM_ID_CAR_GETIN_RHS_0, ANIM_ID_CAR_GETIN_LHS_1, ANIM_ID_CAR_GETIN_RHS_1, ANIM_ID_CAR_GETIN_BIKE_FRONT,
+        ANIM_ID_CAR_CLOSEDOOR_LHS_0, ANIM_ID_CAR_CLOSEDOOR_RHS_0, ANIM_ID_CAR_CLOSEDOOR_LHS_1, ANIM_ID_CAR_CLOSEDOOR_RHS_1,
+        ANIM_ID_CAR_SHUFFLE_RHS_0, ANIM_ID_CAR_SHUFFLE_RHS_1, ANIM_ID_CAR_ROLLDOOR,
+    };
+    static_assert(ANIM_ID_CAR_GETIN_LHS_0 == 359 && ANIM_ID_CAR_GETIN_BIKE_FRONT == 363 && ANIM_ID_CAR_CLOSEDOOR_LHS_0 == 367 && ANIM_ID_CAR_SHUFFLE_RHS_1 == 372 && ANIM_ID_CAR_ROLLDOOR == 386);
+
+    CAnimBlendAssociation* assoc{};
+    for (const auto anim : anims) {
+        if ((assoc = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), anim))) {
+            break;
+        }
+    }
+    m_pTaskUtilityLineUpPedWithCar->ProcessPed(ped, m_pVehicle, assoc);
+
+    delete m_pTaskUtilityLineUpPedWithCar;
+    m_pTaskUtilityLineUpPedWithCar = nullptr;
+    return true;
 }
 
