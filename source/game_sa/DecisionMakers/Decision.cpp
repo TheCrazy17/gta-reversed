@@ -2,6 +2,7 @@
 
 #include "Decision.h"
 #include "Enums/eTaskType.h"
+#include "DecisionSimple.h"
 
 void CDecision::InjectHooks() {    
     RH_ScopedClass(CDecision);
@@ -12,7 +13,7 @@ void CDecision::InjectHooks() {
     RH_ScopedInstall(Add, 0x600600);
     RH_ScopedInstall(From, 0x6006B0);
     RH_ScopedInstall(HasResponse, 0x600710);
-    //RH_ScopedInstall(MakeDecision, 0x6040D0, { .Reversed = false });
+    RH_ScopedInstall(MakeDecision, 0x6040D0);
 }
 
 // 0x6040C0
@@ -50,12 +51,53 @@ void CDecision::Set(
     }
 }
 
-/*
 // 0x6040D0
-void CDecision::MakeDecision(int32, bool, int32, int32, int32, int32, int16&, int16&) {
+void CDecision::MakeDecision(int32 relationship, bool isInVehicle, int32 taskToAvoid1, int32 taskToAvoid2, int32 taskToAvoid3, int32 taskToSeek, int16& outTaskType, int16& outFacialTaskType) {
+    // Collect the choices that are allowed in this situation
+    CDecisionSimple simple{};
+    simple.SetDefault();
 
+    eTaskType tasks[MAX_NUM_CHOICES];
+    uint8     probs[MAX_NUM_CHOICES]{};
+    std::fill(std::begin(tasks), std::end(tasks), TASK_NONE);
+
+    auto numChoices = 0;
+    for (auto i = 0u; i < MAX_NUM_CHOICES; i++) {
+        const auto task = m_Tasks[i];
+        if (m_Probs[i][relationship] != 0
+            && task != TASK_INVALID
+            && task != taskToAvoid1
+            && task != taskToAvoid2
+            && task != taskToAvoid3
+            && m_Bools[i][isInVehicle]
+        ) {
+            tasks[numChoices] = task;
+            probs[numChoices] = m_Probs[i][relationship];
+            numChoices++;
+        }
+    }
+
+    outTaskType = TASK_NONE;
+    if (numChoices < 1) {
+        outFacialTaskType = -1;
+        return;
+    }
+
+    // Turn the chances into cumulative ones in [0, 1]
+    auto sum = 0.0f;
+    for (auto i = 0u; i < MAX_NUM_CHOICES; i++) {
+        simple.m_anTasks[i]   = tasks[i];
+        sum                  += (float)probs[i];
+        simple.m_afChances[i] = sum;
+    }
+    for (auto i = 0u; i < MAX_NUM_CHOICES; i++) {
+        simple.m_afChances[i] = (1.0f / sum) * simple.m_afChances[i];
+    }
+
+    int32 index{};
+    simple.MakeDecision(taskToSeek, outTaskType, index);
+    outFacialTaskType = -1;
 }
-*/
 
 // 0x600600
 void CDecision::Add(int32 task, float* probs, int32* bools) {

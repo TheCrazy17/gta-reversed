@@ -52,6 +52,13 @@ public:
     );
     void Add(int32 task, float* probs, int32* bools);
     bool HasResponse();
+
+    /*!
+    * @brief Pick a task out of the ones this decision allows
+    * @param relationship  See `eDecisionRelationship`
+    * @param taskToSeek    If this task is allowed it is always picked, pass -1 for none
+    */
+    void MakeDecision(int32 relationship, bool isInVehicle, int32 taskToAvoid1, int32 taskToAvoid2, int32 taskToAvoid3, int32 taskToSeek, int16& outTaskType, int16& outFacialTaskType);
 };
 
 VALIDATE_SIZE(CDecision, 0x3C);

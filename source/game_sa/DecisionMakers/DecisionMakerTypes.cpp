@@ -12,9 +12,9 @@ void CDecisionMakerTypes::InjectHooks() {
     RH_ScopedCategory("DecisionMakers");
     RH_ScopedInstall(AddDecisionMaker, 0x607050);
     RH_ScopedInstall(GetInstance, 0x4684F0);
-    RH_ScopedOverloadedInstall(MakeDecision, "ped-ptr", 0x606E70, void(CDecisionMakerTypes::*)(CPed*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType, bool, int16&, int16&), { .Reversed = false });
+    RH_ScopedOverloadedInstall(MakeDecision, "ped-ptr", 0x606E70, void(CDecisionMakerTypes::*)(CPed*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType, bool, int16&, int16&));
     RH_ScopedInstall(RemoveDecisionMaker, 0x6043A0);
-    RH_ScopedOverloadedInstall(MakeDecision, "pedgroup-ptr", 0x606F80, eTaskType(CDecisionMakerTypes::*)(CPedGroup*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType), { .Reversed = false });
+    RH_ScopedOverloadedInstall(MakeDecision, "pedgroup-ptr", 0x606F80, eTaskType(CDecisionMakerTypes::*)(CPedGroup*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType));
     RH_ScopedInstall(AddEventResponse, 0x6044C0);
     RH_ScopedInstall(FlushDecisionMakerEventResponse, 0x604490);
     RH_ScopedInstall(LoadEventIndices, 0x600840);
@@ -52,7 +52,22 @@ CDecisionMakerTypes* CDecisionMakerTypes::GetInstance() {
 
 // 0x606E70
 void CDecisionMakerTypes::MakeDecision(CPed* ped, eEventType eventType, int32 eventSourceType, bool bIsPedInVehicle, eTaskType taskTypeToAvoid1, eTaskType taskTypeToAvoid2, eTaskType taskTypeToAvoid3, eTaskType taskTypeToSeek, bool bUseInGroupDecisionMaker, int16& taskType, int16& facialTaskType) {
-    plugin::CallMethod<0x606E70>(this, ped, eventType, eventSourceType, bIsPedInVehicle, taskTypeToAvoid1, taskTypeToAvoid2, taskTypeToAvoid3, taskTypeToSeek, bUseInGroupDecisionMaker, &taskType, &facialTaskType);
+    auto* const intel = ped->GetIntelligence();
+    const auto  dm    = bUseInGroupDecisionMaker ? intel->m_nDecisionMakerTypeInGroup : intel->m_nDecisionMakerType;
+    const auto  idx   = m_EventIndices[eventType];
+
+    taskType       = TASK_NONE;
+    facialTaskType = -1;
+
+    // -2 is the player's, -1 means the default one for the kind of ped
+    auto& decision = [&]() -> CDecision& {
+        switch (dm) {
+        case -2: return m_DefaultPlayerPedDecisionMaker.m_aDecisions[idx];
+        case -1: return (ped->GetCreatedBy() == PED_MISSION ? m_DefaultMissionPedDecisionMaker : m_DefaultRandomPedDecisionMaker).m_aDecisions[idx];
+        default: return m_DecisionMakers[dm].m_aDecisions[idx];
+        }
+    }();
+    decision.MakeDecision(eventSourceType, bIsPedInVehicle, taskTypeToAvoid1, taskTypeToAvoid2, taskTypeToAvoid3, taskTypeToSeek, taskType, facialTaskType);
 }
 
 // 0x6043A0
@@ -84,8 +99,17 @@ void CDecisionMakerTypes::RemoveDecisionMaker(eDecisionTypes dm) {
 
 // 0x606F80
 eTaskType CDecisionMakerTypes::MakeDecision(CPedGroup* pedGroup, eEventType eventType, int32 eventSourceType, bool bIsPedInVehicle, eTaskType taskId1, eTaskType taskId2, eTaskType taskId3, eTaskType taskId4) {
-    return plugin::CallMethodAndReturn<eTaskType, 0x606F80, CDecisionMakerTypes*, CPedGroup*, int32, int32, bool, int32, int32, int32, int32>(
-        this, pedGroup, eventType, eventSourceType, bIsPedInVehicle, taskId1, taskId2, taskId3, taskId4);
+    const auto dm  = static_cast<int32>(pedGroup->GetIntelligence().GetGroupDecisionMakerType());
+    const auto idx = m_EventIndices[eventType];
+
+    auto& decision = dm == -1
+        ? (pedGroup->m_bIsMissionGroup ? m_DefaultMissionPedGroupDecisionMaker : m_DefaultRandomPedGroupDecisionMaker).m_aDecisions[idx]
+        : m_DecisionMakers[dm].m_aDecisions[idx];
+
+    int16 taskType = TASK_NONE;
+    int16 facialTaskType{};
+    decision.MakeDecision(eventSourceType, bIsPedInVehicle, taskId1, taskId2, taskId3, taskId4, taskType, facialTaskType);
+    return (eTaskType)taskType;
 }
 
 // 0x6044C0
