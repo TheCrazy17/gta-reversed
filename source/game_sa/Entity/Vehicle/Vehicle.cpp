@@ -179,7 +179,7 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(CanPedLeanOut, 0x6D5CF0);
     RH_ScopedInstall(SetVehicleCreatedBy, 0x6D5D70);
     RH_ScopedInstall(SetupRender, 0x6D64F0);
-    RH_ScopedInstall(ProcessBikeWheel, 0x6D73B0, { .Reversed = false });
+    RH_ScopedInstall(ProcessBikeWheel, 0x6D73B0);
     RH_ScopedInstall(FindTyreNearestPoint, 0x6D7BC0);
     // RH_ScopedInstall(InflictDamage, 0x6D7C90);
     RH_ScopedInstall(KillPedsGettingInVehicle, 0x6D82F0);
@@ -3314,9 +3314,122 @@ void CVehicle::ProcessWheel(CVector& wheelFwd, CVector& wheelRight,
 // 0x6D73B0
 void CVehicle::ProcessBikeWheel(CVector& wheelFwd, CVector& wheelRight, CVector& wheelContactSpeed, CVector& wheelContactPoint, int32 wheelsOnGround, float thrust, float brake,
                                 float adhesion, float destabTraction, int8 wheelId, float* wheelSpeed, tWheelState* wheelState, eBikeWheelSpecial special, uint16 wheelStatus) {
-    plugin::CallMethod<0x6D73B0, CVehicle*, CVector&, CVector&, CVector&, CVector&, int32, float, float, float, float, char, float*, tWheelState*, eBikeWheelSpecial, uint16>(
-        this, wheelFwd, wheelRight, wheelContactSpeed, wheelContactPoint, wheelsOnGround, thrust, brake, destabTraction, adhesion, wheelId, wheelSpeed, wheelState, special,
-        wheelStatus);
+    static auto& bReversing       = StaticRef<bool>(0xC1CDB0);
+    static auto& bDriving         = StaticRef<bool>(0xC1CDB1);
+    static auto& bBraking         = StaticRef<bool>(0xC1CDB2);
+    static auto& bAlreadySkidding = StaticRef<bool>(0xC1CDAF); // Once set it stays set, nothing in the game clears it
+
+    float right = 0.0f;
+    float fwd   = 0.0f;
+    const auto contactSpeedFwd = DotProduct(wheelFwd, wheelContactSpeed);
+
+    bBraking   = brake != 0.0f;
+    bDriving   = !bBraking && thrust != 0.0f;
+    bReversing = !bBraking && thrust < 0.0f;
+
+    if (*wheelState != WHEEL_STATE_NORMAL) {
+        bAlreadySkidding = true;
+    }
+    *wheelState = WHEEL_STATE_NORMAL;
+
+    adhesion *= CTimer::GetTimeStep();
+    if (bAlreadySkidding) {
+        adhesion *= m_pHandlingData->m_fTractionLoss;
+    }
+
+    if (special != 2 && special != 3) {
+        const auto contactSpeedRight = DotProduct(wheelRight, wheelContactSpeed);
+        if (contactSpeedRight != 0.0f) {
+            right = -(contactSpeedRight / (float)wheelsOnGround);
+            if (wheelStatus == WHEEL_STATUS_BURST) {
+                const auto limitedSpeed = std::min(contactSpeedFwd, fBurstBikeSpeedMax);
+                right += CGeneral::GetRandomNumberInRange(-fBurstBikeTyreMod, fBurstBikeTyreMod) * limitedSpeed;
+            }
+        }
+    }
+
+    if (bDriving) {
+        fwd   = thrust;
+        right = std::max(-adhesion, std::min(right, adhesion));
+    } else if (contactSpeedFwd != 0.0f) {
+        const auto slide = -(contactSpeedFwd / (float)wheelsOnGround);
+        fwd = slide;
+
+        // Without gas the wheel drags a little by itself
+        if (!bBraking && std::abs(m_GasPedal) < 0.01f) {
+            const auto wheelFriction = gHandlingDataMgr.fWheelFriction;
+            if (m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+                if (slide > -0.05f && slide < 0.05f) {
+                    brake = (wheelFriction * 0.5f) / (m_pHandlingData->m_fMass + 200.0f);
+                }
+            } else if (m_nVehicleType == VEHICLE_TYPE_BIKE) {
+                brake = (wheelFriction * 0.6f) / (m_pHandlingData->m_fMass + 200.0f);
+            } else {
+                brake = wheelFriction / m_pHandlingData->m_fMass;
+                if (m_pHandlingData->m_fMass < 500.0f || m_nModelIndex == MODEL_RCBANDIT) {
+                    brake *= 0.2f;
+                }
+            }
+        }
+
+        if (brake > adhesion) {
+            if (std::abs(contactSpeedFwd) > 0.005f) {
+                *wheelState = WHEEL_STATE_FIXED;
+            }
+        } else if (slide > 0.0f) {
+            fwd = std::min(slide, brake);
+        } else {
+            fwd = std::max(slide, -brake);
+        }
+    }
+
+    const auto adhesionSq = adhesion * adhesion;
+    const auto forceSq    = right * right + fwd * fwd;
+    if (forceSq > adhesionSq) {
+        if (*wheelState != WHEEL_STATE_FIXED) {
+            *wheelState = (bDriving && contactSpeedFwd < 0.1f) ? WHEEL_STATE_SPINNING : WHEEL_STATE_SKIDDING;
+        }
+
+        const auto tractionLoss = bAlreadySkidding ? 1.0f : m_pHandlingData->m_fTractionLoss;
+        const auto scale        = (tractionLoss / std::sqrt(forceSq)) * adhesion;
+        fwd   *= scale;
+        right *= scale;
+        if (destabTraction < 1.0f) {
+            right *= destabTraction;
+        }
+    } else if (destabTraction < 1.0f) {
+        if (!bAlreadySkidding) {
+            destabTraction *= m_pHandlingData->m_fTractionLoss;
+        }
+        if (adhesionSq * destabTraction * destabTraction < forceSq) {
+            right = ((adhesion * destabTraction) / std::sqrt(forceSq)) * right;
+        }
+    }
+
+    if (fwd == 0.0f && right == 0.0f) {
+        return;
+    }
+
+    const CVector force = wheelFwd * fwd + wheelRight * right;
+    const auto    speed = force.Magnitude();
+    auto          direction = force;
+    direction.Normalise();
+
+    // The move force is the whole speed change; the turn part only gets what the contact point leaves after the lever arm
+    const auto lever    = CrossProduct(wheelContactPoint, direction);
+    const auto moveMass = m_fMass * speed;
+    const auto turnMass = (1.0f / (1.0f / m_fMass + lever.SquaredMagnitude() / m_fTurnMass)) * speed;
+    ApplyMoveForce(direction * moveMass);
+
+    const auto turnForce  = direction * turnMass;
+    const auto rightPart  = DotProduct(turnForce, GetRight());
+    const auto contactRight   = DotProduct(wheelContactPoint, GetRight());
+    const auto contactForward = DotProduct(wheelContactPoint, GetForward());
+
+    if (wheelId != 1 || (!bBraking && !bReversing)) {
+        ApplyTurnForce((turnForce - GetRight() * rightPart) * fTweakBikeWheelTurnForce, wheelContactPoint - GetRight() * contactRight);
+    }
+    ApplyTurnForce(GetRight() * rightPart, GetForward() * contactForward);
 }
 
 // 0x6D7BC0
