@@ -129,6 +129,10 @@ class CWaterLevel {
     static inline auto& gWaterFogIndex = StaticRef<uint32>(0xC228E4);
     static inline auto& m_fWaterFogHeight = StaticRef<float>(0x8D37E4);
     static inline auto& gbPlayerIsInsideWaterFog = StaticRef<bool>(0xC228E8);
+    static inline auto& bColorQuadsByIndex = StaticRef<bool>(0xC228DC); // Debug leftover, colors every quad differently when set
+    static inline auto& TextureScrollFirst = StaticRef<CVector2D>(0x8D3824);  // Scrolls with the flow, wraps at 1
+    static inline auto& TextureScrollSecond = StaticRef<CVector2D>(0x8D382C); // Same, but slower
+    static inline auto& TextureJitter = StaticRef<CVector2D>(0xC21170);
     static inline auto& m_WaterFogCol = StaticRef<CRGBA>(0x8D37E8);                  // Color of the fog slices
     static inline auto& m_WaterFogInsideCol = StaticRef<CRGBA>(0x8D37EC);            // Color of the overlay when inside of the fog
     static inline auto& m_fWaterFogInsideFadeSpeed = StaticRef<float>(0x8D37F0);
@@ -261,6 +265,8 @@ public:
     static void RenderFlatWaterRectangle(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4);
     static void RenderFlatWaterRectangle_OneLayer(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4, int32 WaterLayer);
     static void RenderHighDetailWaterRectangle(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4);
+    static void RenderSeaBedSegment(int32 blockX, int32 blockY, float minX, float maxX, float minY, float maxY);
+    static void RenderDetailedSeaBedSegment(int32 blockX, int32 blockY, float minX, float maxX, float minY, float maxY);
     static void RenderHighDetailWaterRectangle_OneLayer(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4, int32 waterLayer, int32 numTris, int32 numVerts, int32 numCellsX, int32 numCellsY);
     static void RenderHighDetailWaterTriangle_OneLayer(int32 X1, int32 Y1, CRenPar P1, int32 X2, int32 Y2, CRenPar P2, int32 X3, int32 Y3, CRenPar P3, int32 waterLayer, int32 numVertsSq, int32 numVerts, int32 numCells);
     static void SplitWaterRectangleAlongXLine(int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, CRenPar a6, CRenPar a7, CRenPar a8, CRenPar a9);
