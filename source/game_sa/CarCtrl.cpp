@@ -80,7 +80,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0, { .Reversed = false });
     RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0, { .Reversed = false });
     RH_ScopedInstall(GenerateOneRandomCar, 0x430050, { .Reversed = false });
-    RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0, { .Reversed = false });
+    RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0);
     RH_ScopedInstall(GetAIHeliToFlyInDirection, 0x42A730);
     RH_ScopedInstall(GetAIPlaneToAttackPlayer, 0x429780, { .Reversed = false });
     RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890, { .Reversed = false });
@@ -581,7 +581,32 @@ void CCarCtrl::GenerateRandomCars() {
 
 // 0x42F3C0
 void CCarCtrl::GetAIHeliToAttackPlayer(CAutomobile* automobile) {
-    plugin::Call<0x42F3C0, CAutomobile*>(automobile);
+    auto* const heli      = static_cast<CHeli*>(automobile);
+    const auto  playerPos = FindPlayerCoors();
+    const auto  toPlayer  = CVector2D{ playerPos } - CVector2D{ heli->GetPosition() };
+
+    auto heading = CGeneral::GetATanOfXY(toPlayer.x, toPlayer.y);
+    auto dist    = toPlayer.Magnitude();
+
+    heli->m_fMaxAltitude                  = playerPos.z;
+    heli->m_autoPilot.m_vecDestinationCoors = playerPos;
+
+    // Attack from a distance, and fly away (backwards) once too close
+    if (heli->m_autoPilot.m_nCarMission == MISSION_HELI_ATTACK_PLAYER) {
+        if (dist < 15.0f) {
+            heli->m_autoPilot.m_nCarMission = MISSION_HELI_ATTACK_PLAYER_FLY_AWAY;
+        }
+        dist += 50.0f;
+    } else if (heli->m_autoPilot.m_nCarMission == MISSION_HELI_ATTACK_PLAYER_FLY_AWAY) {
+        if (dist > 18.0f) {
+            heli->m_autoPilot.m_nCarMission = MISSION_HELI_ATTACK_PLAYER;
+        }
+        heading += std::numbers::pi_v<float>;
+    }
+
+    FlyAIHeliInCertainDirection(heli, heading, dist, false);
+    TestWhetherToFirePlaneGuns(heli, FindPlayerEntity());
+    FireHeliRocketsAtTarget(heli, FindPlayerEntity());
 }
 
 // 0x42A730
