@@ -83,8 +83,8 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0);
     RH_ScopedInstall(GetAIHeliToFlyInDirection, 0x42A730);
     RH_ScopedInstall(GetAIPlaneToAttackPlayer, 0x429780, { .Reversed = false });
-    RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890, { .Reversed = false });
-    RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370, { .Reversed = false });
+    RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890);
+    RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370);
     RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
     RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0, { .Reversed = false });
     RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
@@ -622,12 +622,46 @@ void CCarCtrl::GetAIPlaneToAttackPlayer(CAutomobile* automobile) {
 
 // 0x429890
 void CCarCtrl::GetAIPlaneToDoDogFight(CAutomobile* automobile) {
-    plugin::Call<0x429890, CAutomobile*>(automobile);
+    auto* const plane  = static_cast<CPlane*>(automobile);
+    auto&       ap     = plane->m_autoPilot;
+    auto* const target = ap.m_TargetEntity;
+
+    // Aim a bit ahead of where the target is going
+    const CVector ahead = target->GetPosition() + target->GetMoveSpeed() * 50.0f;
+    const auto&   pos   = plane->GetPosition();
+
+    if (ap.m_bPlaneDogfightSomething) {
+        // Fly past the target, to a point it picked earlier
+        plane->m_planeHeading = CGeneral::GetATanOfXY(ap.m_vecDestinationCoors.x - pos.x, ap.m_vecDestinationCoors.y - pos.y);
+        plane->m_maxAltitude  = ap.m_vecDestinationCoors.z;
+        if ((CVector2D{ ap.m_vecDestinationCoors } - CVector2D{ pos }).Magnitude() < 50.0f) {
+            ap.m_bPlaneDogfightSomething = false;
+        }
+    } else {
+        plane->m_planeHeading = CGeneral::GetATanOfXY(ahead.x - pos.x, ahead.y - pos.y);
+        plane->m_maxAltitude  = ahead.z;
+        if ((CGeneral::GetRandomNumber() & 0x3FF) == 500) {
+            // Every now and then pick a random point to fly to after the pass
+            ap.m_bPlaneDogfightSomething = true;
+            ap.m_vecDestinationCoors.x   = (float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL * 600.0f + ahead.x - 300.0f;
+            ap.m_vecDestinationCoors.y   = (float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL * 600.0f + ahead.y - 300.0f;
+            ap.m_vecDestinationCoors.z   = ahead.z + 50.0f;
+        }
+    }
+
+    FlyAIPlaneInCertainDirection(plane);
+    TestWhetherToFirePlaneGuns(plane, target);
+    PossiblyFireHSMissile(plane, target);
 }
 
 // 0x42F370
 void CCarCtrl::GetAIPlaneToDoDogFightAgainstPlayer(CAutomobile* automobile) {
-    plugin::Call<0x42F370, CAutomobile*>(automobile);
+    if (auto* const playerVeh = FindPlayerVehicle()) {
+        automobile->m_autoPilot.m_TargetEntity = playerVeh;
+    } else {
+        automobile->m_autoPilot.m_TargetEntity = (CVehicle*)FindPlayerPed();
+    }
+    GetAIPlaneToDoDogFight(automobile);
 }
 
 // 0x421440
