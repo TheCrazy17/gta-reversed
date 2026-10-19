@@ -98,7 +98,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(PossiblyRemoveVehicle, 0x424F80, { .Reversed = false });
     RH_ScopedInstall(ReconsiderRoute, 0x42FC40, { .Reversed = false });
     RH_ScopedInstall(RegisterVehicleOfInterest, 0x423DE0);
-    RH_ScopedInstall(ScanForPedDanger, 0x42CE40, { .Reversed = false });
+    RH_ScopedInstall(ScanForPedDanger, 0x42CE40);
     RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0, { .Reversed = false });
     RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420, { .Reversed = false });
@@ -1123,7 +1123,33 @@ void CCarCtrl::RemoveFromInterestingVehicleList(CVehicle* vehicle) {
 
 // 0x42CE40
 void CCarCtrl::ScanForPedDanger(CVehicle* vehicle) {
-    plugin::Call<0x42CE40, CVehicle*>(vehicle);
+    // The player's vehicle warns peds from further away
+    const auto range = vehicle == FindPlayerVehicle() ? 44.0f : 11.0f;
+    const auto honk  = vehicle->m_autoPilot.carCtrlFlags.bHonkAtPed;
+
+    const auto& pos    = vehicle->GetPosition();
+    const auto  minX   = pos.x - range;
+    const auto  minY   = pos.y - range;
+    const auto  maxX   = pos.x + range;
+    const auto  maxY   = pos.y + range;
+    const auto  Sector = [](float coord) { return (int32)std::floor(coord * 0.02f + 60.0f); };
+
+    const auto startX = std::max(Sector(minX), 0);
+    const auto startY = std::max(Sector(minY), 0);
+    const auto endX   = std::min(Sector(maxX), 119);
+    const auto endY   = std::min(Sector(maxY), 119);
+
+    CWorld::AdvanceCurrentScanCode();
+
+    auto speed = (float)vehicle->m_autoPilot.m_nCruiseSpeed;
+    for (auto y = startY; y <= endY; y++) {
+        for (auto x = startX; x <= endX; x++) {
+            SlowCarDownForPedsSectorList(CWorld::GetRepeatSector(x, y).Peds, vehicle, minX, minY, maxX, maxY, &speed, (float)vehicle->m_autoPilot.m_nCruiseSpeed);
+        }
+    }
+
+    vehicle->vehicleFlags.bWarnedPeds                = true;
+    vehicle->m_autoPilot.carCtrlFlags.bHonkAtPed = honk;
 }
 
 // 0x42FBC0
