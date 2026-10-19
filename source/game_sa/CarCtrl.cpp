@@ -8,6 +8,7 @@
 #include "StdInc.h"
 
 #include "CarCtrl.h"
+#include "CarAI.h"
 #include "TrafficLights.h"
 #include "ModelIndices.h"
 #include "TheScripts.h"
@@ -115,7 +116,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0, { .Reversed = false });
-    RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990);
     RH_ScopedInstall(SteerAICarWithPhysics_OnlyMission, 0x436A90, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0);
     RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0, { .Reversed = false });
@@ -1406,7 +1407,71 @@ void CCarCtrl::SteerAICarWithPhysicsTryingToBlockTarget(CVehicle* vehicle, CEnti
 
 // 0x428990
 void CCarCtrl::SteerAICarWithPhysicsTryingToBlockTarget_Stop(CVehicle* vehicle, float x, float y, float arg4, float arg5, float* arg6, float* arg7, float* arg8, bool* arg9) {
-    plugin::Call<0x428990, CVehicle*, float, float, float, float, float*, float*, float*, bool*>(vehicle, x, y, arg4, arg5, arg6, arg7, arg8, arg9);
+    static_assert(offsetof(CVehicle, m_nCopsInCarTimer) == 0x4DC);
+    static_assert(offsetof(CVehicle, m_pDriver) == 0x460);
+
+    // arg4 and arg5 are the speed of the target, arg6 steering, arg7 gas, arg8 brake, arg9 handbrake
+    *arg6 = 0.0f;
+    *arg7 = 0.0f;
+    *arg8 = 1.0f;
+    *arg9 = true;
+
+    auto& mission = vehicle->m_autoPilot.m_nCarMission;
+
+    const auto& pos  = vehicle->GetPosition();
+    const auto  dist = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+    if (dist > 100.0f) {
+        mission = mission == MISSION_BLOCKCAR_HANDBRAKESTOP ? MISSION_BLOCKCAR_CLOSE : MISSION_BLOCKPLAYER_CLOSE;
+        return;
+    }
+
+    const auto StopAndLeave = [&] {
+        CCarAI::TellOccupantsToLeaveCar(vehicle);
+        vehicle->m_autoPilot.m_nCruiseSpeed = 0;
+        mission                             = MISSION_NONE;
+    };
+
+    if (mission == MISSION_BLOCKCAR_HANDBRAKESTOP) {
+        // A driver that is busy with a criminal keeps the car where it is
+        if (const auto* driver = vehicle->m_pDriver) {
+            if (const auto* task = driver->GetIntelligence()->GetTaskManager().GetActiveTask(); task && task->GetTaskType() == TASK_COMPLEX_KILL_CRIMINAL) {
+                return;
+            }
+        }
+        if (vehicle->GetMoveSpeed().SquaredMagnitude2D() >= 0.0001f) {
+            return;
+        }
+        if (arg4 * arg4 + arg5 * arg5 >= 0.0004f) {
+            return;
+        }
+        if (!vehicle->vehicleFlags.bIsLawEnforcer) {
+            return;
+        }
+        StopAndLeave();
+        return;
+    }
+
+    // Count how long the player has been standing still in a vehicle
+    auto* const playerVeh = FindPlayerVehicle();
+    if (playerVeh && playerVeh->GetMoveSpeed().Magnitude() < 0.05f) {
+        vehicle->m_nCopsInCarTimer = (int16)(int32)(CTimer::GetTimeStep() * 16.666666f + (float)(uint16)vehicle->m_nCopsInCarTimer);
+    } else {
+        vehicle->m_nCopsInCarTimer = 0;
+    }
+
+    if (FindPlayerVehicle() && !FindPlayerVehicle()->IsUpsideDown()) {
+        if (FindPlayerVehicle()->GetMoveSpeed().Magnitude() >= 0.05f) {
+            return;
+        }
+        if ((uint16)vehicle->m_nCopsInCarTimer <= 2500) {
+            return;
+        }
+    }
+
+    if (!vehicle->vehicleFlags.bIsLawEnforcer || dist >= 100.0f) {
+        return;
+    }
+    StopAndLeave();
 }
 
 // 0x436A90
