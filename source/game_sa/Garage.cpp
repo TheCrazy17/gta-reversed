@@ -25,7 +25,7 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(CloseThisGarage, 0x447D70);
     RH_ScopedInstall(InitDoorsAtStart, 0x447600);
     RH_ScopedOverloadedInstall(IsPointInsideGarage, "1", 0x4487D0, bool (CGarage::*)(CVector, float));
-    RH_ScopedInstall(Update, 0x44AA50, { .Reversed = false }); // 861 lines, not verified against the binary yet
+    RH_ScopedInstall(Update, 0x44AA50);
     RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
     RH_ScopedInstall(RestoreCarsForThisHideOut, 0x448550);
     RH_ScopedInstall(RestoreCarsForThisImpoundingGarage, 0x4485C0);
@@ -647,9 +647,10 @@ float CGarage::CalcDistToGarageRectangleSquared(float x, float y) {
 
 // 0x44AA50
 void CGarage::Update(int32 garageId) {
+    // Camera: tell the camera when the player is inside of this garage
     if (m_nType != 13 && m_nDoorState < 6 && FindPlayerPed() && !m_bCameraFollowsPlayer) {
         auto* const playerVehicle = FindPlayerVehicle(-1, false);
-        auto* candidateEntity = static_cast<CEntity*>(FindPlayerPed());
+        auto*       candidateEntity = static_cast<CEntity*>(FindPlayerPed());
         auto* const player = FindPlayerPed();
         if (player->bInVehicle && player->m_pVehicle && player->m_pVehicle->GetModelIndex() == MODEL_KART) {
             candidateEntity = player->m_pVehicle;
@@ -682,106 +683,79 @@ void CGarage::Update(int32 garageId) {
         m_bDoorClosed = !((m_nDoorState == GARAGE_DOOR_OPENING && m_fDoorPosition > 0.4f) || m_nDoorState == GARAGE_DOOR_OPEN);
     }
 
-    switch (m_nType) {
-    case ONLY_TARGET_VEH:
-        switch (m_nDoorState) {
-        case GARAGE_DOOR_CLOSED:
-            if (FindPlayerVehicle(-1, false) != m_pTargetCar || !m_pTargetCar) {
-                return;
-            }
-            if (CalcDistToGarageRectangleSquared(m_pTargetCar->GetPosition().x, m_pTargetCar->GetPosition().y) >= 64.0f) {
-                return;
-            }
-            m_nDoorState = GARAGE_DOOR_OPENING;
-            return;
-        case GARAGE_DOOR_OPEN: {
-            const auto& pos = FindPlayerCoors(-1);
-            const auto dx = pos.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
-            const auto dy = pos.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
-            if (dx * dx + dy * dy <= 900.0f) {
-                if (FindPlayerVehicle(-1, false) == m_pTargetCar) {
-                    return;
-                }
-                if (!m_pTargetCar) {
-                    return;
-                }
-                if (!IsEntityEntirelyInside3D(m_pTargetCar, 0.0f)) {
-                    return;
-                }
-                auto* const otherVehicle = FindPlayerVehicle(-1, false);
-                CEntity* const subject = otherVehicle ? static_cast<CEntity*>(otherVehicle) : static_cast<CEntity*>(FindPlayerPed());
-                if (IsEntityEntirelyOutside(subject, 2.0f)) {
-                    CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
-                    FindPlayerWanted(-1)->m_bPoliceBackOffGarage = true;
-                    m_nFlags &= ~1;
-                    m_nDoorState = GARAGE_DOOR_CLOSING;
-                    return;
-                }
-                return;
-            }
-            if ((CTimer::GetFrameCounter() & 0x1f) != 0) {
-                return;
-            }
-            if (m_pTargetCar && IsEntityTouching3D(m_pTargetCar)) {
-                return;
-            }
-            m_nFlags |= 1;
-            m_nDoorState = GARAGE_DOOR_CLOSING;
+    const auto SetPlayerInGarage = [](bool inGarage) {
+        CPad::GetPad(0)->bPlayerAwaitsInGarage = inGarage;
+        FindPlayerWanted(-1)->m_bPoliceBackOffGarage = inGarage;
+    };
+    const auto CallOffChase = [this] {
+        CWorld::CallOffChaseForArea(m_fLeftCoord - 10.0f, m_fFrontCoord - 10.0f, m_fRightCoord + 10.0f, m_fBackCoord + 10.0f);
+    };
+    // Squared distance of the player to the middle of the garage
+    const auto SqDistPlayerToCenter = [this] {
+        const auto& coors = FindPlayerCoors(-1);
+        const auto  dx    = coors.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
+        const auto  dy    = coors.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
+        return dx * dx + dy * dy;
+    };
+    const auto SqDistToRect = [this](const CVector& pos) {
+        return CalcDistToGarageRectangleSquared(pos.x, pos.y);
+    };
+    // Door is opening: finish it and let the garage know it's open
+    const auto ProcessOpening = [this] {
+        if (SlideDoorOpen()) {
+            m_nDoorState = GARAGE_DOOR_OPEN;
+        }
+    };
+    // Door is closing on its own: the closing animation finishes it
+    const auto ProcessClosedByAnimation = [this] {
+        if (SlideDoorClosed()) {
+            m_nDoorState = GARAGE_DOOR_CLOSED;
+        }
+    };
+    const auto MaxCarsInHideout = [this] {
+        return m_nType == SAFEHOUSE_GANTON ? 2 : 4;
+    };
+    const auto PlayerOrPlayerVehicle = []() -> CEntity* {
+        if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+            return vehicle;
+        }
+        return FindPlayerPed(-1);
+    };
+
+    // Waits for the player's vehicle to come close enough to the garage
+    const auto OpenIfPlayerVehicleIsClose = [&](bool onlyTargetCar) {
+        auto* const vehicle = FindPlayerVehicle(-1, false);
+        if (onlyTargetCar && (vehicle != m_pTargetCar || !m_pTargetCar)) {
             return;
         }
-        case GARAGE_DOOR_CLOSING:
-            if (m_pTargetCar) {
-                CenterCarInGarage(m_pTargetCar);
-            }
-            if (!SlideDoorClosed()) {
-                return;
-            }
-            if (m_nFlags & 1) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-                return;
-            }
-            if (m_pTargetCar) {
-                m_nDoorState = GARAGE_DOOR_CLOSED_DROPPED_CAR;
-                m_pTargetCar->DestroyVehicleAndDriverAndPassengers(m_pTargetCar);
-                m_pTargetCar = nullptr;
-            } else {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-            }
-            CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
-            FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
+        if (!vehicle) {
             return;
-        case GARAGE_DOOR_OPENING:
-            if (SlideDoorOpen()) {
-                m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
-            }
-            return;
-        default:
-            break;
         }
-        [[fallthrough]];
-    case BOMBSHOP_TIMED:
-    case BOMBSHOP_ENGINE:
-    case BOMBSHOP_REMOTE:
+        if (SqDistToRect(vehicle->GetPosition()) >= 64.0f) {
+            return;
+        }
+        m_nDoorState = GARAGE_DOOR_OPENING;
+    };
+
+    // The bomb shops. ONLY_TARGET_VEH garages end up in here for the door states they don't handle.
+    const auto ProcessBombShop = [&] {
         switch (m_nDoorState) {
         case GARAGE_DOOR_CLOSED: {
             if (CTimer::GetTimeInMS() <= m_nTimeToOpen) {
                 return;
             }
-            if (m_nType == BOMBSHOP_REMOTE /* NOTSA: && !DAT_008e6940-equivalent model-ready flag, not yet mapped */) {
-                // NOTSA: original checks a global "detonator model streamed" flag here; if not set,
-                // requests MODEL_BOMB and returns to wait. Treated as always-ready (flag assumed true)
-                // pending that global being mapped -- SAFE simplification since RequestModel below
-                // still runs unconditionally for every bombshop type.
+            if (m_nType == BOMBSHOP_REMOTE && !CStreaming::IsModelLoaded(MODEL_BOMB)) {
+                CStreaming::RequestModel(MODEL_BOMB, STREAMING_GAME_REQUIRED);
+                return;
             }
-            CStreaming::RequestModel(MODEL_BOMB, 2);
 
-            eAudioEvents soundEvent;
             switch (m_nType) {
-            case BOMBSHOP_TIMED:  soundEvent = (eAudioEvents)0x12; break;
-            case BOMBSHOP_ENGINE: soundEvent = (eAudioEvents)0x13; break;
-            default:              soundEvent = (eAudioEvents)0x14; break;
+            case BOMBSHOP_TIMED:  AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_FIT_BOMB_TIMED);                  break;
+            case BOMBSHOP_ENGINE: AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_FIT_BOMB_BOOBY_TRAPPED);          break;
+            case BOMBSHOP_REMOTE: AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_FIT_BOMB_REMOTE_CONTROLLED);      break;
+            default:                                                                                                     break;
             }
-            AudioEngine.ReportFrontendAudioEvent(soundEvent, 0, 1.0f);
+
             m_nDoorState = GARAGE_DOOR_OPENING;
 
             if (!CGarages::BombsAreFree) {
@@ -791,437 +765,170 @@ void CGarage::Update(int32 garageId) {
                 }
             }
 
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false);
-                playerVehicle && (playerVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || playerVehicle->m_nVehicleType == VEHICLE_TYPE_BIKE)) {
-                playerVehicle->m_nBombOnBoard = (m_nType - 1) & 7;
-                playerVehicle->m_pWhoInstalledBombOnMe = FindPlayerPed();
+            if (auto* const vehicle = FindPlayerVehicle(-1, false);
+                vehicle && (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE)) {
+                vehicle->m_nBombOnBoard          = (m_nType - 1) & 7;
+                vehicle->m_pWhoInstalledBombOnMe = FindPlayerPed();
                 if (m_nType == BOMBSHOP_REMOTE) {
-                    // NOTSA: thunk_FUN_01569b90() - no visible args, decompiled body not yet checked; forward raw
-                    plugin::Call<0x1569B90>();
+                    CGarages::GivePlayerDetonator();
                 }
-                CStats::IncrementStat((eStats)0x7f, 10.0f);
+                CStats::IncrementStat(STAT_KGS_OF_EXPLOSIVES_USED, 10.0f);
             }
 
-            const char* msgKey = nullptr;
+            const char* key{};
             switch (m_nType) {
             case BOMBSHOP_TIMED:
-                if (CPad::GetPad(0)->JustOutOfFrontEnd < 3) { // NOTSA: field guessed, needs verification -- see note
-                    msgKey = "GA_6";
-                } else if (CPad::GetPad(0)->JustOutOfFrontEnd == 3) {
-                    msgKey = "GA_6B";
+            case BOMBSHOP_ENGINE: {
+                const auto padMode = CPad::GetPad(0)->Mode;
+                if (padMode < 3) {
+                    key = m_nType == BOMBSHOP_TIMED ? "GA_6" : "GA_7";
+                } else if (padMode == 3) {
+                    key = m_nType == BOMBSHOP_TIMED ? "GA_6B" : "GA_7B";
                 } else {
                     return;
                 }
-                break;
-            case BOMBSHOP_ENGINE:
-                if (CPad::GetPad(0)->JustOutOfFrontEnd < 3) {
-                    msgKey = "GA_7";
-                } else if (CPad::GetPad(0)->JustOutOfFrontEnd == 3) {
-                    msgKey = "GA_7B";
-                } else {
-                    return;
-                }
-                break;
-            default:
-                msgKey = "GA_8";
                 break;
             }
-            CHud::SetHelpMessage(TheText.Get(msgKey));
+            case BOMBSHOP_REMOTE:
+                key = "GA_8";
+                break;
+            default:
+                return;
+            }
+            CHud::SetHelpMessage(TheText.Get(key), false, false, true);
             return;
         }
         case GARAGE_DOOR_OPEN: {
             if (!IsStaticPlayerCarEntirelyInside()) {
                 return;
             }
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (!playerVehicle || playerVehicle->m_nVehicleSubType == VEHICLE_TYPE_BIKE || playerVehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
-                break;
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if (!vehicle || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BIKE || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+                return;
             }
-            if ((playerVehicle->m_nBombOnBoard & 7) != 0) {
+            if (vehicle->m_nBombOnBoard != 0) {
                 CGarages::TriggerMessage("GA_5", -1, 4000, -1);
                 m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
-                AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0x11, 0, 1.0f);
+                AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_ALREADY_RIGGED);
                 return;
             }
             if (!CGarages::BombsAreFree && FindPlayerInfo().m_nMoney < 500) {
                 CGarages::TriggerMessage("GA_4", -1, 4000, -1);
                 m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
-                AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0xe, 0, 1.0f);
+                AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_NO_CASH);
                 return;
             }
             m_nDoorState = GARAGE_DOOR_CLOSING;
-            CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
-            playerVehicle->m_fDirtLevel = 0.0f;
+            SetPlayerInGarage(true);
             return;
         }
-        case GARAGE_DOOR_CLOSING: {
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
-                CenterCarInGarage(playerVehicle);
+        case GARAGE_DOOR_CLOSING:
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                CenterCarInGarage(vehicle);
             }
             if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
+                m_nDoorState  = GARAGE_DOOR_CLOSED;
                 m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
             }
-            if (m_nType != BOMBSHOP_REMOTE) {
-                break;
+            if (m_nType == BOMBSHOP_REMOTE) {
+                CStreaming::RequestModel(MODEL_BOMB, STREAMING_GAME_REQUIRED);
             }
-            return; // NOTSA: original re-checks remote-detonator model streaming here (goto LAB_0044b5ae); simplified to a plain return, see BOMBSHOP door-state-0 note
-        }
+            return;
         case GARAGE_DOOR_OPENING:
             if (SlideDoorOpen()) {
                 m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
             }
             if (m_fDoorPosition > 0.5f) {
-                CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
-                FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
-                return;
+                SetPlayerInGarage(false);
             }
-            break;
+            return;
         case GARAGE_DOOR_WAITING_PLAYER_TO_EXIT:
-            // thunk_FUN_01569180 confirmed = IsPlayerOutsideGarage (used correctly elsewhere in
-            // this file already) - an earlier pass here left this as an unresolved raw forward
-            // with a wrong guess in the comment ("bomb-fit transaction"); fixed.
             if (IsPlayerOutsideGarage(0.0f)) {
                 m_nDoorState = GARAGE_DOOR_OPEN;
             }
             return;
-        }
-        break; // ONLY_TARGET_VEH/BOMBSHOP_*: falls to TAIL #1 (CallOffChaseForArea) below
-
-    case UNKN_CLOSESONTOUCH:
-        switch (m_nDoorState) {
-        case GARAGE_DOOR_OPEN:
-            if (IsGarageEmpty()) {
-                m_nDoorState = GARAGE_DOOR_CLOSING;
-            }
-            return;
-        case GARAGE_DOOR_CLOSING:
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-            }
-            if (!IsGarageEmpty()) {
-                m_nDoorState = GARAGE_DOOR_OPENING;
-            }
-            return;
         default:
-            break; // CLOSED/OPENING/WAITING/CLOSED_DROPPED_CAR -> TAIL #2 below, NOT CallOffChaseForArea
+            return;
         }
-        goto tail2;
+    };
 
-    case SCRIPT_ONLY_OPEN:
-        goto tail2; // this type has NO logic of its own beyond tail #2 (see below)
-
-    case OPEN_FOR_TARGET_FREEZE_PLAYER:
-    case CLOSE_WITH_CAR_DONT_OPEN_AGAIN:
-        switch (m_nDoorState) {
-        case GARAGE_DOOR_CLOSED: {
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (playerVehicle == m_pTargetCar && m_pTargetCar &&
-                CalcDistToGarageRectangleSquared(playerVehicle->GetPosition().x, playerVehicle->GetPosition().y) < 289.0f) {
-                m_nDoorState = GARAGE_DOOR_OPENING;
-                return;
+    // Doors of the garage that are used by the target car: the car is dropped off once the door is closed
+    const auto ProcessTargetCarClosing = [&](bool dropTimer) {
+        if (m_pTargetCar) {
+            CenterCarInGarage(m_pTargetCar);
+        }
+        if (!SlideDoorClosed()) {
+            return;
+        }
+        if (m_b0x1) {
+            m_nDoorState = GARAGE_DOOR_CLOSED;
+            return;
+        }
+        if (m_pTargetCar) {
+            m_nDoorState = GARAGE_DOOR_CLOSED_DROPPED_CAR;
+            if (dropTimer) {
+                m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
+                m_pTargetCar  = nullptr;
+            } else {
+                m_pTargetCar->DestroyVehicleAndDriverAndPassengers(m_pTargetCar);
+                m_pTargetCar = nullptr;
             }
-            break; // falls to TAIL #1 below
+        } else {
+            m_nDoorState = GARAGE_DOOR_CLOSED;
         }
+        SetPlayerInGarage(false);
+    };
+
+    switch (m_nType) {
+    case ONLY_TARGET_VEH:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_CLOSED:
+            OpenIfPlayerVehicleIsClose(true);
+            return;
         case GARAGE_DOOR_OPEN: {
-            const auto& playerCoors = FindPlayerCoors(-1);
-            const auto dx = playerCoors.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
-            const auto dy = playerCoors.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
-            if (dx * dx + dy * dy <= 900.0f && m_pTargetCar) { // 30^2, same radius as ONLY_TARGET_VEH's OPEN check
-                if (FindPlayerVehicle(-1, false) != m_pTargetCar) {
+            if (SqDistPlayerToCenter() <= 900.0f) {
+                if (FindPlayerVehicle(-1, false) == m_pTargetCar || !m_pTargetCar) {
                     return;
                 }
-                if (IsStaticPlayerCarEntirelyInside() && !IsAnyCarBlockingDoor()) {
-                    CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
-                    FindPlayerWanted(-1)->m_bPoliceBackOffGarage = true;
-                    m_b0x1 = false;
+                if (!IsEntityEntirelyInside3D(m_pTargetCar, 0.0f)) {
+                    return;
+                }
+                if (IsEntityEntirelyOutside(PlayerOrPlayerVehicle(), 2.0f)) {
+                    SetPlayerInGarage(true);
+                    m_b0x1       = false;
                     m_nDoorState = GARAGE_DOOR_CLOSING;
                 }
                 return;
             }
-            // Not close enough / no target car: same fallback ONLY_TARGET_VEH's OPEN case uses
-            // when the player leaves too far away (LAB_0044c662).
-            m_b0x1 = true;
+            if ((CTimer::GetFrameCounter() & 0x1F) != 0) {
+                return;
+            }
+            if (m_pTargetCar && IsEntityTouching3D(m_pTargetCar)) {
+                return;
+            }
+            m_b0x1       = true;
             m_nDoorState = GARAGE_DOOR_CLOSING;
             return;
         }
         case GARAGE_DOOR_CLOSING:
-            if (m_pTargetCar) {
-                CenterCarInGarage(m_pTargetCar);
-            }
-            if (!SlideDoorClosed()) {
-                return;
-            }
-            if (!m_b0x1) {
-                if (m_pTargetCar) {
-                    m_nDoorState = GARAGE_DOOR_CLOSED_DROPPED_CAR;
-                    m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
-                    m_pTargetCar = nullptr;
-                } else {
-                    m_nDoorState = GARAGE_DOOR_CLOSED;
-                }
-                CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
-                FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
-                return;
-            }
-            m_nDoorState = GARAGE_DOOR_CLOSED;
+            ProcessTargetCarClosing(false);
             return;
         case GARAGE_DOOR_OPENING:
-            goto tail2; // confirmed: this door-state explicitly uses TAIL #2, not TAIL #1
-        case GARAGE_DOOR_CLOSED_DROPPED_CAR:
-            // Only meaningful for OPEN_FOR_TARGET_FREEZE_PLAYER specifically (CLOSE_WITH_CAR_DONT_
-            // OPEN_AGAIN never reopens on its own, matching its name) - waits out the same 2000ms
-            // timer set above, then reopens.
-            if (m_nType == OPEN_FOR_TARGET_FREEZE_PLAYER && CTimer::GetTimeInMS() >= m_nTimeToOpen) {
-                m_nDoorState = GARAGE_DOOR_OPENING;
-                return;
-            }
-            break;
-        }
-        break; // TAIL #1
-
-    // Generic hideout/safehouse/hangar group (SAFEHOUSE_* + HANGAR_*).
-    case SAFEHOUSE_GANTON:       case SAFEHOUSE_SANTAMARIA:   case SAGEHOUSE_ROCKSHORE:
-    case SAFEHOUSE_FORTCARSON:   case SAFEHOUSE_VERDANTMEADOWS: case SAFEHOUSE_DILLIMORE:
-    case SAFEHOUSE_PRICKLEPINE:  case SAFEHOUSE_WHITEWOOD:    case SAFEHOUSE_PALOMINOCREEK:
-    case SAFEHOUSE_REDSANDSWEST: case SAFEHOUSE_ELCORONA:     case SAFEHOUSE_MULHOLLAND:
-    case SAFEHOUSE_CALTONHEIGHTS: case SAFEHOUSE_PARADISO:    case SAFEHOUSE_DOHERTY:
-    case SAFEHOUSE_HASHBURY:     case HANGAR_AT400:
-    case HANGAR_ABANDONED_AIRPORT:
-    // NOTE: BURGLARY(43) is NOT part of this switch group, despite an earlier session's draft
-    // assuming so - re-verified via raw decompile on 2026-09-07: every "!= ','" / "== ','" check
-    // in this whole group compares against 0x2c=44=HANGAR_AT400, not 0x2b=43=BURGLARY. BURGLARY
-    // has its own separate case (falls through from the TUNING_* group) - see further below.
-        switch (m_nDoorState) {
-        case GARAGE_DOOR_CLOSED: {
-            const auto& playerCoors = FindPlayerCoors(-1);
-            if (playerCoors.z >= 950.0f) {
-                return;
-            }
-
-            const auto distSq = CalcDistToGarageRectangleSquared(playerCoors.x, playerCoors.y);
-            if (distSq >= 12.25f) {   // outside 3.5 units
-                if (distSq >= 100.0f) { // outside 10 units entirely -> too far
-                    return;
-                }
-                auto* const pv = FindPlayerVehicle(-1, false);
-                if (!pv) {
-                    return;
-                }
-                // NOTSA: `pv+0x594` still unidentified (same field flagged in Bike.cpp and in
-                // RestoreCarsForThisHideOut/ImpoundingGarage - compared against 10 here, 0/9 there).
-                if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(pv) + 0x594) == 10) {
-                    return;
-                }
-            }
-
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            const auto slotThreshold = (m_nType != SAFEHOUSE_GANTON) ? 4 : 2;
-            if (!playerVehicle || m_nType == HANGAR_AT400 || CGarages::CountCarsInHideoutGarage(m_nType) < slotThreshold) {
-                if (m_nType != HANGAR_AT400) {
-                    auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
-                    if (!RestoreCarsForThisHideOut(cars)) {
-                        return; // still waiting on model streaming, retry next frame
-                    }
-                }
-                m_nDoorState = GARAGE_DOOR_OPENING;
-                return;
-            }
-
-            // Safehouse already has enough cars stored - instead of a restore-triggered open,
-            // check whether the player's vehicle just got close to one of the garage's 2 door
-            // objects (a plain squared-XY-distance proximity test against each door in turn, NOT
-            // a dot-product "which side of the plane" test - that was an earlier, unverified guess;
-            // corrected via raw disasm of decomp_garage_update.txt lines 829-954 on 2026-09-07).
-            {
-                CObject *door1, *door2;
-                FindDoorsWithGarage(&door1, &door2);
-
-                const auto isNearDoor = [&](CObject* door) {
-                    if (!door) {
-                        return false;
-                    }
-                    const auto d = door->GetPosition() - playerVehicle->GetPosition();
-                    return d.x * d.x + d.y * d.y < 25.f; // 5 units, 0x858FE8
-                };
-
-                if (isNearDoor(door1) || isNearDoor(door2)) {
-                    if (CTimer::GetTimeInMS() - CGarages::LastTimeHelpMessage >= 0x4651) { // 18001ms
-                        const auto appearance = playerVehicle->GetVehicleAppearance();
-                        if (appearance != VEHICLE_APPEARANCE_HELI && appearance != VEHICLE_APPEARANCE_PLANE) {
-                            CHud::SetHelpMessage(TheText.Get("GA_21"));
-                            CGarages::LastTimeHelpMessage = CTimer::GetTimeInMS();
-                        }
-                    }
-                }
-            }
-            break; // falls to TAIL #1
-        }
-        case GARAGE_DOOR_OPEN: {
-            const auto& playerCoors = FindPlayerCoors(-1);
-            const auto distSq = CalcDistToGarageRectangleSquared(playerCoors.x, playerCoors.y);
-
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            const bool noValidVehicleNearby = !playerVehicle ||
-                *reinterpret_cast<int32*>(reinterpret_cast<char*>(playerVehicle) + 0x594) == 10;
-
-            const bool anyCarBlockingDoor = IsAnyCarBlockingDoor(); // still a raw forward, see its own definition
-
-            if ((distSq > 225.0f || (distSq > 16.0f && noValidVehicleNearby)) && !anyCarBlockingDoor) {
-                m_nDoorState = GARAGE_DOOR_CLOSING;
-                return;
-            }
-
-            if (playerVehicle) {
-                const auto slotThreshold = (m_nType != SAFEHOUSE_GANTON) ? 4 : 2;
-                if (CountCarsWithCenterPointWithinGarage(playerVehicle) >= slotThreshold && IsPlayerOutsideGarage(0.25f)) {
-                    m_nDoorState = GARAGE_DOOR_CLOSING;
-                    return;
-                }
-            }
-
-            if (distSq > 4900.0f) {
-                m_nDoorState = GARAGE_DOOR_CLOSING;
-                RemoveCarsBlockingDoorNotInside();
-            }
+            ProcessOpening();
+            return;
+        default:
+            ProcessBombShop();
             return;
         }
-        case GARAGE_DOOR_CLOSING:
-            SlideDoorClosed();
-            if (IsPlayerOutsideGarage(0.0f)) {
-                if (m_fDoorPosition != 0.0f) {
-                    return; // still animating closed
-                }
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-                if (m_nType != HANGAR_AT400) {
-                    auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
-                    StoreAndRemoveCarsForThisHideOut(cars, 4);
-                }
-                return;
-            }
-            // player re-entered mid-close
-            m_nDoorState = GARAGE_DOOR_OPENING;
-            return;
-        case GARAGE_DOOR_OPENING:
-            goto tail2; // confirmed: this door-state explicitly uses TAIL #2, not TAIL #1
-        }
-        break;
 
-    case SCRIPT_CONTROLLED:
-        // Fully script-driven (OpenThisGarage/CloseThisGarage) - Update() only finishes whichever
-        // door animation is currently in progress; CLOSED/OPEN states do nothing at all.
-        if (m_nDoorState == GARAGE_DOOR_CLOSING) {
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-            }
-            return;
-        }
-        if (m_nDoorState == GARAGE_DOOR_OPENING) {
-            goto tail2; // SlideDoorOpen-only tail (matches this door-state's own goto exactly)
-        }
-        return; // CLOSED/OPEN/other: no-op, matches switchD_0044ba69_caseD_4's plain return
-
-    case STAY_OPEN_WITH_CAR_INSIDE:
-        switch (m_nDoorState) {
-        case GARAGE_DOOR_CLOSED:
-            // NOTSA: reuses ONLY_TARGET_VEH's door-state-CLOSED code verbatim (confirmed via
-            // `goto switchD_0044b7fb_caseD_0` in the original) - duplicated here rather than
-            // sharing a C++ label across unrelated case blocks.
-            if (FindPlayerVehicle(-1, false) != m_pTargetCar || !m_pTargetCar) {
-                return;
-            }
-            if (CalcDistToGarageRectangleSquared(m_pTargetCar->GetPosition().x, m_pTargetCar->GetPosition().y) >= 64.0f) {
-                return;
-            }
-            m_nDoorState = GARAGE_DOOR_OPENING;
-            return;
-        case GARAGE_DOOR_OPEN: {
-            // Same "player wandered too far from the garage center" shape as
-            // OPEN_FOR_TARGET_FREEZE_PLAYER's OPEN case above, just gated on IsEntityEntirelyOutside
-            // instead of IsAnyCarBlockingDoor/IsStaticPlayerCarEntirelyInside.
-            const auto& playerCoors = FindPlayerCoors(-1);
-            const auto dx = playerCoors.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
-            const auto dy = playerCoors.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
-            if (dx * dx + dy * dy > 900.0f && m_pTargetCar && IsEntityEntirelyOutside(m_pTargetCar, 0.0f)) {
-                m_b0x1 = true;
-                m_nDoorState = GARAGE_DOOR_CLOSING;
-                return;
-            }
-            break; // falls to TAIL #1
-        }
-        case GARAGE_DOOR_CLOSING:
-            if (m_pTargetCar) {
-                CenterCarInGarage(m_pTargetCar);
-            }
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-            }
-            return;
-        case GARAGE_DOOR_OPENING:
-            goto tail2;
-        }
-        break;
-
-    case SCRIPT_OPEN_FREEZE_WHEN_CLOSING:
-        if (m_nDoorState == GARAGE_DOOR_OPEN) {
-            if (!m_pTargetCar) {
-                return;
-            }
-            if (!IsEntityEntirelyInside3D(m_pTargetCar, 0.0f)) {
-                return;
-            }
-            if (IsAnyCarBlockingDoor()) { // still a raw forward, see its own definition
-                return;
-            }
-            if (IsPlayerOutsideGarage(0.0f)) {
-                CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
-                m_b0x1 = false;
-                m_nDoorState = GARAGE_DOOR_CLOSING;
-            }
-            return;
-        }
-        if (m_nDoorState == GARAGE_DOOR_CLOSING) {
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-                CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
-            }
-            return;
-        }
-        goto tail2; // CLOSED/OPENING -> TAIL #2
-
-    case IMPOUND_LS:
-    case IMPOUND_SF:
-    case IMPOUND_LV: {
-        // NOTSA: no animated door here (no SlideDoorOpen/SlideDoorClosed calls at all in this
-        // group) - the door just flips instantly between CLOSED and OPEN.
-        const auto& playerCoors = FindPlayerCoors(-1);
-        const auto distSq = CalcDistToGarageRectangleSquared(playerCoors.x, playerCoors.y);
-        const bool heightOk = playerCoors.z < (m_fTopZ - 2.0f) && m_vPosn.z < playerCoors.z;
-
-        if (m_nDoorState == GARAGE_DOOR_CLOSED) {
-            if (distSq < 3600.0f && heightOk) { // within 60 units
-                auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
-                NeatlyLineUpStoredCars(cars);
-                if (RestoreCarsForThisImpoundingGarage(cars)) {
-                    m_nDoorState = GARAGE_DOOR_OPEN;
-                    return;
-                }
-            }
-        } else if (m_nDoorState < GARAGE_DOOR_OPENING) { // OPEN(1) or CLOSING(2)
-            if (distSq > 4225.0f || !heightOk || m_nDoorState == GARAGE_DOOR_CLOSING) { // beyond 65 units (hysteresis vs the 60-unit open radius)
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-                auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
-                StoreAndRemoveCarsForThisImpoundingGarage(cars, 3);
-                return;
-            }
-        }
-        break; // TAIL #1
-    }
+    case BOMBSHOP_TIMED:
+    case BOMBSHOP_ENGINE:
+    case BOMBSHOP_REMOTE:
+        ProcessBombShop();
+        return;
 
     case PAYNSPRAY: {
-        // Gate shared by every door-state: too high up (e.g. on a bridge/roof) -> skip entirely.
-        const auto& playerCoorsGate = FindPlayerCoors(-1);
-        if (playerCoorsGate.z >= 950.0f) {
+        if (FindPlayerCoors(-1).z >= 950.0f) {
             return;
         }
 
@@ -1231,68 +938,74 @@ void CGarage::Update(int32 garageId) {
                 return;
             }
             if (CTimer::GetTimeInMS() <= m_nTimeToOpen) {
-                break; // falls to TAIL #1
+                CallOffChase();
+                return;
             }
             m_nDoorState = GARAGE_DOOR_OPENING;
 
-            auto needsRespray = false;
-            auto* const wanted = FindPlayerWanted(-1);
+            auto  needsRespray = false;
+            auto* wanted       = FindPlayerWanted(-1);
             const auto wasWanted = wanted->m_WantedLevel != eWantedLevel::WANTED_CLEAN;
+            auto  colourChanged = wasWanted;
             if (wasWanted) {
                 needsRespray = true;
                 wanted->ClearWantedLevelAndGoOnParole();
             }
 
-            auto colourChanged = false;
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false);
-                playerVehicle && (playerVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || playerVehicle->m_nVehicleType == VEHICLE_TYPE_BIKE)) {
-                if (playerVehicle->m_fHealth < 970.0f) {
+            if (auto* const vehicle = FindPlayerVehicle(-1, false);
+                vehicle && (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE)) {
+                colourChanged = false;
+                if (vehicle->m_fHealth < 970.0f) {
                     needsRespray = true;
                 }
-                playerVehicle->m_fHealth = std::max(1000.0f, playerVehicle->m_fHealth);
-                // NOTSA: the original also zeroes `vehicle+0x8E4` (CAutomobile) or `vehicle+0x7BC`
-                // (other types) here - OMITTED, `+0x8E4` exceeds CBike's own size (a genuine OOB
-                // write for bike-shaped vehicles in the original binary) and both fields reset minor
-                // damage/collision-flag state, not core to respray correctness. See
-                // garage_update_progress.md's 2026-09-05/09-07 notes for the full reasoning.
-                playerVehicle->Fix();
+                vehicle->m_fHealth = std::max(1000.0f, vehicle->m_fHealth);
+                if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+                    vehicle->AsAutomobile()->m_fBurnTimer = 0.0f;
+                } else {
+                    vehicle->AsBike()->m_BlowUpTimer = 0.0f;
+                }
+                vehicle->Fix();
                 CStats::IncrementStat(STAT_VEHICLE_RESPRAYS, 1.0f);
 
-                if (playerVehicle->GetUp().z < 0.0f) { // upside down - flip back onto its wheels
-                    playerVehicle->GetUp()    = -playerVehicle->GetUp();
-                    playerVehicle->GetRight() = -playerVehicle->GetRight();
+                // Put the vehicle back onto its wheels
+                if (vehicle->GetMatrix().GetUp().z < 0.0f) {
+                    vehicle->GetMatrix().GetUp()    = -vehicle->GetMatrix().GetUp();
+                    vehicle->GetMatrix().GetRight() = -vehicle->GetMatrix().GetRight();
                 }
 
-                // NOTSA: `vehicle+0x868` bit1 - unmapped flag, gates whether a colour change is
-                // even considered here.
-                if ((*reinterpret_cast<uint8*>(reinterpret_cast<char*>(playerVehicle) + 0x868) & 2) == 0
-                    && plugin::CallMethodAndReturn<int32, 0x6D0B70, CVehicle*>(playerVehicle) < 0) { // FindCurrentColourRemapIndex-ish, see notes
-                    uint8 r, g, b, a;
-                    auto* const modelInfo = CModelInfo::GetModelInfo(playerVehicle->GetModelIndex());
-                    plugin::CallMethod<0x4C8500, CBaseModelInfo*, uint8*, uint8*, uint8*, uint8*, int32>(modelInfo, &r, &g, &b, &a, 1);
-                    if (r != playerVehicle->m_nPrimaryColor || g != playerVehicle->m_nSecondaryColor
-                        || b != playerVehicle->m_nTertiaryColor || a != playerVehicle->m_nQuaternaryColor) {
+                // NOTSA: Like the original, this reads the automobile's flags for every vehicle type (the pool slots are big enough for that)
+                if (!vehicle->AsAutomobile()->autoFlags.bShouldNotChangeColour && vehicle->GetRemapIndex() < 0) {
+                    uint8 primary, secondary, tertiary, quaternary;
+                    vehicle->GetVehicleModelInfo()->ChooseVehicleColour(primary, secondary, tertiary, quaternary, 1);
+                    if (vehicle->m_nPrimaryColor != primary || vehicle->m_nSecondaryColor != secondary
+                        || vehicle->m_nTertiaryColor != tertiary || vehicle->m_nQuaternaryColor != quaternary) {
                         colourChanged = true;
                     }
-                    playerVehicle->m_nPrimaryColor    = r;
-                    playerVehicle->m_nSecondaryColor  = g;
-                    playerVehicle->m_nTertiaryColor   = b;
-                    playerVehicle->m_nQuaternaryColor = a;
-                    plugin::CallMethod<0x6D0C00, CVehicle*, int32>(playerVehicle, -1); // apply the new colour remap
+                    vehicle->m_nPrimaryColor    = primary;
+                    vehicle->m_nSecondaryColor  = secondary;
+                    vehicle->m_nTertiaryColor   = tertiary;
+                    vehicle->m_nQuaternaryColor = quaternary;
+                    vehicle->SetRemap(-1);
 
-                    // NOTSA: original also spawns 10 red "paint flash" spark particles here
-                    // (FxPrtMult_c(1,0,0,0.6,0.7,1,0.4) + FxSystem_c::AddParticle, jittered around
-                    // the vehicle's position) when `colourChanged` - cosmetic only, OMITTED pending
-                    // exact verification of which stack locals feed which AddParticle parameter
-                    // (ambiguous from the decompile alone). Every other effect of this branch
-                    // (repair, colour, stats, messages) is unaffected by this omission.
+                    if (colourChanged) {
+                        // A cloud of smoke in the new colour
+                        FxPrtMult_c particle{ 1.0f, 0.0f, 0.0f, 0.6f, 0.7f, 1.0f, 0.4f };
+                        const auto  colour = CVehicleModelInfo::ms_vehicleColourTable[vehicle->m_nPrimaryColor];
+                        particle.m_Color.red   = (float)colour.r / 255.0f;
+                        particle.m_Color.green = (float)colour.g / 255.0f;
+                        particle.m_Color.blue  = (float)colour.b / 255.0f;
+                        for (auto i = 0; i < 10; i++) {
+                            CVector pos = vehicle->GetPosition();
+                            pos.x += CGeneral::GetRandomNumberInRange(-3.0f, 3.0f);
+                            pos.y += CGeneral::GetRandomNumberInRange(-3.0f, 3.0f);
+                            const CVector velocity{ 0.0f, 0.0f, CGeneral::GetRandomNumberInRange(0.0f, 0.05f) };
+                            g_fx.m_SmokeHuge->AddParticle(pos, velocity, 0.0f, particle, -1.0f, 1.2f, 0.6f, false);
+                        }
+                    }
                 }
 
-                // NOTSA: vehicle+0x4B0 - unmapped, reset to 0 after a completed respray pass.
-                *reinterpret_cast<uint32*>(reinterpret_cast<char*>(playerVehicle) + 0x4b0) = 0;
-                // NOTSA: vehicle+0x42E bit7 - the same "needs respray"-ish flag set in this garage
-                // type's own CLOSING case above, cleared here on a completed respray pass.
-                *reinterpret_cast<uint8*>(reinterpret_cast<char*>(playerVehicle) + 0x42e) &= 0x7f;
+                vehicle->m_fDirtLevel = 0.0f;
+                vehicle->vehicleFlags.bDisableParticles = false;
             }
 
             if (m_bRespraysAlwaysFree) {
@@ -1305,110 +1018,349 @@ void CGarage::Update(int32 garageId) {
                 CStats::IncrementStat(STAT_AUTO_REPAIR_AND_PAINTING_BUDGET, 100.0f);
                 CGarages::TriggerMessage(wasWanted ? "GA_2" : "GA_XX", -1, 4000, -1);
             } else if (colourChanged) {
-                CGarages::TriggerMessage((rand() & 1) ? "GA_16" : "GA_15", -1, 4000, -1);
+                CGarages::TriggerMessage((rand() & 1) == 0 ? "GA_16" : "GA_15", -1, 4000, -1);
             }
 
             m_bUsedRespray = true;
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (!playerVehicle) {
-                break; // falls to TAIL #1
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                vehicle->vehicleFlags.bHasBeenResprayed = true;
             }
-            // NOTSA: vehicle+0x42F bit0 - unmapped flag, set once the respray pass has run.
-            *reinterpret_cast<uint8*>(reinterpret_cast<char*>(playerVehicle) + 0x42f) |= 1;
-            break; // falls to TAIL #1
+            CallOffChase();
+            return;
         }
         case GARAGE_DOOR_OPEN: {
             if (CGarages::NoResprays) {
                 return;
             }
-            if (!IsStaticPlayerCarEntirelyInside()) {
-                if (!IsPlayerOutsideGarage(0.0f)) {
-                    FindPlayerWanted(-1)->m_bPoliceBackOffGarage = true;
-                    CGarages::LastGaragePlayerWasIn = garageId;
-                } else if (garageId == CGarages::LastGaragePlayerWasIn) {
-                    FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
-                }
-            } else {
-                auto* const playerVehicle = FindPlayerVehicle(-1, false);
-                // NOTSA: thunk_FUN_0156b1c0 - "is this vehicle eligible for a respray": not a law
-                // enforcement vehicle, `pv+0x594` (still unidentified elsewhere in this file) != 10,
-                // and not one of the 4 excluded models (ambulance/bus/fire truck/coach - emergency
-                // and public-service vehicles you can't repaint).
-                const auto modelId = playerVehicle->GetModelId();
-                const auto isEligibleForRespray = !playerVehicle->IsLawEnforcementVehicle()
-                    && *reinterpret_cast<int32*>(reinterpret_cast<char*>(playerVehicle) + 0x594) != 10
-                    && modelId != MODEL_AMBULAN && modelId != MODEL_BUS && modelId != MODEL_FIRETRUK && modelId != MODEL_COACH;
-
-                if (!isEligibleForRespray) {
-                    // NOTSA: `pv+0x594` still unidentified, see above.
-                    const auto* pcKey = *reinterpret_cast<int32*>(reinterpret_cast<char*>(playerVehicle) + 0x594) == 10 ? "GA_1B" : "GA_1";
-                    CGarages::TriggerMessage(pcKey, -1, 4000, -1);
+            if (IsStaticPlayerCarEntirelyInside()) {
+                auto* const vehicle = FindPlayerVehicle(-1, false);
+                if (!CGarages::IsCarSprayable(vehicle)) {
+                    CGarages::TriggerMessage(vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX ? "GA_1B" : "GA_1", -1, 4000, -1);
                     m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
-                    AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0xf, 0, 1.0f);
+                    AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_IS_HOT);
                 } else if (FindPlayerInfo().m_nMoney < 100 && !CGarages::RespraysAreFree) {
                     CGarages::TriggerMessage("GA_3", -1, 4000, -1);
                     m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
-                    AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0xe, 0, 1.0f);
+                    AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_NO_CASH);
                 } else {
                     m_nDoorState = GARAGE_DOOR_CLOSING;
                     CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
-                    // NOTSA: vehicle+0x4B0 - unmapped, reset to 0 when entering the respray.
-                    *reinterpret_cast<uint32*>(reinterpret_cast<char*>(playerVehicle) + 0x4b0) = 0;
+                    vehicle->m_fDirtLevel = 0.0f;
                 }
                 FindPlayerWanted(-1)->m_bPoliceBackOffGarage = true;
                 CGarages::LastGaragePlayerWasIn = garageId;
+            } else if (!IsPlayerOutsideGarage(0.0f)) {
+                FindPlayerWanted(-1)->m_bPoliceBackOffGarage = true;
+                CGarages::LastGaragePlayerWasIn = garageId;
+            } else if (garageId == CGarages::LastGaragePlayerWasIn) {
+                FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
             }
 
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (!playerVehicle) {
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if (!vehicle) {
                 return;
             }
-            const auto& pos = playerVehicle->GetPosition();
-            if (CalcDistToGarageRectangleSquared(pos.x, pos.y) >= 64.0f) {
+            if (SqDistToRect(vehicle->GetPosition()) >= 64.0f) {
                 return;
             }
-            break; // falls to TAIL #1
+            CallOffChase();
+            return;
         }
         case GARAGE_DOOR_CLOSING: {
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
-                CenterCarInGarage(playerVehicle);
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                CenterCarInGarage(vehicle);
             }
             if (SlideDoorClosed()) {
                 m_nDoorState = GARAGE_DOOR_CLOSED;
-                AudioEngine.ReportFrontendAudioEvent((eAudioEvents)0x10, 0, 1.0f);
+                AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_CAR_RESPRAY);
                 m_nTimeToOpen = CTimer::GetTimeInMS() + 2000;
-                const auto kills = CStats::GetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT);
-                CStats::IncrementStat(STAT_TOTAL_LEGITIMATE_KILLS, kills);
-                CStats::SetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT, 0.f);
+                CStats::IncrementStat(STAT_TOTAL_LEGITIMATE_KILLS, CStats::GetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT));
+                CStats::SetStatValue(STAT_KILLS_SINCE_LAST_CHECKPOINT, 0.0f);
             }
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
-                // NOTSA: vehicle+0x42E bit7 - unmapped "needs respray"-ish flag (cleared in
-                // door-state CLOSED on a successful respray, set here). The `+0x8E4` write the
-                // original also does here was OMITTED - see the door-state-CLOSED safety note.
-                *reinterpret_cast<uint8*>(reinterpret_cast<char*>(playerVehicle) + 0x42e) |= 0x80;
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                // NOTSA: Like the original, this is done for every vehicle type (the pool slots are big enough for it)
+                vehicle->AsAutomobile()->m_fBurnTimer = 0.0f;
+                vehicle->vehicleFlags.bDisableParticles = true;
             }
-            break; // falls to TAIL #1
+            CallOffChase();
+            return;
         }
         case GARAGE_DOOR_OPENING:
-            // Reused from ONLY_TARGET_VEH/BOMBSHOP_*'s own OPENING code via a cross-case `goto` in
-            // the original - duplicated here rather than sharing a C++ label across case blocks.
             if (SlideDoorOpen()) {
                 m_nDoorState = GARAGE_DOOR_WAITING_PLAYER_TO_EXIT;
             }
             if (m_fDoorPosition > 0.5f) {
-                CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
-                FindPlayerWanted(-1)->m_bPoliceBackOffGarage = false;
-                return;
+                SetPlayerInGarage(false);
             }
-            break; // falls to TAIL #1
+            return;
         case GARAGE_DOOR_WAITING_PLAYER_TO_EXIT:
-            // Also reused from ONLY_TARGET_VEH/BOMBSHOP_* via `goto`.
             if (IsPlayerOutsideGarage(0.0f)) {
                 m_nDoorState = GARAGE_DOOR_OPEN;
             }
             return;
+        default:
+            return;
         }
-        break; // TAIL #1
+    }
+
+    case UNKN_CLOSESONTOUCH:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_OPEN:
+            if (IsGarageEmpty()) {
+                m_nDoorState = GARAGE_DOOR_CLOSING;
+            }
+            return;
+        case GARAGE_DOOR_CLOSING:
+            ProcessClosedByAnimation();
+            if (!IsGarageEmpty()) {
+                m_nDoorState = GARAGE_DOOR_OPENING;
+            }
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
+            return;
+        }
+
+    case OPEN_FOR_TARGET_FREEZE_PLAYER:
+    case CLOSE_WITH_CAR_DONT_OPEN_AGAIN:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_CLOSED:
+            if (auto* const vehicle = FindPlayerVehicle(-1, false); vehicle == m_pTargetCar && m_pTargetCar) {
+                if (SqDistToRect(vehicle->GetPosition()) < 289.0f) {
+                    m_nDoorState = GARAGE_DOOR_OPENING;
+                }
+            }
+            return;
+        case GARAGE_DOOR_OPEN:
+            if (SqDistPlayerToCenter() <= 900.0f && m_pTargetCar) {
+                if (m_pTargetCar != FindPlayerVehicle(-1, false)) {
+                    return;
+                }
+                if (IsStaticPlayerCarEntirelyInside() && !IsAnyCarBlockingDoor()) {
+                    SetPlayerInGarage(true);
+                    m_b0x1       = false;
+                    m_nDoorState = GARAGE_DOOR_CLOSING;
+                }
+                return;
+            }
+            m_b0x1       = true;
+            m_nDoorState = GARAGE_DOOR_CLOSING;
+            return;
+        case GARAGE_DOOR_CLOSING:
+            ProcessTargetCarClosing(true);
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        case GARAGE_DOOR_CLOSED_DROPPED_CAR:
+            if (m_nType == OPEN_FOR_TARGET_FREEZE_PLAYER && m_nTimeToOpen < CTimer::GetTimeInMS()) {
+                m_nDoorState = GARAGE_DOOR_OPENING;
+            }
+            return;
+        default:
+            return;
+        }
+
+    case SCRIPT_ONLY_OPEN:
+        if (m_nDoorState == GARAGE_DOOR_OPENING) {
+            ProcessOpening();
+        }
+        return;
+
+    case SAFEHOUSE_GANTON:
+    case SAFEHOUSE_SANTAMARIA:
+    case SAGEHOUSE_ROCKSHORE:
+    case SAFEHOUSE_FORTCARSON:
+    case SAFEHOUSE_VERDANTMEADOWS:
+    case SAFEHOUSE_DILLIMORE:
+    case SAFEHOUSE_PRICKLEPINE:
+    case SAFEHOUSE_WHITEWOOD:
+    case SAFEHOUSE_PALOMINOCREEK:
+    case SAFEHOUSE_REDSANDSWEST:
+    case SAFEHOUSE_ELCORONA:
+    case SAFEHOUSE_MULHOLLAND:
+    case SAFEHOUSE_CALTONHEIGHTS:
+    case SAFEHOUSE_PARADISO:
+    case SAFEHOUSE_DOHERTY:
+    case SAFEHOUSE_HASHBURY:
+    case HANGAR_AT400:
+    case HANGAR_ABANDONED_AIRPORT:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_CLOSED: {
+            const auto& coors = FindPlayerCoors(-1);
+            if (coors.z >= 950.0f) {
+                return;
+            }
+
+            const auto sqDist = SqDistToRect(coors);
+            if (sqDist >= 12.25f) {
+                if (sqDist >= 100.0f) {
+                    return;
+                }
+                auto* const vehicle = FindPlayerVehicle(-1, false);
+                if (!vehicle || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+                    return;
+                }
+            }
+
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if (!vehicle || m_nType == HANGAR_AT400 || CGarages::CountCarsInHideoutGarage(m_nType) < MaxCarsInHideout()) {
+                if (m_nType != HANGAR_AT400) {
+                    auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
+                    if (!RestoreCarsForThisHideOut(cars)) {
+                        return; // Some cars are still being streamed in
+                    }
+                }
+                m_nDoorState = GARAGE_DOOR_OPENING;
+                return;
+            }
+
+            // The safehouse is full: tell the player so when they approach one of the doors
+            CObject* door1{};
+            CObject* door2{};
+            FindDoorsWithGarage(&door1, &door2);
+            const auto IsNearDoor = [&](CObject* door) {
+                if (!door) {
+                    return false;
+                }
+                const auto dx = door->GetPosition().x - vehicle->GetPosition().x;
+                const auto dy = door->GetPosition().y - vehicle->GetPosition().y;
+                return dx * dx + dy * dy < 25.0f;
+            };
+            if (!IsNearDoor(door1) && !IsNearDoor(door2)) {
+                return;
+            }
+            if (CTimer::GetTimeInMS() - CGarages::LastTimeHelpMessage < 18001) {
+                return;
+            }
+            const auto appearance = vehicle->GetVehicleAppearance();
+            if (appearance != VEHICLE_APPEARANCE_HELI && appearance != VEHICLE_APPEARANCE_PLANE) {
+                CHud::SetHelpMessage(TheText.Get("GA_21"), false, false, true);
+                CGarages::LastTimeHelpMessage = CTimer::GetTimeInMS();
+            }
+            return;
+        }
+        case GARAGE_DOOR_OPEN: {
+            const auto  sqDist  = SqDistToRect(FindPlayerCoors(-1));
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if ((sqDist > 225.0f || (sqDist > 16.0f && (!vehicle || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX))) && !IsAnyCarBlockingDoor()) {
+                m_nDoorState = GARAGE_DOOR_CLOSING;
+                return;
+            }
+            if (vehicle) {
+                if (CountCarsWithCenterPointWithinGarage(vehicle) >= MaxCarsInHideout() && IsPlayerOutsideGarage(0.25f)) {
+                    m_nDoorState = GARAGE_DOOR_CLOSING;
+                    return;
+                }
+            }
+            if (sqDist > 4900.0f) {
+                m_nDoorState = GARAGE_DOOR_CLOSING;
+                RemoveCarsBlockingDoorNotInside();
+            }
+            return;
+        }
+        case GARAGE_DOOR_CLOSING:
+            SlideDoorClosed();
+            if (!IsPlayerOutsideGarage(0.0f)) {
+                m_nDoorState = GARAGE_DOOR_OPENING; // The player is back inside
+                return;
+            }
+            if (m_fDoorPosition != 0.0f) {
+                return;
+            }
+            m_nDoorState = GARAGE_DOOR_CLOSED;
+            if (m_nType != HANGAR_AT400) {
+                StoreAndRemoveCarsForThisHideOut(CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType)), 4);
+            }
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
+            return;
+        }
+
+    case SCRIPT_CONTROLLED:
+        if (m_nDoorState == GARAGE_DOOR_CLOSING) {
+            ProcessClosedByAnimation();
+        } else if (m_nDoorState == GARAGE_DOOR_OPENING) {
+            ProcessOpening();
+        }
+        return;
+
+    case STAY_OPEN_WITH_CAR_INSIDE:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_CLOSED:
+            OpenIfPlayerVehicleIsClose(true);
+            return;
+        case GARAGE_DOOR_OPEN:
+            if (SqDistPlayerToCenter() > 900.0f && m_pTargetCar && IsEntityEntirelyOutside(m_pTargetCar, 0.0f)) {
+                m_b0x1       = true;
+                m_nDoorState = GARAGE_DOOR_CLOSING;
+            }
+            return;
+        case GARAGE_DOOR_CLOSING:
+            if (m_pTargetCar) {
+                CenterCarInGarage(m_pTargetCar);
+            }
+            ProcessClosedByAnimation();
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
+            return;
+        }
+
+    case SCRIPT_OPEN_FREEZE_WHEN_CLOSING:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_OPEN:
+            if (!m_pTargetCar || !IsEntityEntirelyInside3D(m_pTargetCar, 0.0f) || IsAnyCarBlockingDoor()) {
+                return;
+            }
+            if (IsPlayerOutsideGarage(0.0f)) {
+                CPad::GetPad(0)->bPlayerAwaitsInGarage = true;
+                m_b0x1       = false;
+                m_nDoorState = GARAGE_DOOR_CLOSING;
+            }
+            return;
+        case GARAGE_DOOR_CLOSING:
+            if (SlideDoorClosed()) {
+                m_nDoorState = GARAGE_DOOR_CLOSED;
+                CPad::GetPad(0)->bPlayerAwaitsInGarage = false;
+            }
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
+            return;
+        }
+
+    case IMPOUND_LS:
+    case IMPOUND_SF:
+    case IMPOUND_LV: {
+        // The door never animates here, the cars are put in or taken out as the player gets close or leaves
+        const auto& coors   = FindPlayerCoors(-1);
+        const auto  sqDist  = SqDistToRect(coors);
+        const auto  heightOk = coors.z < m_fTopZ - 2.0f && m_vPosn.z < coors.z;
+        if (m_nDoorState == GARAGE_DOOR_CLOSED) {
+            if (sqDist < 3600.0f && heightOk) {
+                auto* const cars = CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType));
+                NeatlyLineUpStoredCars(cars);
+                if (RestoreCarsForThisImpoundingGarage(cars)) {
+                    m_nDoorState = GARAGE_DOOR_OPEN;
+                }
+            }
+        } else if (m_nDoorState < GARAGE_DOOR_OPENING) {
+            if (sqDist > 4225.0f || !heightOk || m_nDoorState == GARAGE_DOOR_CLOSING) {
+                m_nDoorState = GARAGE_DOOR_CLOSED;
+                StoreAndRemoveCarsForThisImpoundingGarage(CGarages::GetStoredCarsInSafehouse(CGarages::FindSafeHouseIndexForGarageType(m_nType)), 3);
+            }
+        }
+        return;
     }
 
     case TUNING_LOCO_LOW_CO:
@@ -1416,95 +1368,71 @@ void CGarage::Update(int32 garageId) {
     case TUNING_TRANSFENDER:
         switch (m_nDoorState) {
         case GARAGE_DOOR_CLOSED: {
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (!RightModTypeForThisGarage(playerVehicle)) { // null-safe, see its own definition
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if (!RightModTypeForThisGarage(vehicle)) {
                 return;
             }
-            const auto& pos = playerVehicle->GetPosition();
-            if (CalcDistToGarageRectangleSquared(pos.x, pos.y) >= 64.0f) {
+            if (SqDistToRect(vehicle->GetPosition()) >= 64.0f) {
                 return;
             }
             m_nDoorState = GARAGE_DOOR_OPENING;
             return;
         }
         case GARAGE_DOOR_OPEN: {
-            const auto& playerCoors = FindPlayerCoors(-1);
-            const auto dx = playerCoors.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
-            const auto dy = playerCoors.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
-            if (dx * dx + dy * dy <= 900.0f) { // 30^2, player still near the garage - stay open
+            if (SqDistPlayerToCenter() <= 900.0f) {
                 return;
             }
-            if ((CTimer::GetFrameCounter() & 0x1f) != 0) { // throttle to once every 32 frames
+            if ((CTimer::GetFrameCounter() & 0x1F) != 0) {
                 return;
             }
-            auto* const playerVehicle = FindPlayerVehicle(-1, false);
-            if (RightModTypeForThisGarage(playerVehicle) && IsEntityTouching3D(playerVehicle)) {
-                return; // player still has the right car for this shop and it's still here
-            }
-            if (IsAnyOtherCarTouchingGarage(nullptr)) { // still a raw forward, see its own definition
-                return; // someone else's car is using the shop - wait
-            }
-            m_b0x1 = true;
-            m_nDoorState = GARAGE_DOOR_CLOSING;
-            return;
-        }
-        case GARAGE_DOOR_CLOSING:
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
-                CenterCarInGarage(playerVehicle);
-            }
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
-            }
-            return;
-        case GARAGE_DOOR_OPENING:
-            goto tail2;
-        }
-        [[fallthrough]]; // unhandled door-state (shouldn't happen) falls into BURGLARY below,
-                          // matching the original's own case-block fallthrough exactly.
-
-    case BURGLARY:
-        if (m_nDoorState == GARAGE_DOOR_OPEN) {
-            const auto& playerCoors = FindPlayerCoors(-1);
-            const auto dx = playerCoors.x - (m_fLeftCoord + m_fRightCoord) * 0.5f;
-            const auto dy = playerCoors.y - (m_fFrontCoord + m_fBackCoord) * 0.5f;
-            if (dx * dx + dy * dy <= 900.0f) {
+            auto* const vehicle = FindPlayerVehicle(-1, false);
+            if (RightModTypeForThisGarage(vehicle) && IsEntityTouching3D(vehicle)) {
                 return;
             }
             if (IsAnyOtherCarTouchingGarage(nullptr)) {
                 return;
             }
+            m_b0x1       = true;
             m_nDoorState = GARAGE_DOOR_CLOSING;
             return;
         }
-        if (m_nDoorState == GARAGE_DOOR_CLOSING) {
-            // Same CLOSING logic as the TUNING_* group above (reused via `goto` in the original).
-            if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
-                CenterCarInGarage(playerVehicle);
+        case GARAGE_DOOR_CLOSING:
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                CenterCarInGarage(vehicle);
             }
-            if (SlideDoorClosed()) {
-                m_nDoorState = GARAGE_DOOR_CLOSED;
+            ProcessClosedByAnimation();
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
+            break; // The original runs into the BURGLARY code from here
+        }
+        [[fallthrough]];
+
+    case BURGLARY:
+        switch (m_nDoorState) {
+        case GARAGE_DOOR_OPEN:
+            if (SqDistPlayerToCenter() <= 900.0f || IsAnyOtherCarTouchingGarage(nullptr)) {
+                return;
             }
+            m_nDoorState = GARAGE_DOOR_CLOSING;
+            return;
+        case GARAGE_DOOR_CLOSING:
+            if (auto* const vehicle = FindPlayerVehicle(-1, false)) {
+                CenterCarInGarage(vehicle);
+            }
+            ProcessClosedByAnimation();
+            return;
+        case GARAGE_DOOR_OPENING:
+            ProcessOpening();
+            return;
+        default:
             return;
         }
-        goto tail2; // CLOSED/OPENING/other -> TAIL #2
 
     default:
-        break; // INVALID(0) and any other unmapped m_nType - matches the original's own default fallthrough
-    }
-    // TAIL #1 (LAB_0044b3c1): used by ONLY_TARGET_VEH, BOMBSHOP_*, (presumably) PAYNSPRAY.
-    // Do NOT assume this is the universal ending - see garage_update_progress.md part 5.
-    CWorld::CallOffChaseForArea(m_fLeftCoord - 10.0f, m_fFrontCoord - 10.0f, m_fRightCoord + 10.0f, m_fBackCoord + 10.0f);
-    return;
-
-tail2:
-    // TAIL #2 (LAB_0044bcb7/bcb8/switchD_0044ba69_caseD_3): used by SCRIPT_ONLY_OPEN,
-    // UNKN_CLOSESONTOUCH's non-OPEN/CLOSING states, and others not yet mapped.
-    // NOTE: plain `return` with NO CallOffChaseForArea call - confirmed via decomp_garage_update.txt
-    // lines 1206-1222 (switchD_0044ba69_caseD_4: return;).
-    if (m_nDoorState == GARAGE_DOOR_OPENING) {
-        if (SlideDoorOpen()) {
-            m_nDoorState = GARAGE_DOOR_OPEN;
-        }
+        return;
     }
 }
 
