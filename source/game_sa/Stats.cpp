@@ -57,7 +57,7 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(BuildStatLine, 0x559230, { .Reversed = false });
     RH_ScopedInstall(CheckForStatsMessage, 0x559760, { .Reversed = false });
     RH_ScopedInstall(LoadStatUpdateConditions, 0x559860, { .Reversed = false });
-    RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0, { .Reversed = false });
+    RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0);
     RH_ScopedInstall(FindCriminalRatingString, 0x55A210, { .Reversed = false });
     RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
     RH_ScopedInstall(UpdateRespectStat, 0x55BC50, { .Reversed = false });
@@ -326,7 +326,100 @@ int32 CStats::FindMaxNumberOfGroupMembers() {
 
 // 0x559AF0
 float CStats::GetFatAndMuscleModifier(eStatModAbilities statMod) {
-    return plugin::CallAndReturn<float, 0x559AF0, eStatModAbilities>(statMod);
+    // Tweakable values the game keeps in its data section, each one scales the share of the stat in an ability
+    static auto& fat200Min       = StaticRef<float>(0x8CDEC0); // 200, below this much fat there is no fat penalty
+    static auto& muscle50Min     = StaticRef<float>(0x8CDEB8); // 50, below this much muscle there is no muscle bonus
+    static auto& mod1Muscle      = StaticRef<float>(0x8CDEB4);
+    static auto& mod1Fat         = StaticRef<float>(0x8CDEBC);
+    static auto& mod2Fat         = StaticRef<float>(0x8CDEB0);
+    static auto& mod2Muscle      = StaticRef<float>(0x8CDEAC);
+    static auto& mod3Fat         = StaticRef<float>(0x8CDEA8);
+    static auto& mod3Muscle      = StaticRef<float>(0x8CDEA4);
+    static auto& mod4Fat         = StaticRef<float>(0x8CDEA0);
+    static auto& mod4Muscle      = StaticRef<float>(0x8CDE9C);
+    static auto& mod5Fat         = StaticRef<float>(0x8CDE98);
+    static auto& mod5Muscle      = StaticRef<float>(0x8CDE94);
+    static auto& mod5Stamina     = StaticRef<float>(0x8CDE90);
+    static auto& mod5Cycling     = StaticRef<float>(0x8CDE8C);
+    static auto& mod6Fat         = StaticRef<float>(0x8CDE88);
+    static auto& mod6Cycling     = StaticRef<float>(0x8CDE84);
+    static auto& modRunTime      = StaticRef<float>(0x8CDE80);
+    static auto& modLungAir      = StaticRef<float>(0x8CDE7C);
+    static auto& modMaxHealth    = StaticRef<float>(0x8CDE78);
+    static auto& mod11Bike       = StaticRef<float>(0x8CDE74);
+    static auto& mod12Bike       = StaticRef<float>(0x8CDE70);
+    static auto& mod13Bike       = StaticRef<float>(0x8CDE6C);
+    static auto& mod14Driving    = StaticRef<float>(0x8CDE64);
+    static auto& mod14Fat        = StaticRef<float>(0x8CDE68);
+    static auto& mod15Muscle     = StaticRef<float>(0x8CDE5C);
+    static auto& mod15Fat        = StaticRef<float>(0x8CDE60);
+    static auto& mod15Min        = StaticRef<float>(0x8CDE58);
+
+    const auto fat        = StatTypesFloat[STAT_FAT];
+    const auto stamina    = StatTypesFloat[STAT_STAMINA];
+    const auto muscle     = StatTypesFloat[STAT_MUSCLE];
+    const auto maxHealth  = StatTypesFloat[STAT_MAX_HEALTH];
+    const auto Int        = [](eStats stat) { return (float)StatTypesInt[stat - FIRST_INT_STAT]; };
+
+    // How far the stat is above its neutral value, from 0 to 1
+    const auto fatShare    = (fat - fat200Min) / (1000.0f - fat200Min);
+    const auto muscleShare = (muscle - muscle50Min) / (1000.0f - muscle50Min);
+
+    switch (statMod) {
+    case STAT_MOD_0:
+        if (fat <= 800.0f) {
+            return fat <= 400.0f ? 0.0f : 1.0f;
+        }
+        return 2.0f;
+    case STAT_MOD_1: {
+        const auto value = muscleShare * mod1Muscle + std::max(0.0f, fatShare) * mod1Fat + 1.0f;
+        return std::max(value, 0.7f);
+    }
+    case STAT_MOD_2: {
+        const auto value = muscleShare * mod2Muscle + (std::max(0.0f, fatShare) * mod2Fat + 1.0f);
+        return std::max(value, 0.8f);
+    }
+    case STAT_MOD_3: {
+        const auto value = muscleShare * mod3Muscle + (fatShare * mod3Fat + 1.0f);
+        return std::max(value, 0.8f);
+    }
+    case STAT_MOD_4: {
+        const auto value = muscleShare * mod4Muscle + fatShare * mod4Fat + 1.0f;
+        return std::min(value, 2.0f);
+    }
+    case STAT_MOD_5: {
+        const auto value = Int(STAT_CYCLING_SKILL) * 0.001f * mod5Cycling + stamina * 0.001f * mod5Stamina + muscleShare * mod5Muscle + fatShare * mod5Fat + 1.0f;
+        return std::clamp(value, 0.25f, 2.0f);
+    }
+    case STAT_MOD_6: {
+        const auto value = Int(STAT_CYCLING_SKILL) * 0.001f * mod6Cycling + fatShare * mod6Fat + 1.0f;
+        return std::clamp(value, 0.5f, 2.0f);
+    }
+    case STAT_MOD_TIME_CAN_RUN:
+        return stamina * 0.001f * modRunTime + 150.0f;
+    case STAT_MOD_AIR_IN_LUNG:
+        return (Int(STAT_LUNG_CAPACITY) + stamina) * 0.0005f * modLungAir + 1000.0f;
+    case STAT_MOD_MAX_HEALTH:
+        return maxHealth * 0.001f * modMaxHealth;
+    case STAT_MOD_10:
+        return modMaxHealth;
+    case STAT_MOD_11:
+        return std::min(1.0f, Int(STAT_BIKE_SKILL) * 0.001f) * mod11Bike + 1.0f;
+    case STAT_MOD_12:
+        return std::min(1.0f, Int(STAT_BIKE_SKILL) * 0.001f) * mod12Bike + 1.0f;
+    case STAT_MOD_13:
+        return std::min(1.0f, Int(STAT_BIKE_SKILL) * 0.001f) * mod13Bike + 1.0f;
+    case STAT_MOD_DRIVING_SKILL: {
+        const auto value = Int(STAT_DRIVING_SKILL) * 0.001f * mod14Driving + 1.0f + fatShare * mod14Fat;
+        return std::min(value, 1.0f);
+    }
+    case STAT_MOD_15: {
+        const auto value = muscleShare * mod15Muscle + fatShare * mod15Fat + 1.0f;
+        return std::max(value, mod15Min);
+    }
+    default:
+        return 1.0f;
+    }
 }
 
 // 0x559730
