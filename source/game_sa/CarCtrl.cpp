@@ -124,7 +124,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliToCrashAndBurn, 0x4238E0);
     RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750);
-    RH_ScopedInstall(SteerAIHeliToKeepEntityInView, 0x42AEB0, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliToKeepEntityInView, 0x42AEB0);
     RH_ScopedInstall(SteerAIHeliToLand, 0x42AD30, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630);
     RH_ScopedInstall(SteerAIPlaneToCrashAndBurn, 0x423880);
@@ -1658,7 +1658,59 @@ void CCarCtrl::SteerAIHeliToFollowEntity(CAutomobile* automobile) {
 
 // 0x42AEB0
 void CCarCtrl::SteerAIHeliToKeepEntityInView(CAutomobile* automobile) {
-    plugin::Call<0x42AEB0, CAutomobile*>(automobile);
+    static_assert(offsetof(CHeli, m_fLeftRightSkid) == 0x98C);
+    static_assert(offsetof(CHeli, m_fSteeringUpDown) == 0x990);
+    static_assert(offsetof(CHeli, m_fSteeringLeftRight) == 0x994);
+    static_assert(offsetof(CHeli, m_fAccelerationBreakStatus) == 0x998);
+    static_assert(offsetof(CHeli, field_9AC) == 0x9AC);
+    static_assert(offsetof(CAutoPilot, m_ucHeliTargetDist) == 0x48);
+
+    auto* const heli      = static_cast<CHeli*>(automobile);
+    auto&       autoPilot = heli->m_autoPilot;
+    const auto& targetPos = autoPilot.m_TargetEntity->GetPosition();
+    const auto& heliPos   = heli->GetPosition();
+
+    const auto toTarget  = CVector2D{ targetPos } - CVector2D{ heliPos };
+    const auto dist      = toTarget.Magnitude();
+    const auto keepDist  = (float)autoPilot.m_ucHeliTargetDist;
+    if (dist > keepDist + keepDist) {
+        // Too far to just hover around, go after it
+        SteerAIHeliToFollowEntity(heli);
+        return;
+    }
+
+    // Turn so the side of the heli faces the target
+    const auto heading = CGeneral::GetATanOfXY(toTarget.x, toTarget.y);
+    auto       turn    = (heading + 1.5707964f) - CGeneral::GetATanOfXY(heli->GetForward().x, heli->GetForward().y);
+    while (turn > 3.1415927f) {
+        turn -= 6.2831855f;
+    }
+    while (turn < -3.1415927f) {
+        turn += 6.2831855f;
+    }
+    heli->m_fLeftRightSkid = std::clamp(-turn, -1.0f, 1.0f);
+
+    // Hover a bit above the target
+    heli->m_fMaxAltitude = targetPos.z + 15.0f;
+    heli->field_9AC      = heli->m_fMaxAltitude;
+    autoPilot.m_vecDestinationCoors = targetPos;
+
+    const auto altitudeDiff = heli->m_fMaxAltitude - (heli->GetMoveSpeed().z * 100.0f + heliPos.z);
+    auto       climb        = altitudeDiff * (altitudeDiff <= 0.0f ? 0.2f : 0.1f) + 0.3f;
+    climb += ((float)(CGeneral::GetRandomNumber() & 0xF) - 7.0f) * 0.002f;
+    heli->m_fAccelerationBreakStatus = std::clamp(climb, 0.0f, 1.0f);
+
+    // Keep the distance to the target by moving sideways
+    if (dist >= keepDist * 0.5f) {
+        heli->m_fSteeringLeftRight = dist <= keepDist ? DotProduct(heli->GetRight(), heli->GetMoveSpeed()) : -0.5f;
+    } else {
+        heli->m_fSteeringLeftRight = 0.5f;
+    }
+
+    heli->m_fSteeringUpDown = 0.0f;
+    if (dist < keepDist * 1.5f) {
+        heli->m_fSteeringUpDown = DotProduct(heli->GetMoveSpeed(), heli->GetForward());
+    }
 }
 
 // 0x42AD30
