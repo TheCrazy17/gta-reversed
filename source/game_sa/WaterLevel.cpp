@@ -51,10 +51,10 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(RenderWater, 0x6EF650, { .Reversed = false });
     RH_ScopedGlobalInstall(AddWaveToResult, 0x6E81E0);
     RH_ScopedGlobalInstall(SetCameraRange, 0x6E9C80);
-    RH_ScopedInstall(RenderHighDetailWaterRectangle, 0x6EB810, { .Reversed = false });
+    RH_ScopedInstall(RenderHighDetailWaterRectangle, 0x6EB810);
     RH_ScopedInstall(GetWaterDepth, 0x6EA960);
     RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210);
-    RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar), { .Reversed = false });
+    RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar));
     RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30);
 }
 
@@ -559,8 +559,51 @@ void CWaterLevel::RenderFlatWaterRectangle_OneLayer(int32 minX, int32 maxX, int3
     PushVertex(minX, Y2, P4, { 0.f,    bruv.y }); // Bottom Left
 } 
 
+// 0x6EB810
 void CWaterLevel::RenderHighDetailWaterRectangle(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4) {
-    plugin::Call<0x6EB810>(minX, maxX, Y1, Y2, P1, P2, P3, P4);
+    const CVector center{ (float)(minX + maxX) * 0.5f, (float)(Y1 + Y2) * 0.5f, P1.z };
+    const auto    halfW = (float)(maxX - minX) * 0.5f;
+    const auto    halfH = (float)(Y1 - Y2) * 0.5f;
+    if (!TheCamera.IsSphereVisible(center, std::sqrt(halfW * halfW + halfH * halfH))) {
+        return;
+    }
+
+    const auto [minY, maxY] = std::minmax(Y1, Y2);
+    const auto cellsX       = (maxX - minX) / 2;
+    const auto cellsY       = (maxY - minY) / 2;
+    const auto numTris      = cellsY * cellsX * 2;
+    const auto numVerts     = (cellsY + 1) * (cellsX + 1);
+
+    // Small enough to be rendered in one go
+    if (cellsY * cellsX * 6 < 0x1000 && numVerts < 0x800) {
+        SetUpWaterFog(minX, minY, maxX, maxY);
+        RenderHighDetailWaterRectangle_OneLayer(minX, maxX, Y1, Y2, P1, P2, P3, P4, 0, numTris, numVerts, cellsX, cellsY);
+        RenderHighDetailWaterRectangle_OneLayer(minX, maxX, Y1, Y2, P1, P2, P3, P4, 1, numTris, numVerts, cellsX, cellsY);
+        return;
+    }
+
+    if (cellsX > cellsY) {
+        SplitWaterRectangleAlongXLine(minX + (cellsX / 2) * 2, minX, maxX, Y1, Y2, P1, P2, P3, P4);
+        return;
+    }
+
+    // Split along Y, note that this interpolates from Y1 even if Y1 > Y2
+    const auto splitAtY = minY + (cellsY / 2) * 2;
+    const auto t        = (float)(splitAtY - Y1) / (float)(Y2 - Y1);
+    const auto P13      = lerp(P1, P3, t);
+    const auto P24      = lerp(P2, P4, t);
+    RenderWaterRectangle(minX, maxX, Y1, splitAtY, P1, P2, P13, P24);
+    RenderWaterRectangle(minX, maxX, splitAtY, Y2, P13, P24, P3, P4);
+}
+
+// 0x6E91D0 (not reversed yet)
+void CWaterLevel::RenderHighDetailWaterRectangle_OneLayer(int32 minX, int32 maxX, int32 Y1, int32 Y2, CRenPar P1, CRenPar P2, CRenPar P3, CRenPar P4, int32 waterLayer, int32 numTris, int32 numVerts, int32 numCellsX, int32 numCellsY) {
+    plugin::Call<0x6E91D0>(minX, maxX, Y1, Y2, P1, P2, P3, P4, waterLayer, numTris, numVerts, numCellsX, numCellsY);
+}
+
+// 0x6E8780 (not reversed yet)
+void CWaterLevel::RenderHighDetailWaterTriangle_OneLayer(int32 X1, int32 Y1, CRenPar P1, int32 X2, int32 Y2, CRenPar P2, int32 X3, int32 Y3, CRenPar P3, int32 waterLayer, int32 numVertsSq, int32 numVerts, int32 numCells) {
+    plugin::Call<0x6E8780>(X1, Y1, P1, X2, Y2, P2, X3, Y3, P3, waterLayer, numVertsSq, numVerts, numCells);
 }
 
 // 0x6E73A0
@@ -1075,8 +1118,23 @@ void CWaterLevel::ScanThroughBlocks() {
     CWorldScan::ScanWorld(scanPts, 5, BlockHit);
 }
 
+// 0x6EDDC0
 void CWaterLevel::RenderHighDetailWaterTriangle(int32 X1, int32 Y1, CRenPar P1, int32 X2, int32 Y2, CRenPar P2, int32 X3, int32 Y3, CRenPar P3) {
-    plugin::CallAndReturn<void, 0x6EDDC0, int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar>(X1, Y1, P1, X2, Y2, P2, X3, Y3, P3);
+    const CVector center{ (float)(X1 + X2 + X3) * 0.3333333f, (float)(Y1 + Y2 + Y3) * 0.3333333f, P1.z };
+    if (!TheCamera.IsSphereVisible(center, (float)(X2 - X1) * 0.71f)) {
+        return;
+    }
+
+    const auto numCells = (X2 - X1) / 2;
+    const auto numVerts = numCells >= 0 ? (numCells + 1) * (numCells + 2) / 2 : 0; // 1 + 2 + ... + (numCells + 1)
+    const auto cellsSq  = numCells * numCells;
+
+    if (cellsSq * 3 < 0x1000 && numVerts < 0x800) {
+        RenderHighDetailWaterTriangle_OneLayer(X1, Y1, P1, X2, Y2, P2, X3, Y3, P3, 0, cellsSq, numVerts, numCells);
+        RenderHighDetailWaterTriangle_OneLayer(X1, Y1, P1, X2, Y2, P2, X3, Y3, P3, 1, cellsSq, numVerts, numCells);
+        return;
+    }
+    SplitWaterTriangleAlongXLine(X1 + (numCells / 2) * 2, X1, Y1, P1, X2, Y2, P2, X3, Y3, P3);
 }
 
 // 0x6EF650
