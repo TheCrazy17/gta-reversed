@@ -121,11 +121,11 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990);
     RH_ScopedInstall(SteerAICarWithPhysics_OnlyMission, 0x436A90, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0);
-    RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliFlyingAwayFromPlayer, 0x42ACB0);
     RH_ScopedInstall(SteerAIHeliToCrashAndBurn, 0x4238E0);
     RH_ScopedInstall(SteerAIHeliToFollowEntity, 0x42A750);
     RH_ScopedInstall(SteerAIHeliToKeepEntityInView, 0x42AEB0);
-    RH_ScopedInstall(SteerAIHeliToLand, 0x42AD30, { .Reversed = false });
+    RH_ScopedInstall(SteerAIHeliToLand, 0x42AD30);
     RH_ScopedInstall(SteerAIHeliTowardsTargetCoors, 0x42A630);
     RH_ScopedInstall(SteerAIPlaneToCrashAndBurn, 0x423880);
     RH_ScopedInstall(SteerAIPlaneToFollowEntity, 0x4237F0);
@@ -1574,7 +1574,11 @@ void CCarCtrl::SteerAIHeliAsPoliceHeli(CAutomobile* automobile) {
 
 // 0x42ACB0
 void CCarCtrl::SteerAIHeliFlyingAwayFromPlayer(CAutomobile* automobile) {
-    plugin::Call<0x42ACB0, CAutomobile*>(automobile);
+    auto* const heli     = static_cast<CHeli*>(automobile);
+    const auto  toPlayer = CVector2D{ FindPlayerCoors() } - CVector2D{ heli->GetPosition() };
+
+    // Head straight away from the player, far enough that it never gets there
+    FlyAIHeliInCertainDirection(heli, CGeneral::GetATanOfXY(toPlayer.x, toPlayer.y) + 3.1415927f, 1000.0f, false);
 }
 
 // 0x4238E0
@@ -1715,7 +1719,25 @@ void CCarCtrl::SteerAIHeliToKeepEntityInView(CAutomobile* automobile) {
 
 // 0x42AD30
 void CCarCtrl::SteerAIHeliToLand(CAutomobile* automobile) {
-    plugin::Call<0x42AD30, CAutomobile*>(automobile);
+    static_assert(offsetof(CHeli, m_fMinAltitude) == 0x9B0);
+
+    auto* const heli     = static_cast<CHeli*>(automobile);
+    const auto  toTarget = CVector2D{ heli->m_autoPilot.m_vecDestinationCoors } - CVector2D{ heli->GetPosition() };
+    const auto  dist     = toTarget.Magnitude();
+
+    FlyAIHeliInCertainDirection(heli, CGeneral::GetATanOfXY(toTarget.x, toTarget.y), dist, true);
+
+    // Once it is over the spot and has stopped, drop to the ground and cut the controls as soon as a wheel touches
+    if (dist < 10.0f && heli->GetMoveSpeed().Magnitude2D() < 0.05f) {
+        heli->m_fMinAltitude = 0.0f;
+        heli->m_fMaxAltitude = 0.0f;
+        if (std::ranges::any_of(heli->m_fWheelsSuspensionCompression, [](float v) { return v < 1.0f; })) {
+            heli->m_fAccelerationBreakStatus = 0.0f;
+            heli->m_fLeftRightSkid           = 0.0f;
+            heli->m_fSteeringUpDown          = 0.0f;
+            heli->m_fSteeringLeftRight       = 0.0f;
+        }
+    }
 }
 
 // 0x42A630
