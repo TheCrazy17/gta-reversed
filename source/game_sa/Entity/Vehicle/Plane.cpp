@@ -29,7 +29,7 @@ void CPlane::InjectHooks() {
     RH_ScopedInstall(SetGearDown, 0x6CAC70);
     RH_ScopedVMTInstall(OpenDoor, 0x6CACB0);
     RH_ScopedVMTInstall(ProcessControl, 0x6C9260);
-    RH_ScopedVMTInstall(ProcessControlInputs, 0x6CADD0, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessControlInputs, 0x6CADD0);
     RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6CB7C0, { .Reversed = false });
     RH_ScopedVMTInstall(VehicleDamage, 0x6CC4B0);
     RH_ScopedInstall(CountPlanesAndHelis, 0x6CCA50);
@@ -856,7 +856,138 @@ void CPlane::ProcessControl() {
 
 // 0x6CADD0
 void CPlane::ProcessControlInputs(uint8 playerNum) {
-    plugin::CallMethod<0x6CADD0, CPlane*, uint8>(this, playerNum);
+    const auto  dt         = CTimer::GetTimeStep();
+    auto* const pad        = CPad::GetPad(playerNum);
+    const auto  forwardSpd = DotProduct(m_vecMoveSpeed, GetMatrix().GetForward());
+
+    // Eases the steering axes towards what the pad is asking for
+    const auto FollowPadSteering = [&] {
+        m_nLastControlInput  = eControllerType::KEYBOARD;
+        m_fSteeringLeftRight = (static_cast<float>(pad->GetSteeringLeftRight()) / 128.0f - m_fSteeringLeftRight) * dt * 0.2f + m_fSteeringLeftRight;
+        m_fSteeringUpDown    = (static_cast<float>(pad->GetSteeringUpDown())    / 128.0f - m_fSteeringUpDown)    * dt * 0.2f + m_fSteeringUpDown;
+    };
+
+    if (CCamera::m_bUseMouse3rdPerson && m_bEnableMouseFlying) {
+        const auto& mouse      = CPad::NewMouseControllerState.m_AmountMoved;
+        const auto  padSteered = pad->GetSteeringLeftRight() != 0 || pad->GetSteeringUpDown() != 0;
+
+        // The mouse keeps the control while the axes are still moving after it stopped
+        auto mouseControls = mouse.x != 0.0f || mouse.y != 0.0f;
+        if (!mouseControls
+            && (m_fSteeringLeftRight != 0.0f || m_fSteeringUpDown != 0.0f)
+            && m_nLastControlInput == eControllerType::MOUSE
+            && !padSteered
+        ) {
+            mouseControls = true;
+        }
+
+        if (mouseControls) {
+            m_nLastControlInput = eControllerType::MOUSE;
+            if (pad->NewState.m_bVehicleMouseLook == 0) {
+                m_fSteeringLeftRight += mouse.x * 0.0015f;
+                m_fSteeringUpDown    += mouse.y * 0.0015f;
+            }
+            if (std::abs(m_fSteeringLeftRight) < 0.15f) {
+                m_fSteeringLeftRight *= std::pow(0.99f, dt);
+            }
+            if (std::abs(m_fSteeringUpDown) < 0.15f) {
+                m_fSteeringUpDown *= std::pow(0.99f, dt);
+            }
+        } else if (padSteered || m_nLastControlInput != eControllerType::MOUSE) {
+            FollowPadSteering();
+        }
+    } else {
+        FollowPadSteering();
+    }
+
+    m_fSteeringLeftRight = std::clamp(m_fSteeringLeftRight, -1.0f, 1.0f);
+    m_fSteeringUpDown    = std::clamp(m_fSteeringUpDown,    -1.0f, 1.0f);
+
+    // The skid axis steers the Vortex with the stick, other aircraft with the look buttons
+    float skidTarget;
+    if (m_nModelIndex == MODEL_VORTEX) {
+        skidTarget = static_cast<float>(pad->GetSteeringLeftRight()) / 128.0f;
+    } else if (pad->GetLookLeft()) {
+        skidTarget = -1.0f;
+    } else {
+        skidTarget = pad->GetLookRight() ? 1.0f : 0.0f;
+    }
+    m_fLeftRightSkid = std::clamp((skidTarget - m_fLeftRightSkid) * dt * 0.2f + m_fLeftRightSkid, -1.0f, 1.0f);
+
+    m_fSteerAngle = -(m_pHandlingData->m_fSteeringLock * 0.017453292f * m_fLeftRightSkid * std::max(0.1f, 1.0f - forwardSpd));
+    if (m_nModelIndex == MODEL_VORTEX && pad->GetHandBrake()) {
+        m_fSteerAngle    *= 1.5f;
+        m_fLeftRightSkid *= 1.5f;
+    }
+
+    m_fAccelerationBreakStatus = static_cast<float>(pad->GetAccelerate() - pad->GetBrake()) / 255.0f;
+
+    // Landing gear
+    if (pad->IsRightShockPressed()
+        && std::ranges::all_of(m_fWheelsSuspensionCompression, [](float v) { return v == 1.0f; })
+        && m_pFlyingHandlingData->m_fGearUpR < 1.0f
+        && m_nModelIndex != MODEL_RCBARON
+    ) {
+        if (m_LandingGearAngle == 0.0f) {
+            // Raising the gear
+            m_damageManager.SetWheelStatus(CAR_WHEEL_FRONT_LEFT,  WHEEL_STATUS_MISSING);
+            m_damageManager.SetWheelStatus(CAR_WHEEL_REAR_LEFT,   WHEEL_STATUS_MISSING);
+            m_damageManager.SetWheelStatus(CAR_WHEEL_FRONT_RIGHT, WHEEL_STATUS_MISSING);
+            m_damageManager.SetWheelStatus(CAR_WHEEL_REAR_RIGHT,  WHEEL_STATUS_MISSING);
+            m_LandingGearAngle += dt * 0.02f;
+        } else if (m_LandingGearAngle == 1.0f) {
+            // Lowering the gear, a negative angle means it is on its way down
+            m_LandingGearAngle = dt * 0.02f - 1.0f;
+        } else {
+            m_LandingGearAngle = -m_LandingGearAngle;
+        }
+    } else if (m_LandingGearAngle < 0.0f) {
+        m_LandingGearAngle += dt * 0.02f;
+        if (!(m_LandingGearAngle < 0.0f)) {
+            SetGearDown();
+        }
+    } else if (m_LandingGearAngle > 0.0f && m_LandingGearAngle < 1.0f) {
+        m_LandingGearAngle += dt * 0.02f;
+        if (!(m_LandingGearAngle < 1.0f)) {
+            SetGearUp();
+        }
+    }
+
+    // The Hydra tilts its nozzles
+    if (m_nModelIndex == MODEL_HYDRA && std::abs(static_cast<float>(pad->GetCarGunUpDown())) > 10.0f) {
+        m_wMiscComponentAnglePrev = m_wMiscComponentAngle;
+
+        const auto delta = static_cast<int16>(static_cast<int32>(static_cast<float>(pad->GetCarGunUpDown()) * dt * HARRIER_NOZZLE_ROTATERATE / 128.0f));
+        const auto sum   = static_cast<int32>(m_wMiscComponentAngle) + delta;
+        m_wMiscComponentAngle = sum < 0 ? 0 : static_cast<uint16>(sum);
+        if (m_wMiscComponentAngle > static_cast<int16>(HARRIER_NOZZLE_ROTATE_LIMIT)) {
+            m_wMiscComponentAngle = HARRIER_NOZZLE_ROTATE_LIMIT;
+        }
+    }
+
+    vehicleFlags.bIsHandbrakeOn = false;
+    m_GasPedal                  = 0.0f;
+
+    if (forwardSpd > 0.0f && pad->GetBrake() != 0) {
+        m_BrakePedal = static_cast<float>(pad->GetBrake()) * (forwardSpd > 0.35f ? 1.0f / 510.0f : 1.0f / 255.0f);
+    } else if (m_vecMoveSpeed.Magnitude() < 0.1f && pad->GetBrake() < 10 && pad->GetAccelerate() < 10) {
+        m_BrakePedal = 0.5f;
+    } else {
+        m_BrakePedal = 0.0f;
+    }
+
+    // With the controls disabled the plane is held with the brakes
+    if (pad->DisablePlayerControls) {
+        vehicleFlags.bIsHandbrakeOn = true;
+        m_BrakePedal                = 1.0f;
+        m_GasPedal                  = 0.0f;
+        FindPlayerPed(-1)->KeepAreaAroundPlayerClear();
+
+        const auto speed = m_vecMoveSpeed.Magnitude();
+        if (speed > 0.28f) {
+            m_vecMoveSpeed *= 0.28f / speed;
+        }
+    }
 }
 
 // 0x6CB7C0
