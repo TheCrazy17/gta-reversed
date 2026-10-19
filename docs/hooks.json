@@ -13007,7 +13007,7 @@
   {
     "Category": "CEntryExit",
     "Name": "TransitionFinished",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CEntryExit",
@@ -19362,7 +19362,7 @@
   {
     "Category": "CPlayerPed",
     "Name": "ProcessAnimGroups",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
@@ -19372,57 +19372,57 @@
   {
     "Category": "CPlayerPed",
     "Name": "Compute3rdPersonMouseTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "DrawTriangleForMouseRecruitPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "KeepAreaAroundPlayerClear",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "MakeThisPedJoinOurGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "PlayerWantsToAttack",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "SetInitialState",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "EvaluateNeighbouringTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "ProcessGroupBehaviour",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "ProcessWeaponSwitch",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "FindWeaponLockOnTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerPed",
     "Name": "FindNextWeaponLockOnTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerSkin",
@@ -39282,7 +39282,7 @@
   {
     "Category": "CPlane",
     "Name": "PreRender",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
@@ -39322,22 +39322,22 @@
   {
     "Category": "CPlane",
     "Name": "ProcessControl",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
     "Name": "ProcessControlInputs",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
     "Name": "ProcessFlyingCarStuff",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
     "Name": "VehicleDamage",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
@@ -39362,17 +39362,17 @@
   {
     "Category": "CPlane",
     "Name": "BlowUpCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
     "Name": "FindPlaneCreationCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlane",
     "Name": "DoPlaneGenerationAndRemoval",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CQuadBike",
@@ -39502,7 +39502,7 @@
   {
     "Category": "CTrain",
     "Name": "Constructor",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
@@ -39512,7 +39512,7 @@
   {
     "Category": "CTrain",
     "Name": "ReadAndInterpretTrackFile",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
@@ -39612,7 +39612,7 @@
   {
     "Category": "CTrain",
     "Name": "RemoveRandomPassenger",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
@@ -39637,7 +39637,7 @@
   {
     "Category": "CTrain",
     "Name": "FindPositionOnTrackFromCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
@@ -39662,17 +39662,17 @@
   {
     "Category": "CTrain",
     "Name": "CreateMissionTrain",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
     "Name": "DoTrainGenerationAndRemoval",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
     "Name": "AddNearbyPedAsRandomPassenger",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTrain",
@@ -40382,12 +40382,12 @@
   {
     "Category": "CVehicle",
     "Name": "FireFixedMachineGuns",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CVehicle",
     "Name": "DoDriveByShootings",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CVehicle",

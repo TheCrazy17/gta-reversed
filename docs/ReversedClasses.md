@@ -1,17 +1,17 @@
-# Reimplementation progress (*): 96%
+# Reimplementation progress (*): 97%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 19, 2026 at 14:17:14 UTC
-(Triggered by commit [a3eef888](https://github.com/TheCrazy17/gta-reversed/commit/a3eef888f5b10a97260cbaaad24c4418c216d10a))
+Last update was at Oct 19, 2026 at 18:51:50 UTC
+(Triggered by commit [3a876023](https://github.com/TheCrazy17/gta-reversed/commit/3a876023ae914461ea6f55d80db7d920c3fdcbe1))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8021 out of 8339 functions done in 720 categories)
+## Stats (8051 out of 8339 functions done in 720 categories)
 
-#### Completely reversed categories (638/720) [89%]
+#### Completely reversed categories (643/720) [89%]
 
 <details>
 <summary>See list of categories</summary>
@@ -142,6 +142,7 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - CRegisteredCorona (1)<br />
 - CDraw (2)<br />
 - CEntryExitManager (18)<br />
+- CEntryExit (11)<br />
 - CInformGroupEvent (3)<br />
 - CInformGroupEventQueue (4)<br />
 - CGangs (8)<br />
@@ -212,6 +213,7 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - Fx_c (9)<br />
 - CPedAttractorPedPlacer (1)<br />
 - CCopPed (7)<br />
+- CPlayerPed (65)<br />
 - CPlayerSkin (4)<br />
 - CCivilianPed (3)<br />
 - CPlaceable (16)<br />
@@ -644,8 +646,11 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - CBoat (23)<br />
 - CHeli (11)<br />
 - CMonsterTruck (11)<br />
+- CPlane (23)<br />
 - CQuadBike (12)<br />
 - CTrailer (13)<br />
+- CTrain (41)<br />
+- CVehicle (149)<br />
 - FurnitureGroup_c (6)<br />
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
@@ -656,7 +661,7 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 
 </details>
 
-#### Partially reversed categories (77/720) [11%]
+#### Partially reversed categories (72/720) [10%]
 
 <details>
 <summary>See list of categories</summary>
@@ -683,7 +688,6 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - CRoadBlocks (7/8) [88%]<br />
 - CClouds (20/21) [95%]<br />
 - CCustomCarPlateMgr (14/15) [93%]<br />
-- CEntryExit (10/11) [91%]<br />
 - CPlayerInfo (26/28) [93%]<br />
 - CCarEnterExit (28/32) [88%]<br />
 - CPathFind (56/62) [90%]<br />
@@ -698,7 +702,6 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - FxInfoManager_c (4/5) [80%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
 - CPed (137/145) [94%]<br />
-- CPlayerPed (53/65) [82%]<br />
 - CPhysical (54/56) [96%]<br />
 - CGroupEventHandler (30/32) [94%]<br />
 - CEventHandler (69/72) [96%]<br />
@@ -730,9 +733,6 @@ Last update was at Oct 19, 2026 at 14:17:14 UTC
 - CAEStaticChannel (7/8) [88%]<br />
 - CAEStreamingChannel (22/24) [92%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
-- CPlane (15/23) [65%]<br />
-- CTrain (34/41) [83%]<br />
-- CVehicle (147/149) [99%]<br />
 - Interior_c (48/52) [92%]<br />
 - InteriorGroup_c (22/24) [92%]<br />
 - CRunningScript (37/39) [95%]<br />
