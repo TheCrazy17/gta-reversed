@@ -66,7 +66,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400, { .Reversed = false });
     RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20, { .Reversed = false });
     RH_ScopedInstall(FindPathDirection, 0x422090, { .Reversed = false });
-    RH_ScopedInstall(FindPercDependingOnDistToLink, 0x422620, { .Reversed = false });
+    RH_ScopedInstall(FindPercDependingOnDistToLink, 0x422620);
     RH_ScopedInstall(FindSequenceElement, 0x421770);
     RH_ScopedInstall(FindSpeedMultiplier, 0x4224E0);
     RH_ScopedInstall(FindSpeedMultiplierWithSpeedFromNodes, 0x424130);
@@ -131,10 +131,10 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SwitchVehicleToRealPhysics, 0x423FC0);
     RH_ScopedInstall(TestCollisionBetween2MovingRects, 0x425B30, { .Reversed = false });
     RH_ScopedInstall(TestCollisionBetween2MovingRects_OnlyFrontBumper, 0x425F70, { .Reversed = false });
-    RH_ScopedInstall(TestWhetherToFirePlaneGuns, 0x429520, { .Reversed = false });
+    RH_ScopedInstall(TestWhetherToFirePlaneGuns, 0x429520);
     RH_ScopedInstall(ThisVehicleShouldTryNotToTurn, 0x421FE0);
     RH_ScopedInstall(TriggerDogFightMoves, 0x429300, { .Reversed = false });
-    RH_ScopedInstall(UpdateCarCount, 0x424000, { .Reversed = false });
+    RH_ScopedInstall(UpdateCarCount, 0x424000);
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
     RH_ScopedInstall(WeaveForObject, 0x426BC0, { .Reversed = false });
     RH_ScopedInstall(WeaveForOtherCar, 0x426350, { .Reversed = false });
@@ -400,7 +400,15 @@ int8 CCarCtrl::FindPathDirection(CNodeAddress nodeAddress1, CNodeAddress nodeAdd
 
 // 0x422620
 float CCarCtrl::FindPercDependingOnDistToLink(CVehicle* vehicle, CCarPathLinkAddress linkAddress) {
-    return plugin::CallAndReturn<float, 0x422620, CVehicle*, CCarPathLinkAddress>(vehicle, linkAddress);
+    const auto  linkPos = CVector2D{ ThePaths.GetCarPathLink(linkAddress).m_posn };
+    const float dist    = (linkPos - CVector2D{ vehicle->GetPosition() }).Magnitude();
+    if (dist < 5.0f) {
+        return 0.5f;
+    }
+    if (dist >= 15.0f) {
+        return 1.0f;
+    }
+    return (dist - 5.0f) * 0.05f + 0.5f;
 }
 
 // 0x421770
@@ -1157,7 +1165,23 @@ float CCarCtrl::TestCollisionBetween2MovingRects_OnlyFrontBumper(CVehicle* vehic
 
 // 0x429520
 void CCarCtrl::TestWhetherToFirePlaneGuns(CVehicle* vehicle, CEntity* target) {
-    plugin::Call<0x429520, CVehicle*, CEntity*>(vehicle, target);
+    vehicle->vehicleFlags.bFireGun = false;
+
+    if (vehicle->m_nVehicleWeaponInUse != CAR_WEAPON_NOT_USED && vehicle->m_nVehicleWeaponInUse != CAR_WEAPON_HEAVY_GUN) {
+        return;
+    }
+    if (!target) {
+        return;
+    }
+
+    // Shoots when the target is close and right in front of the plane
+    auto toTarget = target->GetPosition() - vehicle->GetPosition();
+    if (toTarget.Magnitude() < 150.0f) {
+        toTarget.Normalise();
+        if (DotProduct(toTarget, vehicle->GetForward()) > 0.8f) {
+            vehicle->vehicleFlags.bFireGun = true;
+        }
+    }
 }
 
 // 0x421FE0
@@ -1186,7 +1210,59 @@ void CCarCtrl::TriggerDogFightMoves(CVehicle* vehicle1, CVehicle* vehicle2) {
 
 // 0x424000
 void CCarCtrl::UpdateCarCount(CVehicle* vehicle, uint8 bDecrease) {
-    plugin::Call<0x424000, CVehicle*, uint8>(vehicle, bDecrease);
+    // The counts never go under zero when a vehicle is removed
+    const auto Decrement = [](auto& count) {
+        count--;
+        if (static_cast<int32>(count) < 0) {
+            count = 0;
+        }
+    };
+
+    if (!bDecrease) {
+        switch (vehicle->m_nCreatedBy) {
+        case RANDOM_VEHICLE:
+            if (vehicle->vehicleFlags.bIsLawEnforcer) {
+                NumLawEnforcerCars++;
+            }
+            NumRandomCars++;
+            break;
+        case MISSION_VEHICLE:
+            if (vehicle->vehicleFlags.bIsLawEnforcer) {
+                vehicle->vehicleFlags.bIsLawEnforcer = false;
+                NumLawEnforcerCars--;
+            }
+            NumMissionCars++;
+            break;
+        case PARKED_VEHICLE:
+            NumParkedCars++;
+            break;
+        case PERMANENT_VEHICLE:
+            NumPermanentVehicles++;
+            break;
+        default:
+            break;
+        }
+    } else {
+        switch (vehicle->m_nCreatedBy) {
+        case RANDOM_VEHICLE:
+            if (vehicle->vehicleFlags.bIsLawEnforcer) {
+                Decrement(NumLawEnforcerCars);
+            }
+            Decrement(NumRandomCars);
+            break;
+        case MISSION_VEHICLE:
+            Decrement(NumMissionCars);
+            break;
+        case PARKED_VEHICLE:
+            Decrement(NumParkedCars);
+            break;
+        case PERMANENT_VEHICLE:
+            Decrement(NumPermanentVehicles);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 // 0x436540
