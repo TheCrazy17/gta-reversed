@@ -6,6 +6,7 @@
 #include "TaskSimpleRunAnim.h"
 #include "TaskSimpleTired.h"
 #include "TaskComplexWanderFlee.h"
+#include "Ragdoll/IKChainManager.h"
 
 void CTaskComplexSmartFleePoint::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexSmartFleePoint, 0x86f744, 11);
@@ -23,7 +24,7 @@ void CTaskComplexSmartFleePoint::InjectHooks() {
     RH_ScopedVMTInstall(MakeAbortable, 0x65BDC0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x65C0C0);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x65C140);
-    RH_ScopedVMTInstall(ControlSubTask, 0x65C1E0, { .Reversed = false });
+    RH_ScopedVMTInstall(ControlSubTask, 0x65C1E0);
 }
 
 // 0x65BD20
@@ -126,5 +127,52 @@ CTask* CTaskComplexSmartFleePoint::CreateFirstSubTask(CPed* ped) {
 
 // 0x65C1E0
 CTask* CTaskComplexSmartFleePoint::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x65C1E0, CTaskComplexSmartFleePoint*, CPed*>(this, ped);
+    if (m_pSubTask->GetTaskType() != TASK_COMPLEX_WANDER) {
+        if (g_ikChainMan.IsLooking(ped)) {
+            g_ikChainMan.AbortLookAt(ped, 250);
+        }
+        return m_pSubTask;
+    }
+
+    if (m_doScream) {
+        ped->Say(CTX_GLOBAL_PAIN_PANIC, 0, 0.1f);
+    }
+
+    const auto wander = static_cast<CTaskComplexWander*>(m_pSubTask);
+    wander->m_nMoveState = m_moveState;
+
+    CTask* result = m_pSubTask;
+    if (!m_hasFleePointChanged) {
+        if (m_timer.m_bStarted && m_timer.IsOutOfTime()) {
+            result = CreateSubTask(TASK_SIMPLE_STAND_STILL, ped);
+        } else {
+            // Stand still once far enough from where the ped started and from the flee point
+            const auto safeDistSq = sq(m_safeDist);
+            if ((m_fleePoint - ped->GetPosition()).SquaredMagnitude() > safeDistSq
+                && (m_initalPos - ped->GetPosition()).SquaredMagnitude() > safeDistSq
+            ) {
+                result = CreateSubTask(TASK_SIMPLE_STAND_STILL, ped);
+            }
+        }
+    } else {
+        m_hasFleePointChanged = false;
+        if (m_timer.m_bStarted) {
+            m_timer.m_nStartTime = CTimer::GetTimeInMS();
+            m_timer.m_nInterval  = m_fleeTimeMs;
+        }
+        const auto newDir = (uint8)ComputeFleeDir(ped);
+        if (m_fleeDir != newDir) {
+            m_fleeDir = newDir;
+            if (wander->m_nDir != newDir) {
+                wander->m_nDir    = newDir;
+                wander->m_bNewDir = true;
+            }
+        }
+    }
+
+    // Look around nervously from time to time
+    if (m_moveState == PEDMOVE_RUN && !g_ikChainMan.IsLooking(ped) && CGeneral::GetRandomNumberInRange(0, 100) < 6) {
+        g_ikChainMan.LookAt("TaskSmartFleePoint", ped, nullptr, 2000, BONE_UNKNOWN, &m_fleePoint, false, 0.25f, 500, 3, false);
+    }
+    return result;
 }
