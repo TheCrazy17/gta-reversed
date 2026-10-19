@@ -4,6 +4,8 @@
 #include "TaskSimpleDoHandSignal.h"
 #include "TaskComplexGangLeader.h"
 #include "TaskSimpleRunAnim.h"
+#include "TaskComplexTurnToFaceEntityOrCoord.h"
+#include "Ragdoll/IKChainManager.h"
 
 void CTaskComplexSignalAtPed::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexSignalAtPed, 0x86fa8c, 11);
@@ -15,7 +17,7 @@ void CTaskComplexSignalAtPed::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x662140);
     RH_ScopedVMTInstall(GetTaskType, 0x660AA0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x660B30);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x660CC0, { .Reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x660CC0);
     RH_ScopedVMTInstall(ControlSubTask, 0x660D80);
 }
 
@@ -62,7 +64,12 @@ CTask* CTaskComplexSignalAtPed::CreateNextSubTask(CPed* ped) {
 
 // 0x660CC0
 CTask* CTaskComplexSignalAtPed::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x660CC0, CTaskComplexSignalAtPed*, CPed*>(this, ped);
+    if (!m_pedToSignalAt || !CTaskComplexGangLeader::ShouldLoadGangAnims()) {
+        return nullptr;
+    }
+    ped->StopPlayingHandSignal();
+    g_ikChainMan.LookAt("TaskSignalAtPed", ped, m_pedToSignalAt, 5000, BONE_HEAD, nullptr, true, 0.15f, 500, 3, false);
+    return new CTaskComplexTurnToFaceEntityOrCoord(m_pedToSignalAt, 0.5f, 0.2f);
 }
 
 // 0x660D80
