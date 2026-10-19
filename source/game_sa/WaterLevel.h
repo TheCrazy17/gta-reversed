@@ -163,6 +163,9 @@ class CWaterLevel {
         };
 
     public:
+        PolyInfo() = default;
+        PolyInfo(uint16 id, PType type) : m_id{ id }, m_type{ (uint16)type } {}
+
         auto Id()   const { return m_id; }
         auto Type() const { return (PType)(m_type); }
 

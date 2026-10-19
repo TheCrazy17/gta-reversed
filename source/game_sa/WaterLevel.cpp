@@ -55,7 +55,7 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedInstall(GetWaterDepth, 0x6EA960);
     RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210);
     RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar), { .Reversed = false });
-    RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30, { .Reversed = false });
+    RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30);
 }
 
 // NOTSA
@@ -1235,8 +1235,69 @@ void CWaterLevel::AddWaterLevelTriangle(int32 X1, int32 Y1, CRenPar P1, int32 X2
     };
 }
 
+// 0x6E5750 (not hooked, only used by `FillQuadsAndTrianglesList`)
+static void AddPolyToBlock(int32 blockX, int32 blockY, uint16 polyId, CWaterLevel::PolyInfo::PType type) {
+    using PolyInfo = CWaterLevel::PolyInfo;
+    using PType    = PolyInfo::PType;
+
+    auto&      info   = CWaterLevel::m_BlockPolyInfo[blockX][blockY];
+    auto&      combos = CWaterLevel::m_PolyCombos;
+    auto&      count  = CWaterLevel::NumWaterZonePolys;
+    const auto newOne = PolyInfo{ polyId, type };
+
+    switch (info.Type()) {
+    case PType::NONE:
+        info = newOne;
+        break;
+    case PType::SINGLE_QUAD:
+    case PType::SINGLE_TRI:
+        // Turn the single poly into a combo of the old and the new one
+        combos[count]     = info;
+        combos[count + 1] = newOne;
+        combos[count + 2] = PolyInfo{};
+        info              = PolyInfo{ (uint16)count, PType::COMBO };
+        count += 3;
+        break;
+    case PType::COMBO:
+        // The new poly takes the place of the terminator of the combo, which has to be the last one in the list
+        combos[count - 1] = newOne;
+        combos[count]     = PolyInfo{};
+        count += 1;
+        break;
+    }
+}
+
+// 0x6E7B30
 void CWaterLevel::FillQuadsAndTrianglesList() {
-    plugin::Call<0x6E7B30>();
+    using PType = PolyInfo::PType;
+
+    for (auto blockX = 0; blockX < NUM_WATER_BLOCKS_ROWCOL; blockX++) {
+        const auto minX = (float)(blockX * WATER_BLOCK_SIZE - 3000);
+        const auto maxX = minX + (float)WATER_BLOCK_SIZE;
+        for (auto blockY = 0; blockY < NUM_WATER_BLOCKS_ROWCOL; blockY++) {
+            const auto minY = (float)(blockY * WATER_BLOCK_SIZE - 3000);
+            const auto maxY = minY + (float)WATER_BLOCK_SIZE;
+
+            for (auto i = 0u; i < NumWaterQuads; i++) {
+                const auto& quad = WaterQuads[i];
+                if (minX < (float)m_aVertices[quad.verts[1]].x && (float)m_aVertices[quad.verts[0]].x < maxX
+                    && minY < (float)m_aVertices[quad.verts[2]].y && (float)m_aVertices[quad.verts[0]].y < maxY
+                ) {
+                    AddPolyToBlock(blockX, blockY, (uint16)i, PType::SINGLE_QUAD);
+                }
+            }
+
+            for (auto i = 0u; i < NumWaterTriangles; i++) {
+                const auto& tri = WaterTriangles[i];
+                const auto [triMinY, triMaxY] = std::minmax(m_aVertices[tri.verts[0]].y, m_aVertices[tri.verts[2]].y);
+                if (minX < (float)m_aVertices[tri.verts[1]].x && (float)m_aVertices[tri.verts[0]].x < maxX
+                    && minY < (float)triMaxY && (float)triMinY < maxY
+                ) {
+                    AddPolyToBlock(blockX, blockY, (uint16)i, PType::SINGLE_TRI);
+                }
+            }
+        }
+    }
 }
 
 // 0x6E9C80
