@@ -113,8 +113,8 @@ void CPlayerPed::InjectHooks() {
     RH_ScopedInstall(EvaluateNeighbouringTarget, 0x60D1C0);
     RH_ScopedInstall(ProcessGroupBehaviour, 0x60D350);
     RH_ScopedInstall(ProcessWeaponSwitch, 0x60D850);
-    RH_ScopedInstall(FindWeaponLockOnTarget, 0x60DC50, { .Reversed = false });
-    RH_ScopedInstall(FindNextWeaponLockOnTarget, 0x60E530, { .Reversed = false });
+    RH_ScopedInstall(FindWeaponLockOnTarget, 0x60DC50);
+    RH_ScopedInstall(FindNextWeaponLockOnTarget, 0x60E530);
 }
 
 // TODO: To class and create 2 function
@@ -1497,17 +1497,18 @@ void CPlayerPed::SetPlayerMoveBlendRatio(CVector* point) {
 
 // 0x60C5F0
 CPed* CPlayerPed::FindPedToAttack() {
-    CVector origin = FindPlayerCoors();
+    CVector origin = FindPlayerCoors(-1);
     origin.z = 0.0f;
 
-    CVector end = origin + TheCamera.GetForward() * 100.0f;
-    end.z = 0.0f;
+    // Line from the player along the camera direction
+    const auto& camForward = TheCamera.m_mCameraMatrix.GetForward();
+    const CVector end{ camForward.x * 100.0f + origin.x, origin.y + camForward.y * 100.0f, 0.0f };
 
     CPed* closestPed{};
-    float closestDistance = std::numeric_limits<float>::max();
+    float closestDistance = 99999.9f;
 
     CPedGroupMembership& membership = GetPlayerGroup().GetMembership();
-    for (int i = 0; GetPedPool()->GetSize(); i++) {
+    for (auto i = GetPedPool()->GetSize(); i-- > 0;) {
         CPed* ped = GetPedPool()->GetAt(i);
         if (!ped)
             continue;
@@ -1526,10 +1527,10 @@ CPed* CPlayerPed::FindPedToAttack() {
         float dist = CCollision::DistToLine(origin, end, point);
         float pointDist = (point - origin).Magnitude2D();
         if (pointDist > 20.0f)
-            dist += (pointDist - 20.0f) / 5.0f;
+            dist += (pointDist - 20.0f) * 0.2f;
 
         if (IsPedTypeGang(ped->m_nPedType))
-            dist = std::max(0.0f, dist / 2.0f - 2.0f);
+            dist = std::max(0.0f, dist * 0.5f - 2.0f);
 
         if (dist < closestDistance) {
             closestDistance = dist;
@@ -2011,12 +2012,269 @@ void CPlayerPed::ProcessWeaponSwitch(CPad* pad) {
 
 // 0x60DC50
 bool CPlayerPed::FindWeaponLockOnTarget() {
-    return plugin::CallMethodAndReturn<bool, 0x60DC50, CPlayerPed *>(this);
+    auto& weapon         = GetActiveWeapon();
+    const auto baseRange = CWeaponInfo::GetWeaponInfo(weapon.m_Type, GetWeaponSkill())->m_fTargetRange;
+
+    const auto SetTarget = [this](CEntity* target) {
+        if (m_pTargetedObject) {
+            m_pTargetedObject->CleanUpOldReference(&m_pTargetedObject);
+        }
+        m_pTargetedObject = target;
+        target->RegisterReference(&m_pTargetedObject);
+        GetPlayerData()->m_bDontAllowWeaponChange = true;
+    };
+
+    // Keep the current lock while it is still within range
+    if (m_pTargetedObject) {
+        const auto distance2D = (CVector2D{ m_pTargetedObject->GetPosition() } - CVector2D{ GetPosition() }).Magnitude();
+        if (CWeapon::TargetWeaponRangeMultiplier(m_pTargetedObject, this) * baseRange < distance2D) {
+            if (m_pTargetedObject) {
+                m_pTargetedObject->CleanUpOldReference(&m_pTargetedObject);
+            }
+            m_pTargetedObject = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    CEntity* bestTarget{};
+    float    bestPriority = -10'000.0f;
+
+    // Direction the stick points to, relative to the camera; the facing of the player when idle
+    auto aimAngle = CGeneral::GetATanOfXY(GetForward().x, GetForward().y);
+    if (const auto* const pad = m_nPedType == PED_TYPE_PLAYER1 ? CPad::GetPad(0) : m_nPedType == PED_TYPE_PLAYER2 ? CPad::GetPad(1) : nullptr) {
+        const auto leftRight = pad->GetPedWalkLeftRight();
+        const auto upDown    = pad->GetPedWalkUpDown();
+        if (std::fabs(static_cast<float>(leftRight)) > 60.0f || std::fabs(static_cast<float>(upDown)) > 60.0f) {
+            aimAngle = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, static_cast<float>(-leftRight), static_cast<float>(upDown)) - TheCamera.m_fOrientation + HALF_PI);
+        }
+    }
+
+    // Spray cans lock on to tags that are not fully sprayed yet
+    if (weapon.m_Type == WEAPON_SPRAYCAN) {
+        const auto  heading = m_matrix ? std::atan2(-GetForward().x, GetForward().y) : m_placement.m_fHeading;
+        const auto& forward = GetForward();
+        const auto  probe   = CVector{ forward.x * 8.0f + GetPosition().x, forward.y * 8.0f + GetPosition().y, forward.z * 8.0f + GetPosition().z };
+
+        int16    numFound{};
+        CEntity* found[15]{};
+        CWorld::FindObjectsInRange(probe, 8.0f, false, &numFound, 15, found, true, false, false, false, false);
+
+        CEntity* bestTag{};
+        float    bestAngle = PI;
+        for (auto i = 0; i < numFound; i++) {
+            auto* const tag = found[i];
+            if (!CTagManager::IsTag(*tag) || CTagManager::GetAlpha(*tag) >= 255) {
+                continue;
+            }
+            const auto toTag = tag->GetPosition() - GetPosition();
+            if (toTag.SquaredMagnitude() >= baseRange * baseRange) {
+                continue;
+            }
+            auto angle = std::atan2(-toTag.x, toTag.y) - heading;
+            if (angle < -PI) {
+                angle += TWO_PI;
+            } else if (angle > PI) {
+                angle -= TWO_PI;
+            }
+            if (angle < bestAngle || !bestTag) {
+                bestAngle = angle;
+                bestTag   = tag;
+            }
+        }
+        if (bestTag && !LOSBlockedBetweenPeds(this, bestTag)) {
+            SetTarget(bestTag);
+            return true;
+        }
+    }
+
+    static auto& lockOnViewAngle    = StaticRef<float>(0x8D243C); // 140.0f
+    static auto& lockOnBackAngle    = StaticRef<float>(0x8D2438); // 90.0f
+    static auto& lockOnBackDistance = StaticRef<float>(0x8D2440); // 3.0f
+    constexpr auto DEGREES_TO_HALF_RADIANS = 0.008726646f;       // half of a degree in radians
+
+    // Wraps an angle to the range [-PI, PI] and returns its magnitude
+    const auto WrappedAbs = [](float angle) {
+        while (angle > PI) {
+            angle -= TWO_PI;
+        }
+        while (angle < -PI) {
+            angle += TWO_PI;
+        }
+        return std::fabs(angle);
+    };
+
+    for (auto i = GetPedPool()->GetSize(); i-- > 0;) {
+        CPed* const ped = GetPedPool()->GetAt(i);
+        if (!ped || ped == this) {
+            continue;
+        }
+        if (ped->m_nPedState == PEDSTATE_DIE || ped->m_nPedState == PEDSTATE_DEAD) {
+            continue;
+        }
+        if (ped->bInVehicle) {
+            auto* const vehicle = ped->m_pVehicle;
+            if (!vehicle || (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE && !vehicle->vehicleFlags.bIsBig)) {
+                continue;
+            }
+        }
+        if (ped->bNeverEverTargetThisPed) {
+            continue;
+        }
+        if ((ped->m_nPedType == PED_TYPE_PLAYER1 || ped->m_nPedType == PED_TYPE_PLAYER2) && CGameLogic::bPlayersCannotTargetEachOther) {
+            continue;
+        }
+        if (CPedGroups::AreInSameGroup(ped, this)) {
+            continue;
+        }
+
+        // Must be inside the view cone, also when seen from a point behind the player
+        const auto& pedPos = ped->GetPosition();
+        const auto& pos    = GetPosition();
+        if (WrappedAbs(CGeneral::GetATanOfXY(pedPos.x - pos.x, pedPos.y - pos.y) - aimAngle) >= lockOnViewAngle * DEGREES_TO_HALF_RADIANS) {
+            continue;
+        }
+        auto forward = GetForward();
+        forward.Normalise();
+        const auto behind = pos - forward * lockOnBackDistance;
+        if (WrappedAbs(CGeneral::GetATanOfXY(pedPos.x - behind.x, pedPos.y - behind.y) - aimAngle) >= lockOnBackAngle * DEGREES_TO_HALF_RADIANS) {
+            continue;
+        }
+
+        const auto distance = (pedPos - pos).Magnitude();
+        const auto range    = CWeapon::TargetWeaponRangeMultiplier(ped, this) * baseRange;
+        if (distance < range) {
+            EvaluateTarget(ped, bestTarget, bestPriority, range, aimAngle, false);
+        }
+    }
+
+    for (auto i = GetObjectPool()->GetSize(); i-- > 0;) {
+        CObject* const object = GetObjectPool()->GetAt(i);
+        if (!object || !object->CanBeTargetted() || object->objectFlags.bIsExploded || !object->GetRwObject()) {
+            continue;
+        }
+        if (CanIKReachThisTarget(object->GetPosition(), &weapon, true)) {
+            EvaluateTarget(object, bestTarget, bestPriority, baseRange, aimAngle, true);
+        }
+    }
+
+    if (CGameLogic::IsCoopGameGoingOn()) {
+        for (auto i = GetVehiclePool()->GetSize(); i-- > 0;) {
+            CVehicle* const vehicle = GetVehiclePool()->GetAt(i);
+            if (!vehicle || vehicle->physicalFlags.bRenderScorched || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+                continue;
+            }
+            if (CanIKReachThisTarget(vehicle->GetPosition(), &weapon, true)) {
+                EvaluateTarget(vehicle, bestTarget, bestPriority, baseRange, aimAngle, true);
+            }
+        }
+    }
+
+    if (!bestTarget) {
+        return false;
+    }
+    SetTarget(bestTarget);
+    return true;
 }
 
 // 0x60E530
-bool CPlayerPed::FindNextWeaponLockOnTarget(CEntity* arg0, bool arg1) {
-    return plugin::CallMethodAndReturn<bool, 0x60E530, CPlayerPed *, CEntity*, bool>(this, arg0, arg1);
+bool CPlayerPed::FindNextWeaponLockOnTarget(CEntity* currentTarget, bool searchPositiveSide) {
+    auto& weapon         = GetActiveWeapon();
+    const auto baseRange = CWeaponInfo::GetWeaponInfo(weapon.m_Type, GetWeaponSkill())->m_fTargetRange;
+
+    CEntity* bestTarget{};
+    float    bestPriority = -10'000.0f;
+
+    // Candidates are compared against the direction of the current target, or where the camera looks
+    const auto dir = currentTarget
+        ? CVector2D{ currentTarget->GetPosition() - TheCamera.GetPosition() }
+        : CVector2D{ TheCamera.m_mCameraMatrix.GetForward() };
+    const auto refAngle = CGeneral::GetATanOfXY(dir.x, dir.y);
+
+    // The range multiplier of the original is fed the last ped slot visited, for every kind of candidate
+    CEntity* rangeEntity = currentTarget;
+
+    const auto Evaluate = [&](CEntity* candidate) {
+        EvaluateNeighbouringTarget(candidate, &bestTarget, &bestPriority, CWeapon::TargetWeaponRangeMultiplier(rangeEntity, this) * baseRange, refAngle, searchPositiveSide);
+    };
+
+    for (auto i = GetPedPool()->GetSize(); i-- > 0;) {
+        CPed* const ped = GetPedPool()->GetAt(i);
+        rangeEntity     = ped;
+        if (!ped || ped == this || ped == currentTarget) {
+            continue;
+        }
+        if (ped->m_nPedState == PEDSTATE_DIE || ped->m_nPedState == PEDSTATE_DEAD) {
+            continue;
+        }
+        if (ped->bInVehicle) {
+            auto* const vehicle = ped->m_pVehicle;
+            if (!vehicle || (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE && !vehicle->vehicleFlags.bIsBig)) {
+                continue;
+            }
+        }
+        if (ped->bNeverEverTargetThisPed || CPedGroups::AreInSameGroup(ped, this)) {
+            continue;
+        }
+        if ((ped->m_nPedType == PED_TYPE_PLAYER1 || ped->m_nPedType == PED_TYPE_PLAYER2) && CGameLogic::bPlayersCannotTargetEachOther) {
+            continue;
+        }
+        if (LOSBlockedBetweenPeds(this, ped) || !CanIKReachThisTarget(ped->GetPosition(), &weapon, true)) {
+            continue;
+        }
+        Evaluate(ped);
+    }
+
+    for (auto i = GetObjectPool()->GetSize(); i-- > 0;) {
+        CObject* const object = GetObjectPool()->GetAt(i);
+        if (!object || !object->CanBeTargetted() || object->objectFlags.bIsExploded || !object->GetRwObject()) {
+            continue;
+        }
+        if (!CanIKReachThisTarget(object->GetPosition(), &weapon, true)) {
+            continue;
+        }
+        Evaluate(object);
+    }
+
+    if (CGameLogic::IsCoopGameGoingOn()) {
+        for (auto i = GetVehiclePool()->GetSize(); i-- > 0;) {
+            CVehicle* const vehicle = GetVehiclePool()->GetAt(i);
+            if (!vehicle || vehicle->physicalFlags.bRenderScorched || vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+                continue;
+            }
+            if (!CanIKReachThisTarget(vehicle->GetPosition(), &weapon, true)) {
+                continue;
+            }
+            Evaluate(vehicle);
+        }
+    }
+
+    if (!bestTarget) {
+        return false;
+    }
+
+    // Locking on a ped with a firearm makes it (or its group) react to being aimed at
+    if (bestTarget->GetIsTypePed() && CWeaponInfo::GetWeaponInfo(weapon.m_Type, eWeaponSkill::STD)->m_nWeaponFire != WEAPON_FIRE_MELEE) {
+        auto* const targetPed = bestTarget->AsPed();
+        if (auto* const group = CPedGroups::GetPedsGroup(targetPed)) {
+            if (!CPedGroups::AreInSameGroup(targetPed, this)) {
+                CEventGroupEvent groupEvent{ targetPed, new CEventGunAimedAt(this) };
+                group->GetIntelligence().AddEvent(&groupEvent);
+            }
+        } else {
+            CEventGunAimedAt aimedAtEvent{ this };
+            targetPed->GetIntelligence()->m_eventGroup.Add(&aimedAtEvent, false);
+        }
+    }
+
+    if (m_pTargetedObject) {
+        m_pTargetedObject->CleanUpOldReference(&m_pTargetedObject);
+    }
+    m_pTargetedObject = bestTarget;
+    bestTarget->RegisterReference(&m_pTargetedObject);
+
+    GetPlayerData()->m_bDontAllowWeaponChange = true;
+    return true;
 }
 
 // 0x60EA90
