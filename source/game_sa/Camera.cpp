@@ -164,7 +164,7 @@ void CCamera::InjectHooks() {
     RH_ScopedOverloadedInstall(ProcessShake, "1", 0x516560, void(CCamera::*)(float));
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
-    RH_ScopedOverloadedInstall(IsSphereVisible, "", 0x420C40, bool(CCamera::*)(const CVector&, float, RwMatrix*), { .Reversed = false });
+    RH_ScopedOverloadedInstall(IsSphereVisible, "", 0x420C40, bool(CCamera::*)(const CVector&, float, RwMatrix*));
     RH_ScopedOverloadedInstall(ProcessShake, "void", 0x51A6F0, void(CCamera::*)());
 }
 
@@ -1355,7 +1355,19 @@ bool CCamera::IsExtraEntityToIgnore(CEntity* entity) {
 
 // 0x420C40
 bool CCamera::IsSphereVisible(const CVector& origin, float radius, RwMatrix* transformMatrix) {
-    return plugin::CallMethodAndReturn<bool, 0x420C40, CCamera*, const CVector&, float, RwMatrix*>(this, origin, radius, transformMatrix);
+    // The sphere is moved into view space and tested against the near / far plane, and then the 4 sides
+    RwV3d pos{ origin.x, origin.y, origin.z };
+    RwV3dTransformPoints(&pos, &pos, 1, transformMatrix);
+
+    if (!(pos.y + radius >= CDraw::ms_fNearClipZ) || !(pos.y - radius <= CDraw::ms_fFarClipZ)) {
+        return false;
+    }
+
+    const auto& n = m_avecFrustumNormals;
+    return pos.y * n[0].y + pos.x * n[0].x <= radius
+        && pos.y * n[1].y + pos.x * n[1].x <= radius
+        && pos.y * n[2].y + pos.z * n[2].z <= radius
+        && pos.y * n[3].y + pos.z * n[3].z <= radius;
 }
 
 // 0x420D40 - NOTE: Function has no hook
