@@ -4,6 +4,8 @@
 #include "Events/EventDanger.h"
 #include "CarCtrl.h"
 #include "FireManager.h"
+#include "Shadows.h"
+#include "MotionBlurStreaks.h"
 
 #include <numbers>
 
@@ -26,6 +28,26 @@ auto& PLANE_RUDDER_DRIFT = StaticRef<float>(0x8D3440);              // 0.05f
 auto& PLANE_PROP_DAMAGE_SLOWDOWN = StaticRef<float>(0x8D3444);      // 0.2f
 auto& PLANE_DAMAGE_WAVE_PERIOD = StaticRef<int32>(0x8D3448);        // 2500
 auto& PLANE_PROP_DAMAGE_SPREAD = StaticRef<float>(0x8D344C);        // 0.8f
+auto& PLANE_PANEL_SPRING = StaticRef<float>(0x8D33FC);              // 0.03f
+auto& PLANE_PANEL_DAMP = StaticRef<float>(0x8D3400);                // 0.98f
+auto& PLANE_VORTEX_RISE_LIMIT = StaticRef<float>(0x8D3404);         // 1.3f
+auto& PLANE_VORTEX_ROLL_LIMIT = StaticRef<float>(0x8D3408);         // 0.1f
+auto& PLANE_VORTEX_PITCH_LIMIT = StaticRef<float>(0x8D340C);        // 0.1f
+auto& PLANE_VORTEX_LEAN_KEEP = StaticRef<float>(0x8D3410);          // 0.9f
+auto& PLANE_VORTEX_LEAN_LIMIT = StaticRef<float>(0x8D3414);         // 0.3f
+auto& PLANE_VORTEX_SPEED_LEAN = StaticRef<float>(0x8D3418);         // 2.0f
+auto& PLANE_RUDDER_MAX_ANGLE = StaticRef<float>(0x871914);          // 40.0f, degrees
+auto& PLANE_ELEVATOR_MAX_ANGLE = StaticRef<float>(0x871918);        // 25.0f, degrees
+auto& PLANE_AILERON_MAX_ANGLE = StaticRef<float>(0x87191C);         // -30.0f, degrees
+auto& PLANE_FLAP_EXTEND_SCALE = StaticRef<float>(0x871920);         // 0.5f
+auto& PLANE_FLAP_EXTEND_ANGLE = StaticRef<float>(0x871924);         // 0.3f
+auto& PLANE_FLAP_SHIFT = StaticRef<float>(0x871928);                // 0.03f
+auto& PLANE_GEAR_FOLD_RUSTLER = StaticRef<float>(0x87192C);         // 1.4835299f
+auto& PLANE_GEAR_FOLD_HYDRA = StaticRef<float>(0x871930);           // -1.5707964f
+auto& PLANE_GEAR_FOLD_HYDRA_FRONT = StaticRef<float>(0x871934);     // -1.3962635f
+auto& PLANE_GEAR_FOLD_BIG = StaticRef<float>(0x871938);             // 2.268928f
+auto& PLANE_GEAR_FOLD_ANDROM = StaticRef<float>(0x87193C);          // 2.268928f
+auto& PLANE_GEAR_FOLD_NEVADA = StaticRef<float>(0x871940);          // 1.3089969f
 
 void CPlane::InjectHooks() {
     RH_ScopedVirtualClass(CPlane, 0x871948, 71);
@@ -35,7 +57,7 @@ void CPlane::InjectHooks() {
     RH_ScopedInstall(InitPlaneGenerationAndRemoval, 0x6CAD90);
     RH_ScopedVMTInstall(SetUpWheelColModel, 0x6C9140);
     RH_ScopedVMTInstall(BurstTyre, 0x6C9150);
-    RH_ScopedVMTInstall(PreRender, 0x6C94A0, { .Reversed = false });
+    RH_ScopedVMTInstall(PreRender, 0x6C94A0);
     RH_ScopedVMTInstall(Render, 0x6CAB70);
     RH_ScopedInstall(IsAlreadyFlying, 0x6CAB90);
     RH_ScopedVMTInstall(Fix, 0x6CABB0);
@@ -809,7 +831,415 @@ bool CPlane::BurstTyre(uint8 tyreComponentId, bool bPhysicalEffect) {
 
 // 0x6C94A0
 void CPlane::PreRender() {
-    plugin::CallMethod<0x6C94A0, CPlane*>(this);
+    constexpr float TWO_PI     = 6.2831855f;
+    constexpr float DEG_TO_RAD = 0.017453292f;
+
+    constexpr float STREAK_LIFT_SCALE = 6400.0f;
+    constexpr float STREAK_LIFT_MIN   = 32.0f;
+
+    auto* const mi       = CModelInfo::GetModelInfo(m_nModelIndex)->AsVehicleModelInfoPtr();
+    auto* const colModel = GetColModel();
+    const auto  dt       = CTimer::GetTimeStep();
+
+    CVehicle::PreRender();
+
+    if (m_nModelIndex == MODEL_VORTEX) {
+        DoHoverSuspensionRatios();
+    }
+
+    // Wheels, they follow the suspension
+    if (vehicleFlags.bVehicleColProcessed) {
+        DoBurstAndSoftGroundRatios();
+
+        for (int32 i = 0; i < 4; i++) {
+            const auto compression = m_fWheelsSuspensionCompression[i];
+            const auto restRatio   = 1.0f - m_aSuspensionSpringLength[i] / m_aSuspensionLineLength[i];
+            const auto pushedIn    = (compression - restRatio) / (1.0f - restRatio);
+
+            CVector wheelPosn;
+            mi->GetWheelPosn(i, wheelPosn, true);
+
+            float height = wheelPosn.z + m_pHandlingData->m_fSuspensionUpperLimit;
+            if (pushedIn > 0.0f) {
+                height -= pushedIn * m_aSuspensionSpringLength[i];
+            }
+            if (height <= m_wheelPosition[i]
+                && (!physicalFlags.bAddMovingCollisionSpeed || !(m_nHandlingFlagsIntValue & VEHICLE_HANDLING_HYDRAULIC_INST))
+            ) {
+                height = (height - m_wheelPosition[i]) * 0.75f + m_wheelPosition[i];
+            }
+            m_wheelPosition[i] = height;
+
+            // The Andromada leans its wheels with the ground
+            if (m_nModelIndex == MODEL_ANDROM) {
+                if (compression >= 1.0f) {
+                    m_wheelRotation[i] *= 0.95f;
+                } else {
+                    const auto dot = DotProduct(m_wheelColPoint[i].m_vecNormal, GetMatrix().GetForward());
+                    m_wheelRotation[i] = -std::asin(std::clamp(dot, -1.0f, 1.0f));
+                }
+            }
+        }
+    }
+
+    UpdateWheelMatrix(4, 1);
+    UpdateWheelMatrix(7, 1);
+    UpdateWheelMatrix(2, 1);
+    UpdateWheelMatrix(5, m_nModelIndex == MODEL_HYDRA ? 3 : 1);
+
+    // Propeller angle
+    field_9C8 = dt * m_fPropSpeed + field_9C8;
+    if (field_9C8 > TWO_PI) {
+        do {
+            field_9C8 -= TWO_PI;
+        } while (field_9C8 > TWO_PI);
+    }
+
+    // The axis a control surface turns around comes from a dummy of the model, relative to the surface itself
+    const auto SurfaceAxis = [&](int32 dummy, const CMatrix& surface) {
+        CVector axis = mi->m_pVehicleStruct->m_avDummyPos[dummy];
+        if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
+            return CVector{ 1.0f, 0.0f, 0.0f };
+        }
+        axis -= surface.GetPosition();
+        axis.Normalise();
+        return axis;
+    };
+    const auto TurnSurface = [](CMatrix& surface, CVector& axis, float angle) {
+        CQuaternion rotation;
+        rotation.Set(&axis, angle);
+        rotation.Get(surface.m_pAttachMatrix);
+    };
+
+    if (GetStatus() <= STATUS_PHYSICS) {
+        CMatrix surface;
+
+        if (auto* const rudder = m_aCarNodes[PLANE_RUDDER]) {
+            surface.Attach(RwFrameGetMatrix(rudder), false);
+            surface.UpdateRW();
+
+            auto axis = SurfaceAxis(11, surface);
+            TurnSurface(surface, axis, PLANE_RUDDER_MAX_ANGLE * DEG_TO_RAD * m_fLeftRightSkid);
+
+            if (m_nModelIndex == MODEL_VORTEX && m_aCarNodes[PLANE_MISC_B]) {
+                surface.Attach(RwFrameGetMatrix(m_aCarNodes[PLANE_MISC_B]), false);
+                surface.UpdateRW();
+
+                CQuaternion rotation;
+                rotation.Set(&axis, PLANE_RUDDER_MAX_ANGLE * DEG_TO_RAD * m_fLeftRightSkid);
+                rotation.Get(surface.m_pAttachMatrix);
+            }
+        }
+
+        // With the gear down the ailerons double as flaps
+        if (auto* const aileronR = m_aCarNodes[PLANE_AILERON_R]) {
+            float flapScale = 1.0f;
+            float flapAngle = 0.0f;
+            if (m_pFlyingHandlingData->m_fGearDownL > 1.0f
+                && std::abs(m_LandingGearAngle) < 1.0f
+                && (m_aCarNodes[PLANE_GEAR_L] || m_aCarNodes[PLANE_GEAR_R])
+            ) {
+                flapScale = (1.0f - std::abs(m_LandingGearAngle)) * PLANE_FLAP_EXTEND_SCALE + 1.0f;
+                flapAngle = (1.0f - std::abs(m_LandingGearAngle)) * PLANE_FLAP_EXTEND_ANGLE;
+            }
+
+            // Stretches the flap, or moves it back along the plane when its axis is not the one of the model
+            const auto ExtendFlap = [&](CMatrix& flap, const CVector& axis, float straightAxisX, int32 component) {
+                flap.Update();
+                if (axis.x == straightAxisX) {
+                    flap.GetForward().y *= flapScale;
+                } else {
+                    CVector original;
+                    if (mi->GetOriginalCompPosition(original, component)) {
+                        original.y += (1.0f - flapScale) * colModel->m_boundBox.m_vecMax.y * PLANE_FLAP_SHIFT;
+                        flap.SetTranslateOnly(original);
+                    }
+                }
+                flap.UpdateRW();
+            };
+
+            surface.Attach(RwFrameGetMatrix(aileronR), false);
+            surface.UpdateRW();
+
+            auto axis = SurfaceAxis(9, surface);
+            TurnSurface(surface, axis, PLANE_AILERON_MAX_ANGLE * DEG_TO_RAD * m_fSteeringLeftRight + flapAngle);
+            if (flapScale > 1.0f) {
+                ExtendFlap(surface, axis, 1.0f, 0x14);
+            }
+
+            if (auto* const aileronL = m_aCarNodes[PLANE_AILERON_L]) {
+                surface.Attach(RwFrameGetMatrix(aileronL), false);
+                surface.UpdateRW();
+
+                axis.x *= -1.0f;
+                TurnSurface(surface, axis, PLANE_AILERON_MAX_ANGLE * DEG_TO_RAD * m_fSteeringLeftRight - flapAngle);
+                if (flapScale > 1.0f) {
+                    ExtendFlap(surface, axis, -1.0f, 0x13);
+                }
+            }
+        }
+
+        if (auto* const elevatorR = m_aCarNodes[PLANE_ELEVATOR_R]) {
+            surface.Attach(RwFrameGetMatrix(elevatorR), false);
+            surface.UpdateRW();
+
+            auto axis = SurfaceAxis(10, surface);
+            TurnSurface(surface, axis, -(PLANE_ELEVATOR_MAX_ANGLE * DEG_TO_RAD * m_fSteeringUpDown));
+
+            if (auto* const elevatorL = m_aCarNodes[PLANE_ELEVATOR_L]) {
+                surface.Attach(RwFrameGetMatrix(elevatorL), false);
+                surface.UpdateRW();
+
+                axis.x *= -1.0f;
+                TurnSurface(surface, axis, PLANE_ELEVATOR_MAX_ANGLE * DEG_TO_RAD * m_fSteeringUpDown);
+            }
+        }
+    }
+
+    // Propellers, the blurred disc replaces the blades as they speed up
+    const auto SetFrameAlpha = [](RwFrame* frame, int32 alpha) {
+        RpAtomic* atomic = nullptr;
+        RwFrameForAllObjects(frame, GetCurrentAtomicObjectCB, &atomic);
+        if (atomic) {
+            SetComponentAtomicAlpha(atomic, alpha);
+        }
+    };
+    const auto SpinPropeller = [&](ePlaneNodes blades, ePlaneNodes disc, float direction) {
+        if (auto* const frame = m_aCarNodes[blades]) {
+            SetComponentRotation(frame, AXIS_Y, direction * field_9C8 + direction * field_9C8, true);
+            SetFrameAlpha(frame, 0xFF);
+        }
+        if (auto* const frame = m_aCarNodes[disc]) {
+            SetComponentRotation(frame, AXIS_Y, -(direction * field_9C8), true);
+            SetFrameAlpha(frame, 0);
+        }
+    };
+    SpinPropeller(PLANE_STATIC_PROP, PLANE_MOVING_PROP, 1.0f);
+    SpinPropeller(PLANE_STATIC_PROP2, PLANE_MOVING_PROP2, -1.0f);
+
+    // Landing gear folding
+    {
+        bool          foldsGear   = true;
+        eRotationAxis gearAxis    = AXIS_X;
+        float         leftAngle   = 0.0f;
+        float         rightAngle  = 0.0f;
+        int32         extraAxis   = -1;
+        float         extraAngle  = 0.0f;
+        float         lastAngle   = 0.0f;
+        switch (m_nModelIndex) {
+        case MODEL_RUSTLER:
+            gearAxis   = AXIS_Y;
+            leftAngle  = -PLANE_GEAR_FOLD_RUSTLER;
+            rightAngle = PLANE_GEAR_FOLD_RUSTLER;
+            break;
+        case MODEL_SHAMAL:
+        case MODEL_AT400:
+            gearAxis   = AXIS_Y;
+            leftAngle  = -PLANE_GEAR_FOLD_RUSTLER;
+            rightAngle = PLANE_GEAR_FOLD_RUSTLER;
+            extraAxis  = AXIS_X;
+            extraAngle = PLANE_GEAR_FOLD_BIG;
+            break;
+        case MODEL_HYDRA:
+            gearAxis   = AXIS_X;
+            leftAngle  = PLANE_GEAR_FOLD_HYDRA;
+            rightAngle = PLANE_GEAR_FOLD_HYDRA;
+            extraAxis  = AXIS_X;
+            extraAngle = PLANE_GEAR_FOLD_HYDRA_FRONT;
+            lastAngle  = PLANE_GEAR_FOLD_BIG;
+            break;
+        case MODEL_NEVADA:
+            gearAxis   = AXIS_X;
+            leftAngle  = PLANE_GEAR_FOLD_NEVADA;
+            rightAngle = PLANE_GEAR_FOLD_NEVADA;
+            break;
+        case MODEL_ANDROM:
+            gearAxis   = AXIS_X;
+            leftAngle  = PLANE_GEAR_FOLD_ANDROM;
+            rightAngle = PLANE_GEAR_FOLD_ANDROM;
+            extraAxis  = AXIS_X;
+            extraAngle = -PLANE_GEAR_FOLD_ANDROM;
+            break;
+        default:
+            foldsGear = false;
+            break;
+        }
+
+        if (foldsGear) {
+            const auto gear = std::abs(m_LandingGearAngle);
+            SetComponentRotation(m_aCarNodes[PLANE_GEAR_L], gearAxis, gear * leftAngle, true);
+            SetComponentRotation(m_aCarNodes[PLANE_GEAR_R], gearAxis, gear * rightAngle, true);
+            if (extraAxis > -1) {
+                SetComponentRotation(m_aCarNodes[PLANE_MISC_A], static_cast<eRotationAxis>(extraAxis), gear * extraAngle, true);
+                if (lastAngle > 0.0f) {
+                    SetComponentRotation(m_aCarNodes[PLANE_MISC_B], static_cast<eRotationAxis>(extraAxis), gear * lastAngle, true);
+                }
+            }
+        }
+    }
+
+    if (m_nModelIndex == MODEL_ANDROM) {
+        SetComponentRotation(m_aCarNodes[PLANE_MISC_B], AXIS_X, static_cast<float>(m_wMiscComponentAngle) * ANDROM_COL_ANGLE_MULT, true);
+    } else if (m_nModelIndex == MODEL_HYDRA) {
+        // Nozzles
+        const auto nozzleAngle = static_cast<float>(m_wMiscComponentAngle) * (std::numbers::pi_v<float> / 2.0f) / static_cast<float>(static_cast<int16>(HARRIER_NOZZLE_ROTATE_LIMIT));
+        SetComponentRotation(m_aCarNodes[PLANE_WHEEL_LM], AXIS_X, nozzleAngle, true);
+        SetComponentRotation(m_aCarNodes[PLANE_WHEEL_RM], AXIS_X, nozzleAngle, true);
+
+        if (vehicleFlags.bEngineOn) {
+            const auto thrust = (m_fAccelerationBreakStatus + 1.0f) * 0.5f;
+
+            if (static_cast<int32>(m_wMiscComponentAngle) >= static_cast<int32>(static_cast<int16>(HARRIER_NOZZLE_SWITCH_LIMIT))) {
+                DoHeliDustEffect(thrust, 2.0f);
+            } else if (m_pDustParticle) {
+                m_pDustParticle->Kill();
+                m_pDustParticle       = nullptr;
+                m_heliDustFxTimeConst = 0.0f;
+            }
+
+            auto* const nozzleLeft  = RwFrameGetMatrix(m_aCarNodes[PLANE_WHEEL_LM]);
+            auto* const nozzleRight = RwFrameGetMatrix(m_aCarNodes[PLANE_WHEEL_RM]);
+
+            for (auto& jet : m_apJettrusParticles) {
+                if (auto* const parent = GetModellingMatrix(); parent && !jet) {
+                    jet = g_fxMan.CreateFxSystem("jetthrust", CVector{}, parent, false);
+                    if (jet) {
+                        jet->Play();
+                        jet->SetLocalParticles(true);
+                        jet->CopyParentMatrix();
+                    }
+                }
+            }
+
+            const struct {
+                FxSystem_c* fx;
+                RwMatrix*   nozzle;
+                CVector     offset;
+            } jets[] = {
+                { m_apJettrusParticles[0], nozzleLeft,  {  0.7f,  -0.45f, 0.05f } },
+                { m_apJettrusParticles[1], nozzleLeft,  { -0.82f, -0.45f, 0.05f } },
+                { m_apJettrusParticles[2], nozzleRight, {  0.63f, -0.45f, 0.07f } },
+                { m_apJettrusParticles[3], nozzleRight, { -0.75f, -0.45f, 0.07f } },
+            };
+            for (const auto& [fx, nozzle, offset] : jets) {
+                if (!fx) {
+                    continue;
+                }
+                const CMatrix nozzleMatrix{ nozzle, false };
+                const auto    world = GetMatrix() * nozzleMatrix;
+                RwMatrix      worldRw{};
+                world.CopyToRwMatrix(&worldRw);
+
+                fx->SetMatrix(&worldRw);
+                fx->SetOffsetPos(offset);
+                fx->SetConstTime(true, thrust);
+            }
+        } else {
+            for (auto& jet : m_apJettrusParticles) {
+                if (jet) {
+                    jet->Kill();
+                    jet = nullptr;
+                }
+            }
+            if (m_pDustParticle) {
+                m_pDustParticle->Kill();
+                m_pDustParticle       = nullptr;
+                m_heliDustFxTimeConst = 0.0f;
+            }
+        }
+    } else if (m_nModelIndex == MODEL_VORTEX && m_aCarNodes[PLANE_MISC_A]) {
+        // The hull of the Vortex leans with the speed and the suspension
+        auto* const colData = GetColModel()->m_pColData;
+
+        CVector frontWheel;
+        mi->GetWheelPosn(0, frontWheel, false);
+
+        CMatrix hull;
+        hull.Attach(RwFrameGetMatrix(m_aCarNodes[PLANE_MISC_A]), false);
+
+        const auto leanLimit = PLANE_VORTEX_LEAN_LIMIT;
+        const auto& mat      = GetMatrix();
+        hull.GetUp().y = std::clamp(DotProduct(m_vecMoveSpeed, mat.GetForward()) * PLANE_VORTEX_SPEED_LEAN, -leanLimit, leanLimit);
+        hull.GetUp().x = std::clamp(DotProduct(m_vecMoveSpeed, mat.GetRight())   * PLANE_VORTEX_SPEED_LEAN, -leanLimit, leanLimit);
+
+        const auto keep = std::pow(PLANE_VORTEX_LEAN_KEEP, dt);
+        const auto take = 1.0f - keep;
+        const auto lines = colData->m_pLines;
+
+        const auto pitch = std::clamp(
+            ((m_wheelPosition[0] - m_wheelPosition[1]) + (m_wheelPosition[2] - m_wheelPosition[3])) * 0.5f / (lines[0].m_vecStart.y - lines[1].m_vecStart.y),
+            -PLANE_VORTEX_PITCH_LIMIT, PLANE_VORTEX_PITCH_LIMIT
+        );
+        hull.GetForward().z = hull.GetForward().z * keep + take * pitch;
+
+        const auto roll = std::clamp(
+            ((m_wheelPosition[3] - m_wheelPosition[1]) + (m_wheelPosition[2] - m_wheelPosition[0])) * 0.5f / (lines[3].m_vecStart.x - lines[1].m_vecStart.x),
+            -PLANE_VORTEX_ROLL_LIMIT, PLANE_VORTEX_ROLL_LIMIT
+        );
+        hull.GetRight().z = hull.GetRight().z * keep + take * roll;
+
+        const auto rise = std::min(
+            1.0f - ((m_wheelPosition[3] + m_wheelPosition[1] + m_wheelPosition[2] + m_wheelPosition[0]) * 0.25f - frontWheel.z) / (mi->m_fWheelSizeFront * 0.5f),
+            PLANE_VORTEX_RISE_LIMIT
+        );
+        hull.GetUp().z = hull.GetUp().z * keep + take * rise;
+
+        hull.UpdateRW();
+    }
+
+    for (auto& panel : m_panels) {
+        if (static_cast<int16>(panel.m_nFrameId) > -1) {
+            panel.ProcessPanel(this, m_aCarNodes[static_cast<int16>(panel.m_nFrameId)], m_moveForce, m_turnForce, PLANE_PANEL_SPRING, PLANE_PANEL_DAMP);
+        }
+    }
+    m_moveForce = m_vecMoveSpeed + m_vecFrictionMoveSpeed;
+    m_turnForce = m_vecTurnSpeed + m_vecFrictionTurnSpeed;
+
+    CShadows::StoreShadowForVehicle(
+        this,
+        m_nModelIndex == MODEL_VORTEX
+            ? VEH_SHD_CAR
+            : (m_nModelIndex == MODEL_AT400 || m_nModelIndex == MODEL_ANDROM ? VEH_SHD_BIG_PLANE : VEH_SHD_PLANE)
+    );
+
+    // Wing tip trails, they show up with the lift
+    if (!vehicleFlags.bIsDrowning && m_nModelIndex != MODEL_VORTEX && m_nModelIndex != MODEL_RCBARON) {
+        const auto& mat  = GetMatrix();
+        const auto  lift = DotProduct(m_vecMoveSpeed, mat.GetUp()) * m_pFlyingHandlingData->m_fAttackLift * STREAK_LIFT_SCALE;
+        const auto  alpha = static_cast<uint8>(static_cast<int32>(std::max(0.0f, std::abs(lift) - STREAK_LIFT_MIN)));
+
+        CVector tipRight = mi->m_pVehicleStruct->m_avDummyPos[12];
+        CVector tipLeft  = tipRight;
+        tipLeft.x -= 0.1f;
+
+        CMotionBlurStreaks::RegisterStreak(reinterpret_cast<uint32>(this), 0xFF, 0xFF, 0xFF, alpha, mat.TransformPoint(tipRight), mat.TransformPoint(tipLeft));
+
+        tipRight.x = -tipRight.x;
+        tipLeft.x  = -tipLeft.x;
+        CMotionBlurStreaks::RegisterStreak(reinterpret_cast<uint32>(this) + 1, 0xFF, 0xFF, 0xFF, alpha, mat.TransformPoint(tipRight), mat.TransformPoint(tipLeft));
+    }
+
+    // Crop duster and Stuntplane smoke
+    if (m_bSmokeEjectorEnabled && (m_nModelIndex == MODEL_CROPDUST || m_nModelIndex == MODEL_STUNT)) {
+        const auto& mat = GetMatrix();
+
+        CVector pos;
+        CVector vel = m_vecMoveSpeed * 10.0f;
+        FxPrtMult_c prtMult;
+        if (m_nModelIndex == MODEL_CROPDUST) {
+            prtMult = FxPrtMult_c{ 1.0f, 1.0f, 1.0f, 0.4f, 1.0f, 1.0f, 0.2f };
+            pos     = mat.TransformPoint({ 0.0f, -0.5f, -0.5f });
+            vel.z  -= 3.0f;
+        } else {
+            prtMult = FxPrtMult_c{ 1.0f, 0.0f, 0.0f, 0.4f, 1.0f, 1.0f, 0.3f };
+            pos     = mat.TransformPoint({ 0.0f, -5.0f, 0.0f });
+        }
+        g_fx.m_SmokeHuge->AddParticle(pos, vel, 0.0f, prtMult);
+    }
+
+    if (m_nModelIndex == MODEL_SKIMMER && physicalFlags.bSubmergedInWater) {
+        DoBoatSplashes(m_fDoomHorizontalRotation);
+    }
 }
 
 // 0x6CAB70
