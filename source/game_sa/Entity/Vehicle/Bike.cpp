@@ -40,7 +40,7 @@ void CBike::InjectHooks() {
     RH_ScopedInstall(PlayHornIfNecessary, 0x6B7130);
     RH_ScopedInstall(CalculateLeanMatrix, 0x6B7150);
     RH_ScopedInstall(ProcessRiderAnims, 0x6B7280, { .Reversed = false });
-    RH_ScopedInstall(FixHandsToBars, 0x6B7F90, { .Reversed = false });
+    RH_ScopedInstall(FixHandsToBars, 0x6B7F90);
     RH_ScopedInstall(PlaceOnRoadProperly, 0x6BEEB0);
     RH_ScopedInstall(GetCorrectedWorldDoorPosition, 0x6BF230);
     RH_ScopedVMTInstall(Fix, 0x6B7050);
@@ -935,7 +935,72 @@ void CBike::CalculateLeanMatrix() {
 
 // 0x6B7F90
 void CBike::FixHandsToBars(CPed* rider) {
-    ((void(__thiscall*)(CBike*, CPed*))0x6B7F90)(this, rider);
+    if (!m_nFixRightHand && !m_nFixLeftHand) {
+        return;
+    }
+
+    auto* const chassis = m_aBikeNodes[BIKE_CHASSIS];
+    if (!chassis) {
+        return;
+    }
+
+    // Chassis matrix in world space.
+    CMatrix chassisLocal{ RwFrameGetMatrix(chassis), false };
+    CMatrix chassisWorld{};
+    chassisWorld = GetMatrix();
+    chassisWorld *= chassisLocal;
+
+    auto* const hier = GetAnimHierarchyFromSkinClump(rider->GetRpClump());
+
+    // Grip position on the bars, in chassis space.
+    CVector gripPos = GetVehicleModelInfo()->m_pVehicleStruct->m_avDummyPos[DUMMY_HAND_REST];
+    if (gripPos.IsZero()) {
+        switch (m_nModelIndex) {
+        case MODEL_MTBIKE: gripPos = CVector{ 0.25f, 0.29f, 0.525f }; break;
+        case MODEL_BIKE:   gripPos = CVector{ 0.25f, 0.21f, 0.69f }; break;
+        default:           gripPos = CVector{ 0.25f, 0.29f, 0.525f }; break;
+        }
+    } else {
+        // Dummy positions are authored for the hand bone's pose; add that bone's offset, taken into chassis space.
+        CMatrix handMat{ &RpHAnimHierarchyGetMatrixArray(hier)[RpHAnimIDGetIndex(hier, BONE_R_HAND)], false };
+        gripPos += chassisWorld.InverseTransformVector(handMat.TransformVector(CVector{ -0.075f, -0.03f, 0.0f }));
+    }
+
+    const auto GetBoneMatrix = [&](int32 boneTag) -> RwMatrix& {
+        return RpHAnimHierarchyGetMatrixArray(hier)[RpHAnimIDGetIndex(hier, boneTag)];
+    };
+
+    const auto Move = [](RwMatrix& mat, CVector offset) {
+        mat.pos.x += offset.x;
+        mat.pos.y += offset.y;
+        mat.pos.z += offset.z;
+    };
+
+    // Moves the hand to `target`; the rest of the arm follows by the given factors.
+    const auto MoveArm = [&](CVector target, eBoneTag hand, eBoneTag finger, eBoneTag finger01, eBoneTag foreArm, float foreArmFactor, eBoneTag upperArm, float upperArmFactor, int32 extraBone) {
+        auto&         handMat = GetBoneMatrix(hand);
+        const CVector delta   = target - CVector{ handMat.pos.x, handMat.pos.y, handMat.pos.z };
+
+        Move(handMat, delta);
+        Move(GetBoneMatrix(finger), delta);
+        Move(GetBoneMatrix(finger01), delta);
+        Move(GetBoneMatrix(foreArm), delta * foreArmFactor);
+        Move(GetBoneMatrix(upperArm), delta * upperArmFactor);
+        if (rider->IsPlayer()) {
+            Move(GetBoneMatrix(extraBone), delta * upperArmFactor);
+        }
+    };
+
+    if (m_nFixRightHand) {
+        MoveArm(chassisWorld.TransformPoint(gripPos), BONE_R_HAND, BONE_R_FINGER, BONE_R_FINGER_01, BONE_R_FORE_ARM, 0.667f, BONE_R_UPPER_ARM, 0.333f, 0x12D);
+    }
+    if (m_nFixLeftHand) {
+        gripPos.x = -gripPos.x;
+        MoveArm(chassisWorld.TransformPoint(gripPos), BONE_L_HAND, BONE_L_FINGER, BONE_L_FINGER_01, BONE_L_FORE_ARM, 0.75f, BONE_L_UPPER_ARM, 0.4f, 0x12E);
+    }
+
+    m_nFixLeftHand  = false;
+    m_nFixRightHand = false;
 }
 
 // 0x6BEEB0
@@ -1170,7 +1235,7 @@ void CBike::VehicleDamage(float damageIntensity, eVehicleCollisionComponent comp
 
 // 0x6B89B0
 void CBike::SetupSuspensionLines() {
-    // Collision lines that were never set up (see CVehicleModelInfo) are marked by this value in `start.z`
+    // Lines that were never set up hold this value in `start.z`.
     constexpr float UNSET_LINE_Z = 99999.992f; // 0x47C34FFF
 
     auto& mi = *GetVehicleModelInfo();
@@ -1179,9 +1244,9 @@ void CBike::SetupSuspensionLines() {
     const auto& handling = *m_pHandlingData;
 
     const bool linesAreSetUp     = cd.m_pLines[0].m_vecStart.z != UNSET_LINE_Z;
-    const bool linesWereNotSetUp = cd.m_pLines[1].m_vecStart.z == UNSET_LINE_Z; // NOTSA: The original really checks the 2nd line here
+    const bool linesWereNotSetUp = cd.m_pLines[1].m_vecStart.z == UNSET_LINE_Z; // The original checks the second line here.
 
-    // Position of `frame` with its ancestors' matrices concatenated in, up to (not including) `stopFrame`
+    // Position of `frame` with its ancestors' matrices applied, stopping before `stopFrame`.
     const auto GetFramePosn = [](RwFrame* frame, RwFrame* stopFrame) {
         RwMatrix mat = *RwFrameGetMatrix(frame);
         for (auto* parent = RwFrameGetParent(frame); parent;) {
@@ -1217,7 +1282,7 @@ void CBike::SetupSuspensionLines() {
                 }
             }
 
-            // Move the line to the front/rear of the wheel
+            // Offset the line to the front or rear of the wheel.
             pos.y += (i % 2 == 0 ? 0.25f : -0.25f) * wheelSize;
         }
         pos.z += handling.m_fSuspensionUpperLimit;
@@ -1231,7 +1296,7 @@ void CBike::SetupSuspensionLines() {
     }
 
     if (!linesAreSetUp) {
-        // NOTE: The original walks all the way up here, including the root frame
+        // Unlike the wheels, this walks all the way up; the root frame is included.
         const auto forkPos = GetFramePosn(m_aBikeNodes[BIKE_FORKS_FRONT], nullptr);
         m_fForkYOffset     = forkPos.y;
         m_fForkZOffset     = forkPos.z;
