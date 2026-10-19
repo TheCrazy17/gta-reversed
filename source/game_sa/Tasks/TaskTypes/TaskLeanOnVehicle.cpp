@@ -12,7 +12,7 @@ void CTaskLeanOnVehicle::InjectHooks() {
     RH_ScopedInstall(FinishAnimCB, 0x661160);
 
     RH_ScopedVMTInstall(MakeAbortable, 0x661110);
-    RH_ScopedVMTInstall(ProcessPed, 0x6648C0, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessPed, 0x6648C0);
 
 }
 
@@ -77,5 +77,61 @@ bool CTaskLeanOnVehicle::MakeAbortable(CPed* ped, eAbortPriority priority, const
 
 // 0x6648C0
 bool CTaskLeanOnVehicle::ProcessPed(CPed* ped) {
-    return plugin::CallMethodAndReturn<bool, 0x6648C0, CTaskLeanOnVehicle*, CPed*>(this, ped);
+    if (!m_Vehicle) {
+        m_StopLeaning = true;
+    }
+    ped->m_pEntityIgnoredCollision = m_Vehicle;
+
+    const auto leanAnimId = m_LeanAnim ? (int32)m_LeanAnim->m_AnimId : -1;
+
+    // Stopped, or the lean out anim is done
+    if (m_StopLeaning) {
+        ped->m_pEntityIgnoredCollision = nullptr;
+        return true;
+    }
+    ped->SetMoveState(PEDMOVE_STILL);
+    if (m_bFinished && !RpAnimBlendClumpGetAssociation(ped->GetRpClump(), ANIM_ID_LEANOUT)) {
+        ped->m_pEntityIgnoredCollision = nullptr;
+        return true;
+    }
+
+    // Blends in the given anim and makes us notice when it's done
+    const auto PlayLeanAnim = [&](AnimationId animId, float blendDelta) {
+        m_LeanAnim = CAnimManager::BlendAnimation(ped->GetRpClump(), ANIM_GROUP_GANGS, animId, blendDelta);
+        m_LeanAnim->SetFinishCallback(FinishAnimCB, this);
+    };
+
+    // Someone asked us to stop, so lean out when possible
+    if (m_LeanAnimId) {
+        if (leanAnimId == ANIM_ID_LEANIN) {
+            m_LeanAnim->m_BlendDelta = -8.0f;
+        } else if (leanAnimId == ANIM_ID_LEANIDLE) {
+            m_LeanAnim->SetDeleteCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
+            PlayLeanAnim(ANIM_ID_LEANOUT, 1000.0f);
+            return false;
+        } else if (leanAnimId == ANIM_ID_LEANOUT) {
+            m_LeanAnim->m_Speed = 3.0f;
+        }
+    }
+
+    if (!m_LeanAnim) {
+        if (m_LastAnimId == -1) {
+            if (!field_10) {
+                PlayLeanAnim(ANIM_ID_LEANIN, 4.0f);
+                return false;
+            }
+        } else if (m_LastAnimId != ANIM_ID_LEANIN) {
+            return false;
+        }
+
+        // Leaning in is done, so idle for the given time
+        if (m_LeanAnimDurationInMs >= 0) {
+            m_LeanTimer.Start(m_LeanAnimDurationInMs);
+        }
+        PlayLeanAnim(ANIM_ID_LEANIDLE, 1000.0f);
+    } else if (m_LeanTimer.m_bStarted && m_LeanTimer.IsOutOfTime() && m_LeanAnim->m_AnimId != ANIM_ID_LEANOUT) {
+        m_LeanAnim->SetDeleteCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
+        PlayLeanAnim(ANIM_ID_LEANOUT, 1000.0f);
+    }
+    return false;
 }
