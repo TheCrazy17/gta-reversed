@@ -1,28 +1,53 @@
 #include "StdInc.h"
 
 #include "DecisionMakerTypes.h"
+#include "PedGroups.h"
+#include "PedStats.h"
+
+// The kind of decision maker (ped or group) that each slot holds
+static auto& DecisionMakerTypeOfSlot = StaticRef<std::array<uint8, CDecisionMakerTypes::NUM_TYPES>>(0xC0AFE0);
 
 void CDecisionMakerTypes::InjectHooks() {
     RH_ScopedClass(CDecisionMakerTypes);
     RH_ScopedCategory("DecisionMakers");
-    RH_ScopedInstall(AddDecisionMaker, 0x607050, { .Reversed = false });
-    RH_ScopedInstall(GetInstance, 0x4684F0, { .Reversed = false });
+    RH_ScopedInstall(AddDecisionMaker, 0x607050);
+    RH_ScopedInstall(GetInstance, 0x4684F0);
     RH_ScopedOverloadedInstall(MakeDecision, "ped-ptr", 0x606E70, void(CDecisionMakerTypes::*)(CPed*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType, bool, int16&, int16&), { .Reversed = false });
-    RH_ScopedInstall(RemoveDecisionMaker, 0x6043A0, { .Reversed = false });
+    RH_ScopedInstall(RemoveDecisionMaker, 0x6043A0);
     RH_ScopedOverloadedInstall(MakeDecision, "pedgroup-ptr", 0x606F80, eTaskType(CDecisionMakerTypes::*)(CPedGroup*, eEventType, int32, bool, eTaskType, eTaskType, eTaskType, eTaskType), { .Reversed = false });
-    RH_ScopedInstall(AddEventResponse, 0x6044C0, { .Reversed = false });
-    RH_ScopedInstall(FlushDecisionMakerEventResponse, 0x604490, { .Reversed = false });
-    RH_ScopedInstall(LoadEventIndices, 0x600840, { .Reversed = false });
+    RH_ScopedInstall(AddEventResponse, 0x6044C0);
+    RH_ScopedInstall(FlushDecisionMakerEventResponse, 0x604490);
+    RH_ScopedInstall(LoadEventIndices, 0x600840);
 }
 
 // 0x607050
 int32 CDecisionMakerTypes::AddDecisionMaker(CDecisionMaker* decisionMaker, eDecisionTypes decisionMakerType, bool bDecisionMakerForMission) {
-    return plugin::CallMethodAndReturn<int32, 0x607050, CDecisionMakerTypes*, CDecisionMaker*, eDecisionTypes, bool>(this, decisionMaker, decisionMakerType, bDecisionMakerForMission);
+    // The first slots are for the game, the last ones for the missions
+    const auto begin = bDecisionMakerForMission ? 15 : 0;
+    const auto end   = bDecisionMakerForMission ? 20 : 15;
+    for (auto slot = begin; slot < end; slot++) {
+        if (m_IsActive[slot]) {
+            continue;
+        }
+
+        m_IsActive[slot]               = true;
+        DecisionMakerTypeOfSlot[slot]  = static_cast<uint8>(decisionMakerType);
+        for (auto i = 0; i < CDecision::MAX_NUM_DECISIONS; i++) {
+            m_DecisionMakers[slot].m_aDecisions[i].From(decisionMaker->m_aDecisions[i]);
+        }
+        m_NoOfDecisionMakers++;
+        return slot;
+    }
+    return -1;
 }
 
 // 0x4684F0
 CDecisionMakerTypes* CDecisionMakerTypes::GetInstance() {
-    return plugin::CallAndReturn<CDecisionMakerTypes*, 0x4684F0>();
+    static auto& instance = StaticRef<CDecisionMakerTypes*>(0xC0B030);
+    if (!instance) {
+        instance = new CDecisionMakerTypes();
+    }
+    return instance;
 }
 
 // 0x606E70
@@ -32,7 +57,29 @@ void CDecisionMakerTypes::MakeDecision(CPed* ped, eEventType eventType, int32 ev
 
 // 0x6043A0
 void CDecisionMakerTypes::RemoveDecisionMaker(eDecisionTypes dm) {
-    return plugin::CallMethod<0x6043A0>(this, dm);
+    if (!m_IsActive[dm]) {
+        return;
+    }
+
+    if (DecisionMakerTypeOfSlot[dm] == 0) {
+        // Peds that use it go back to the one their stats say
+        for (auto& ped : GetPedPool()->GetAllValid()) {
+            auto* const intel = ped.GetIntelligence();
+            if (intel->GetPedDecisionMakerType() == dm) {
+                intel->SetPedDecisionMakerType(ped.m_pStats->m_nDefaultDecisionMaker);
+            }
+        }
+    } else {
+        for (auto&& [i, group] : CPedGroups::GetActiveGroupsWithIDs()) {
+            if (static_cast<int32>(group.GetIntelligence().GetGroupDecisionMakerType()) == dm) {
+                group.GetIntelligence().SetGroupDecisionMakerType(eDecisionMakerType::UNKNOWN);
+            }
+        }
+    }
+
+    m_IsActive[dm]              = false;
+    DecisionMakerTypeOfSlot[dm] = 0;
+    m_NoOfDecisionMakers--;
 }
 
 // 0x606F80
@@ -43,14 +90,38 @@ eTaskType CDecisionMakerTypes::MakeDecision(CPedGroup* pedGroup, eEventType even
 
 // 0x6044C0
 void CDecisionMakerTypes::AddEventResponse(int32 decisionMakerIndex, eEventType eventType, eTaskType taskId, float* responseChances, int32* flags) {
-    plugin::CallMethod<0x6044C0, CDecisionMakerTypes*, int32, int32, int32, float*, int32*>(this, decisionMakerIndex, eventType, taskId, responseChances, flags);
+    m_DecisionMakers[decisionMakerIndex].m_aDecisions[m_EventIndices[eventType]].Add(taskId, responseChances, flags);
 }
 
 // 0x604490
 void CDecisionMakerTypes::FlushDecisionMakerEventResponse(int32 decisionMakerIndex, eEventType eventId) {
-    plugin::CallMethod<0x604490>(this, decisionMakerIndex, eventId);
+    m_DecisionMakers[decisionMakerIndex].m_aDecisions[m_EventIndices[eventId]].SetDefault();
 }
 
 void CDecisionMakerTypes::LoadEventIndices() {
-    plugin::CallMethod<0x600840>(this);
+    m_EventIndices.fill(0);
+
+    CFileMgr::SetDir("");
+    CFileMgr::SetDir("data\\decision\\");
+    auto* const file = CFileMgr::OpenFile("PedEvent.txt", "r");
+    CFileMgr::SetDir("");
+
+    // Every line has the name of an event and its id, the position of the line is the index the event uses
+    int32 index = 0;
+    char  line[256];
+    while (CFileMgr::ReadLine(file, line, sizeof(line))) {
+        if (line[0] == '\0' || line[0] == '\n') {
+            continue;
+        }
+
+        char  eventName[256];
+        int32 eventId{};
+        RET_IGNORED(sscanf_s(line, "%s %d", SCANF_S_STR(eventName), &eventId));
+        if (eventId >= 0 && eventId < static_cast<int32>(m_EventIndices.size())) {
+            m_EventIndices[eventId] = index;
+        }
+        index++;
+    }
+
+    CFileMgr::CloseFile(file);
 }
