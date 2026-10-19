@@ -7497,7 +7497,7 @@
   {
     "Category": "CWaterLevel",
     "Name": "FindNearestWaterAndItsFlow",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
@@ -7517,7 +7517,7 @@
   {
     "Category": "CWaterLevel",
     "Name": "RenderWaterFog",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
@@ -7527,7 +7527,7 @@
   {
     "Category": "CWaterLevel",
     "Name": "RenderWater",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
@@ -7542,7 +7542,7 @@
   {
     "Category": "CWaterLevel",
     "Name": "RenderHighDetailWaterRectangle",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
@@ -7552,17 +7552,17 @@
   {
     "Category": "CWaterLevel",
     "Name": "CalculateWavesOnlyForCoordinate2",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
     "Name": "RenderHighDetailWaterTriangle-",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWaterLevel",
     "Name": "FillQuadsAndTrianglesList",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "cBuoyancy",
@@ -8812,7 +8812,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "WeaveForObject",
-    "IsReversed": false
+    "IsReversed": true
+  },
+  {
+    "Category": "CCarCtrl",
+    "Name": "WeaveForPed",
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8822,17 +8827,17 @@
   {
     "Category": "CCarCtrl",
     "Name": "WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "WeaveThroughObjectsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "WeaveThroughPedsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTheZones",
@@ -11467,7 +11472,7 @@
   {
     "Category": "CCamera",
     "Name": "IsSphereVisible-",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCamera",
@@ -23867,7 +23872,7 @@
   {
     "Category": "CTaskSimpleChoking",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexEvasiveDiveAndGetUp",
@@ -24041,23 +24046,28 @@
   },
   {
     "Category": "CTaskGoToVehicleAndLean",
+    "Name": "CalcTargetPos",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskGoToVehicleAndLean",
     "Name": "MakeAbortable",
     "IsReversed": true
   },
   {
     "Category": "CTaskGoToVehicleAndLean",
     "Name": "CreateNextSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskGoToVehicleAndLean",
     "Name": "CreateFirstSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskGoToVehicleAndLean",
     "Name": "ControlSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskLeanOnVehicle",
@@ -24082,7 +24092,7 @@
   {
     "Category": "CTaskLeanOnVehicle",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexCarSlowBeDraggedOut",
@@ -26602,7 +26612,7 @@
   {
     "Category": "CTaskComplexSmartFleePoint",
     "Name": "ControlSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexStareAtPed",
@@ -32927,7 +32937,7 @@
   {
     "Category": "CDecisionMakerTypes",
     "Name": "MakeDecision-ped-ptr",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CDecisionMakerTypes",
@@ -32937,7 +32947,7 @@
   {
     "Category": "CDecisionMakerTypes",
     "Name": "MakeDecision-pedgroup-ptr",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CDecisionMakerTypes",
@@ -33012,6 +33022,11 @@
   {
     "Category": "CDecision",
     "Name": "HasResponse",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDecision",
+    "Name": "MakeDecision",
     "IsReversed": true
   },
   {
@@ -33167,7 +33182,7 @@
   {
     "Category": "CCustomBuildingDNPipeline",
     "Name": "CustomPipeMaterialSetup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCustomBuildingDNPipeline",
@@ -33417,12 +33432,12 @@
   {
     "Category": "CConversationForPed",
     "Name": "Update",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CConversationForPed",
     "Name": "IsPlayerInPositionForConversation",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedToPlayerConversations",

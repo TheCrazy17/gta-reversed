@@ -1,17 +1,17 @@
-# Reimplementation progress (*): 97%
+# Reimplementation progress (*): 98%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 19, 2026 at 20:20:10 UTC
-(Triggered by commit [6a1f324c](https://github.com/TheCrazy17/gta-reversed/commit/6a1f324cb18d8e2f5c7fa2bef83b11eb00fcd18b))
+Last update was at Oct 19, 2026 at 21:07:46 UTC
+(Triggered by commit [8fd78447](https://github.com/TheCrazy17/gta-reversed/commit/8fd78447dba9e9bf12aa457f81eced63275ff68c))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8117 out of 8339 functions done in 720 categories)
+## Stats (8143 out of 8342 functions done in 720 categories)
 
-#### Completely reversed categories (657/720) [91%]
+#### Completely reversed categories (665/720) [92%]
 
 <details>
 <summary>See list of categories</summary>
@@ -100,6 +100,7 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CPedClothesDesc (7)<br />
 - CTimer (13)<br />
 - CTagManager (19)<br />
+- CWaterLevel (37)<br />
 - cBuoyancy (9)<br />
 - CWanted (33)<br />
 - CCrime (2)<br />
@@ -123,6 +124,7 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CGameLogic (27)<br />
 - CStuckCarCheck (8)<br />
 - CUpsideDownCarCheck (5)<br />
+- CCamera (115)<br />
 - CMessages (28)<br />
 - CPlayerPedData (5)<br />
 - CTimeCycle (20)<br />
@@ -339,11 +341,14 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CTaskComplexUseClosestFreeScriptedAttractorRun (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractorSprint (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractor (8)<br />
+- CTaskSimpleChoking (7)<br />
 - CTaskComplexEvasiveDiveAndGetUp (9)<br />
 - CTaskSimpleLeaveGroup (2)<br />
 - CTaskComplexDiveFromAttachedEntityAndGetUp (7)<br />
 - CTaskGangHasslePed (5)<br />
 - CTaskGangHassleVehicle (8)<br />
+- CTaskGoToVehicleAndLean (8)<br />
+- CTaskLeanOnVehicle (5)<br />
 - CTaskComplexCarSlowBeDraggedOut (11)<br />
 - CTaskComplexCarSlowBeDraggedOutAndStandUp (9)<br />
 - CTaskComplexDestroyCar (9)<br />
@@ -401,6 +406,7 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CTaskComplexSignalAtPed (7)<br />
 - CTaskComplexSitDownThenIdleThenStandUp (9)<br />
 - CTaskComplexSmartFleeEntity (7)<br />
+- CTaskComplexSmartFleePoint (12)<br />
 - CTaskComplexStareAtPed (7)<br />
 - CTaskComplexStealCar (8)<br />
 - CTaskComplexTrackEntity (11)<br />
@@ -579,14 +585,16 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CCollisionPlugin (2)<br />
 - BreakablePlugin (6)<br />
 - RtAnim (1)<br />
+- CDecisionMakerTypes (8)<br />
 - CDecisionMakerTypesFileLoader (7)<br />
-- CDecision (5)<br />
+- CDecision (6)<br />
 - CText (9)<br />
 - CMissionTextOffsets (1)<br />
 - CData (2)<br />
 - CKeyArray (4)<br />
 - CCustomCarEnvMapPipeline (37)<br />
 - CConversations (11)<br />
+- CConversationForPed (2)<br />
 - CIplDefPool (1)<br />
 - CPedPool (2)<br />
 - CVehiclePool (1)<br />
@@ -675,7 +683,7 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 
 </details>
 
-#### Partially reversed categories (60/720) [8%]
+#### Partially reversed categories (53/720) [7%]
 
 <details>
 <summary>See list of categories</summary>
@@ -687,14 +695,12 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CPopulation (64/66) [97%]<br />
 - CPedGroupIntelligence (26/27) [96%]<br />
 - CPedDamageResponseCalculator (5/7) [71%]<br />
-- CWaterLevel (30/37) [81%]<br />
 - CWeapon (36/41) [88%]<br />
 - CStats (49/51) [96%]<br />
-- CCarCtrl (39/110) [35%]<br />
+- CCarCtrl (44/111) [40%]<br />
 - CPostEffects (35/38) [92%]<br />
 - CStencilShadows (9/13) [69%]<br />
 - CFont (33/36) [92%]<br />
-- CCamera (114/115) [99%]<br />
 - CGangWars (33/35) [94%]<br />
 - CRoadBlocks (7/8) [88%]<br />
 - CClouds (20/21) [95%]<br />
@@ -711,21 +717,16 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 - CPhysical (54/56) [96%]<br />
 - CGroupEventHandler (30/32) [94%]<br />
 - CEventHandler (69/72) [96%]<br />
-- CTaskSimpleChoking (6/7) [86%]<br />
-- CTaskGoToVehicleAndLean (4/7) [57%]<br />
-- CTaskLeanOnVehicle (4/5) [80%]<br />
 - CTaskComplexGangFollower (4/7) [57%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
 - CTaskComplexKillPedOnFootArmed (10/11) [91%]<br />
-- CTaskComplexSmartFleePoint (11/12) [92%]<br />
 - CTaskSimpleCarDrive (12/13) [92%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
 - CTaskComplexWalkRoundCar (9/13) [69%]<br />
 - CTaskSimpleRunNamedAnim (6/7) [86%]<br />
 - CTaskSimpleFight (4/5) [80%]<br />
-- CDecisionMakerTypes (6/8) [75%]<br />
-- CCustomBuildingDNPipeline (14/16) [88%]<br />
+- CCustomBuildingDNPipeline (15/16) [94%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEPedAudioEntity (17/20) [85%]<br />
@@ -742,12 +743,11 @@ Last update was at Oct 19, 2026 at 20:20:10 UTC
 
 </details>
 
-#### Not-at-all reversed categories (3/720) [0.4%]
+#### Not-at-all reversed categories (2/720) [0.3%]
 
 <details>
 <summary>See list of categories</summary>
 - FxEmitter_c (1)<br />
-- CConversationForPed (2)<br />
 - CMemoryMgr (7)<br />
 
 </details>
