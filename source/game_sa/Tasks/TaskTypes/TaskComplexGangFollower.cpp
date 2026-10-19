@@ -1,6 +1,10 @@
 #include "StdInc.h"
 
 #include "TaskComplexGangFollower.h"
+#include "TaskSimpleCarDrive.h"
+#include "TaskComplexLeaveCar.h"
+#include "TaskSimpleStandStill.h"
+#include "SeekEntity/TaskComplexSeekEntity.h"
 
 void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGangFollower, 0x86F938, 11);
@@ -12,7 +16,7 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedInstall(Clone, 0x65ECB0);
     RH_ScopedInstall(MakeAbortable, 0x65EC30);
     RH_ScopedInstall(CreateNextSubTask, 0x665E00, { .Reversed = false });
-    RH_ScopedInstall(CreateFirstSubTask, 0x666160, { .Reversed = false });
+    RH_ScopedInstall(CreateFirstSubTask, 0x666160);
     RH_ScopedInstall(ControlSubTask, 0x662A10, { .Reversed = false });
 }
 
@@ -88,7 +92,37 @@ CTask* CTaskComplexGangFollower::CreateNextSubTask(CPed* ped) {
 
 // 0x666160
 CTask* CTaskComplexGangFollower::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x666160, CTaskComplexGangFollower*, CPed*>(this, ped);
+    if (!m_Leader) {
+        ped->bMoveAnimSpeedHasBeenSetByTask = false;
+        return nullptr;
+    }
+
+    // Ride along when the leader is in the same vehicle, otherwise get out of the one the ped is in
+    if (ped->bInVehicle && ped->m_pVehicle) {
+        if (m_Leader->m_pVehicle == ped->m_pVehicle) {
+            return new CTaskSimpleCarDrive{ ped->m_pVehicle, nullptr, false };
+        }
+        return new CTaskComplexLeaveCar{ ped->m_pVehicle, 0, 0, true, false };
+    }
+
+    static auto& s_MaxStaticCounter = StaticRef<int32>(0x86C938);
+    if ((m_Flags & 4) && !(ped->GetIntelligence()->m_AnotherStaticCounter > s_MaxStaticCounter)) {
+        auto* const seek = new CTaskComplexSeekEntity<CEntitySeekPosCalculatorXYOffset>{
+            m_Leader,
+            50'000,
+            1'000,
+            0.5f,
+            6.0f,
+            2.0f,
+            false,
+            true,
+            CEntitySeekPosCalculatorXYOffset{ dword20 }
+        };
+        seek->SetMoveState(PEDMOVE_SPRINT);
+        seek->SetIsTrackingEntity(true);
+        return seek;
+    }
+    return new CTaskSimpleStandStill{ 500, false, false, 8.0f };
 }
 
 // 0x662A10
