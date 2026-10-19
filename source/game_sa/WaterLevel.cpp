@@ -52,7 +52,7 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(AddWaveToResult, 0x6E81E0);
     RH_ScopedGlobalInstall(SetCameraRange, 0x6E9C80);
     RH_ScopedInstall(RenderHighDetailWaterRectangle, 0x6EB810, { .Reversed = false });
-    RH_ScopedInstall(GetWaterDepth, 0x6EA960, { .Reversed = false });
+    RH_ScopedInstall(GetWaterDepth, 0x6EA960);
     RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210, { .Reversed = false });
     RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar), { .Reversed = false });
     RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30, { .Reversed = false });
@@ -837,8 +837,27 @@ bool CWaterLevel::GetWaterLevelNoWaves(CVector pos, float* pOutWaterLevel, float
 
 bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, float* pOutWaterLevel, float* pOutGroundLevel)
 {
-    return plugin::CallAndReturn<bool, 0x6EA960, const CVector&, float*, float*, float*>
-        (vecPos, pOutWaterDepth, pOutWaterLevel, pOutGroundLevel);
+    float waterLevel{};
+    if (!GetWaterLevelNoWaves(vecPos, &waterLevel, nullptr, nullptr)) {
+        return false;
+    }
+
+    // The ground level is not reversed yet. When there is none the depth is taken as if it was far below
+    float groundLevel{};
+    if (!plugin::CallAndReturn<bool, 0x6EA8A0, const CVector&, float*, void*, float>(vecPos, &groundLevel, nullptr, 30.0f)) {
+        groundLevel = -100.0f;
+    }
+
+    if (pOutWaterDepth) {
+        *pOutWaterDepth = waterLevel - groundLevel;
+    }
+    if (pOutWaterLevel) {
+        *pOutWaterLevel = waterLevel;
+    }
+    if (pOutGroundLevel) {
+        *pOutGroundLevel = groundLevel;
+    }
+    return true;
 }
 
 // 0x6E7760

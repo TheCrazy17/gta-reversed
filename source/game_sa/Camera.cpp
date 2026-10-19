@@ -165,7 +165,7 @@ void CCamera::InjectHooks() {
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
     RH_ScopedOverloadedInstall(IsSphereVisible, "", 0x420C40, bool(CCamera::*)(const CVector&, float, RwMatrix*), { .Reversed = false });
-    RH_ScopedOverloadedInstall(ProcessShake, "void", 0x51A6F0, void(CCamera::*)(), { .Reversed = false });
+    RH_ScopedOverloadedInstall(ProcessShake, "void", 0x51A6F0, void(CCamera::*)());
 }
 
 CCamera* CCamera::Constructor() { this->CCamera::CCamera(); return this; }
@@ -1676,7 +1676,10 @@ void CCamera::ProcessVectorMoveLinear() {
 // unused
 // 0x51A6F0
 void CCamera::ProcessShake() {
-    plugin::CallMethod<0x51A6F0, CCamera*>(this);
+    const auto now = static_cast<float>(CTimer::GetTimeInMS());
+    if (now <= m_fEndShakeTime) {
+        ProcessShake((now - m_fStartShakeTime) / (m_fEndShakeTime - m_fStartShakeTime));
+    }
 }
 
 // 0x516560

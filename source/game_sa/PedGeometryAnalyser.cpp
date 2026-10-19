@@ -38,7 +38,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32), { .Reversed = false });
     RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890);
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&));
-    RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&), { .Reversed = false });
+    RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&));
     RH_ScopedInstall(GetNearestPed, 0x5F3590);
     RH_ScopedInstall(IsEntityBlockingTarget, 0x5F3970);
     RH_ScopedInstall(IsInAir, 0x5F1CB0);
@@ -623,7 +623,15 @@ bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CPed& ped, const CVector&
 
 // 0x5F2F00
 bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CVector& a1, const CVector& a2, CEntity& a3) {
-    return plugin::CallAndReturn<bool, 0x5F2F00, const CVector&, const CVector&, CEntity&>(a1, a2, a3);
+    const CColLine line{ a1, a2 };
+
+    auto* const colModel = CModelInfo::GetModelInfo(a3.m_nModelIndex)->GetColModel();
+    if (!a3.m_matrix) {
+        a3.AllocateMatrix();
+        a3.m_placement.UpdateMatrix(a3.m_matrix);
+    }
+
+    return !CCollision::TestLineOfSight(line, *a3.m_matrix, *colModel, false, false);
 }
 
 // 0x5F3590
