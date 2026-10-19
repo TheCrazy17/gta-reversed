@@ -71,7 +71,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindSequenceElement, 0x421770);
     RH_ScopedInstall(FindSpeedMultiplier, 0x4224E0);
     RH_ScopedInstall(FindSpeedMultiplierWithSpeedFromNodes, 0x424130);
-    RH_ScopedInstall(FindGhostRoadHeight, 0x422370, { .Reversed = false });
+    RH_ScopedInstall(FindGhostRoadHeight, 0x422370);
     RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270, { .Reversed = false });
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70, { .Reversed = false });
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940, { .Reversed = false });
@@ -454,8 +454,25 @@ float CCarCtrl::FindSpeedMultiplierWithSpeedFromNodes(int8 arg1) {
     }
 }
 
+// 0x422370
 float CCarCtrl::FindGhostRoadHeight(CVehicle* vehicle) {
-    return plugin::CallAndReturn<float, 0x422370, CVehicle*>(vehicle);
+    const auto& autoPilot = vehicle->m_autoPilot;
+    const auto  from      = autoPilot.m_currentAddress;
+    const auto  to        = autoPilot.m_startingRouteNode;
+    if (!from.IsAreaValid() || !to.IsAreaValid()) {
+        return 0.0f;
+    }
+    if (!ThePaths.IsAreaLoaded(from.m_wAreaId) || !ThePaths.IsAreaLoaded(to.m_wAreaId)) {
+        return 0.0f;
+    }
+
+    // Blend between the heights of the 2 nodes, the closer one counts more
+    const auto  fromPos  = ThePaths.GetPathNode(from)->GetPosition();
+    const auto  toPos    = ThePaths.GetPathNode(to)->GetPosition();
+    const auto& pos      = vehicle->GetPosition();
+    const auto  distFrom = (CVector2D{ fromPos } - CVector2D{ pos }).Magnitude();
+    const auto  distTo   = (CVector2D{ toPos } - CVector2D{ pos }).Magnitude();
+    return (distTo * fromPos.z + distFrom * toPos.z) / (distTo + distFrom);
 }
 
 // 0x42B270
