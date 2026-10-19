@@ -307,7 +307,7 @@ CNodeAddress CPathFind::FindNthNodeClosestToCoors(CVector pos, uint8 nodeType, f
         if (outNode) {
             *outNode = found;
         }
-        if (!found.IsValid()) {
+        if (!found.IsAreaValid()) {
             return found;
         }
         GetPathNode(found)->unk1 = true;
