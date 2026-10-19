@@ -27,6 +27,13 @@ void CGarage::InjectHooks() {
     RH_ScopedOverloadedInstall(IsPointInsideGarage, "1", 0x4487D0, bool (CGarage::*)(CVector, float));
     RH_ScopedInstall(Update, 0x44AA50, { .Reversed = false }); // 861 lines, not verified against the binary yet
     RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
+    RH_ScopedInstall(RestoreCarsForThisHideOut, 0x448550);
+    RH_ScopedInstall(RestoreCarsForThisImpoundingGarage, 0x4485C0);
+    RH_ScopedInstall(RightModTypeForThisGarage, 0x447720);
+    RH_ScopedInstall(IsPlayerOutsideGarage, 0x448E50);
+    RH_ScopedInstall(IsAnyOtherCarTouchingGarage, 0x449100);
+    RH_ScopedInstall(IsAnyCarBlockingDoor, 0x4494F0);
+    RH_ScopedInstall(CountCarsWithCenterPointWithinGarage, 0x4495F0);
     RH_ScopedInstall(StoreAndRemoveCarsForThisImpoundingGarage, 0x449A50);
     RH_ScopedInstall(CalcDistToGarageRectangleSquared, 0x447D80);
     RH_ScopedInstall(SlideDoorOpen, 0x44A660);
@@ -163,7 +170,7 @@ void CGarage::StoreAndRemoveCarsForThisImpoundingGarage(CStoredCar* storedCars, 
         storedCars[i].Clear();
 }
 
-// 0x156D8D0 (thunk_FUN_0156d8d0 - a genuine benign function, not SecuROM)
+// 0x448550
 bool CGarage::RestoreCarsForThisHideOut(CStoredCar* car) {
     for (auto i = 0; i < 4; i++) {
         if (!car[i].HasCar()) {
@@ -172,15 +179,6 @@ bool CGarage::RestoreCarsForThisHideOut(CStoredCar* car) {
         if (auto* const vehicle = car[i].RestoreCar()) {
             vehicle->vehicleFlags.bImpounded = false;
             CWorld::Add(vehicle);
-
-            // NOTSA: `vehicle+0x594` gates this too - exact field/meaning not identified this
-            // session (also unresolved in Bike.cpp), kept as a raw offset check + raw forward.
-            if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 0) {
-                plugin::Call<0x401C57>();
-            } else if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 9) {
-                plugin::Call<0x6BEEB0, CVehicle*>(vehicle);
-            }
-
             car[i].Clear();
         }
     }
@@ -193,7 +191,7 @@ bool CGarage::RestoreCarsForThisHideOut(CStoredCar* car) {
     return true;
 }
 
-// 0x1561490 (thunk_FUN_01561490 - a genuine benign function, not SecuROM)
+// 0x4485C0
 bool CGarage::RestoreCarsForThisImpoundingGarage(CStoredCar* car) {
     for (auto i = 0; i < 3; i++) {
         if (!car[i].HasCar()) {
@@ -203,11 +201,10 @@ bool CGarage::RestoreCarsForThisImpoundingGarage(CStoredCar* car) {
             vehicle->vehicleFlags.bImpounded = true;
             CWorld::Add(vehicle);
 
-            // NOTSA: see the identical, still-unresolved `+0x594` check in RestoreCarsForThisHideOut above.
-            if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 0) {
-                plugin::Call<0x401C57>();
-            } else if (*reinterpret_cast<int32*>(reinterpret_cast<char*>(vehicle) + 0x594) == 9) {
-                plugin::Call<0x6BEEB0, CVehicle*>(vehicle);
+            if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE) {
+                vehicle->AsAutomobile()->PlaceOnRoadProperly();
+            } else if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BIKE) {
+                vehicle->AsBike()->PlaceOnRoadProperly();
             }
 
             car[i].Clear();
@@ -233,7 +230,7 @@ bool CGarage::EntityHasASphereWayOutsideGarage(CEntity* entity, float fRadius) {
     return false;
 }
 
-// 0x1569180 (thunk_FUN_01569180 - a genuine benign function, not SecuROM)
+// 0x448E50
 bool CGarage::IsPlayerOutsideGarage(float fRadius) {
     if (auto* const playerVehicle = FindPlayerVehicle(-1, false)) {
         return IsEntityEntirelyOutside(playerVehicle, fRadius);
@@ -241,7 +238,7 @@ bool CGarage::IsPlayerOutsideGarage(float fRadius) {
     return IsEntityEntirelyOutside(FindPlayerPed(-1), fRadius);
 }
 
-// 0x1561400 (thunk_FUN_01561400 - a genuine benign function, not SecuROM)
+// 0x4495F0
 int32 CGarage::CountCarsWithCenterPointWithinGarage(CVehicle* ignoredVehicle) {
     int32 count = 0;
     for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
@@ -572,7 +569,7 @@ void CGarage::CenterCarInGarage(CVehicle* vehicle) {
     }
 }
 
-// 0x156D610
+// 0x4494F0
 bool CGarage::IsAnyCarBlockingDoor() {
     auto* const pool = GetVehiclePool();
     for (auto i = pool->GetSize(); i; i--) {
@@ -590,7 +587,7 @@ bool CGarage::IsAnyCarBlockingDoor() {
     return false;
 }
 
-// 0x1566680
+// 0x449100
 bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
     auto* const pool = GetVehiclePool();
     for (auto i = pool->GetSize(); i; i--) {
@@ -608,7 +605,7 @@ bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle* ignoredVehicle) {
     return false;
 }
 
-// 0x1565260
+// 0x447720
 bool CGarage::RightModTypeForThisGarage(CVehicle* vehicle) {
     if (!vehicle) {
         return false;
