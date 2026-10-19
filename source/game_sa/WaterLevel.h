@@ -275,9 +275,9 @@ public:
 
     static void CalculateWavesOnlyForCoordinate2(
         int32 x, int32 y,
-        float* pResultHeight, // in/out variable => in is the "water level" from `GetWaterLevelNoWaves`/out is the Z coordinate of the wave
         float bigWavesAmpl,
-        float smallWavesAmpl
+        float smallWavesAmpl,
+        float* pResultHeight // in/out variable => in is the "water level" from `GetWaterLevelNoWaves`/out is the Z coordinate of the wave
     );
 
     static float CalculateWavesOnlyForCoordinate2_Direct( // TODO: Once the OG function is reversed, we should use this instead of it (once we've verified that the reversed version works as expected)
@@ -286,7 +286,7 @@ public:
         float bigWavesAmpl,
         float smallWavesAmpl
     ) {
-        CalculateWavesOnlyForCoordinate2(x, y, &waterLevel, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(x, y, bigWavesAmpl, smallWavesAmpl, &waterLevel);
         return waterLevel; // Result of the above function is stored in this variable.
     }
 

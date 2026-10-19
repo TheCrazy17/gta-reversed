@@ -53,7 +53,7 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(SetCameraRange, 0x6E9C80);
     RH_ScopedInstall(RenderHighDetailWaterRectangle, 0x6EB810, { .Reversed = false });
     RH_ScopedInstall(GetWaterDepth, 0x6EA960);
-    RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210, { .Reversed = false });
+    RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210);
     RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar), { .Reversed = false });
     RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30, { .Reversed = false });
 }
@@ -210,9 +210,9 @@ void CWaterLevel::AddWaveToResult(float x, float y, float* pfWaterLevel, float b
 
     float h0{}, h1{}, h2{};
     if (fracX + fracY < 1.0f) {
-        CalculateWavesOnlyForCoordinate2(cellX,     cellY,     &h0, bigWavesAmpl, smallWavesAmpl);
-        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY,     &h1, bigWavesAmpl, smallWavesAmpl);
-        CalculateWavesOnlyForCoordinate2(cellX,     cellY + 2, &h2, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX, cellY, bigWavesAmpl, smallWavesAmpl, &h0);
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY, bigWavesAmpl, smallWavesAmpl, &h1);
+        CalculateWavesOnlyForCoordinate2(cellX, cellY + 2, bigWavesAmpl, smallWavesAmpl, &h2);
 
         const auto dzX = h1 - h0;
         const auto dzY = h2 - h0;
@@ -225,9 +225,9 @@ void CWaterLevel::AddWaveToResult(float x, float y, float* pfWaterLevel, float b
             pVecNormal->Normalise();
         }
     } else {
-        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY + 2, &h0, bigWavesAmpl, smallWavesAmpl);
-        CalculateWavesOnlyForCoordinate2(cellX,     cellY + 2, &h1, bigWavesAmpl, smallWavesAmpl);
-        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY,     &h2, bigWavesAmpl, smallWavesAmpl);
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY + 2, bigWavesAmpl, smallWavesAmpl, &h0);
+        CalculateWavesOnlyForCoordinate2(cellX, cellY + 2, bigWavesAmpl, smallWavesAmpl, &h1);
+        CalculateWavesOnlyForCoordinate2(cellX + 2, cellY, bigWavesAmpl, smallWavesAmpl, &h2);
 
         const auto dz1 = h2 - h0; // (cellX+2,cellY) relative to the (cellX+2,cellY+2) corner
         const auto dz2 = h1 - h0; // (cellX,cellY+2) relative to the (cellX+2,cellY+2) corner
@@ -1028,11 +1028,23 @@ void CWaterLevel::MarkQuadsAndPolysToBeRendered(int32 blockX, int32 blockY, bool
 // 0x6E7210
 void CWaterLevel::CalculateWavesOnlyForCoordinate2( // TODO: Original name didn't have a 2 in it... I'm just lazy!
     int32 x, int32 y,
-    float* pResultHeight,
     float bigWavesAmpl,
-    float smallWavesAmpl
+    float smallWavesAmpl,
+    float* pResultHeight
 ) {
-    plugin::Call<0x6E7210>(x, y, bigWavesAmpl, smallWavesAmpl, pResultHeight);
+    x = std::abs(x);
+    y = std::abs(y);
+
+    const auto waveMult = faWaveMultipliersX[(x / 2) % 8] * faWaveMultipliersY[(y / 2) % 8] * CWeather::Wavyness;
+    const auto fX       = (float)x;
+    const auto fY       = (float)y;
+
+    // Same 3 waves as `CalculateWavesOnlyForCoordinate`, but without the normal and glare
+    const auto step = [](uint32 period) { return (float)((CTimer::GetTimeInMS() - m_nWaterTimeOffset) % period); };
+
+    *pResultHeight += CMaths::GetSinFast(step(5000) * (TWO_PI / 5000.0f) + (fY + fX) * (TWO_PI * (1.0f / 64.0f))) * 2.0f * waveMult * bigWavesAmpl;
+    *pResultHeight += CMaths::GetSinFast(step(3500) * (TWO_PI / 3500.0f) + fY * (TWO_PI * (1.0f / 52.0f)) + fX * (TWO_PI * (1.0f / 26.0f))) * 1.0f * waveMult * smallWavesAmpl;
+    *pResultHeight += CMaths::GetSinFast(step(3000) * (TWO_PI / 3000.0f) + fY * (TWO_PI * (1.0f / 20.0f))) * 0.5f * waveMult * smallWavesAmpl;
 }
 
 // 0x6E6CA0
