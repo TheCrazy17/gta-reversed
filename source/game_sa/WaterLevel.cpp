@@ -1,5 +1,6 @@
 #include "StdInc.h"
 #include "WaterLevel.h"
+#include "PostEffects.h"
 #include <sstream>
 
 #define TRIANGLE_ARGS_OUT X1, Y1, P1, X2, Y2, P2, X3, Y3, P3
@@ -46,7 +47,7 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(GetWaterLevelNoWaves, 0x6E8580);
     RH_ScopedGlobalInstall(TestQuadToGetWaterLevel, 0x6E5BB0);
     RH_ScopedGlobalInstall(TestTriangleToGetWaterLevel, 0x6E5E90);
-    RH_ScopedGlobalInstall(RenderWaterFog, 0x6E7760, { .Reversed = false });
+    RH_ScopedGlobalInstall(RenderWaterFog, 0x6E7760);
     RH_ScopedGlobalInstall(CalculateWavesOnlyForCoordinate, 0x6E6EF0);
     RH_ScopedGlobalInstall(RenderWater, 0x6EF650, { .Reversed = false });
     RH_ScopedGlobalInstall(AddWaveToResult, 0x6E81E0);
@@ -969,7 +970,102 @@ bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, fl
 void CWaterLevel::RenderWaterFog() {
     ZoneScoped;
 
-    plugin::Call<0x6E7760>();
+    if (!m_bWaterFog || !m_bWaterFogScript) {
+        return;
+    }
+
+    if (!(CWeather::UnderWaterness < 0.535f)) {
+        gWaterFogIndex = 0;
+        return;
+    }
+
+    const auto numSlices = (int32)((float)m_WaterFogDensity * CWeather::WaterFogFXControl);
+    if (numSlices == 0) {
+        gWaterFogIndex = 0;
+        return;
+    }
+
+    const auto sliceHeight = m_fWaterFogHeight / (float)numSlices;
+    const auto numFogs     = (int32)gWaterFogIndex;
+    gWaterFogIndex         = 0;
+
+    // Fade the overlay in while the player is inside of the fog, and out after a short while
+    if (gbPlayerIsInsideWaterFog) {
+        m_fWaterFogInsideFade = std::min(1.0f, CTimer::GetTimeStep() * m_fWaterFogInsideFadeSpeed + m_fWaterFogInsideFade);
+        m_fWaterFogInsideFadeTimer = 40.0f;
+    } else {
+        m_fWaterFogInsideFadeTimer -= CTimer::GetTimeStep();
+        if (m_fWaterFogInsideFadeTimer <= 0.0f) {
+            m_fWaterFogInsideFadeTimer = 0.0f;
+            m_fWaterFogInsideFade -= CTimer::GetTimeStep() * m_fWaterFogInsideFadeSpeed;
+            if (m_fWaterFogInsideFade < 0.0f) {
+                m_fWaterFogInsideFade = 0.0f;
+            }
+        }
+    }
+    gbPlayerIsInsideWaterFog = false;
+
+    if (m_fWaterFogInsideFade > 0.0f) {
+        const auto alpha = (int32)((float)(int32)((float)m_WaterFogInsideCol.a * m_fWaterFogInsideFade) * CWeather::WaterFogFXControl);
+
+        CPostEffects::ImmediateModeRenderStatesStore();
+        CPostEffects::ImmediateModeRenderStatesSet();
+        CPostEffects::DrawQuad(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT, m_WaterFogInsideCol.r, m_WaterFogInsideCol.g, m_WaterFogInsideCol.b, (uint8)alpha, nullptr);
+        CPostEffects::ImmediateModeRenderStatesReStore();
+
+        if (m_fWaterFogInsideFade == 1.0f) {
+            return;
+        }
+    }
+
+    CPostEffects::ImmediateModeRenderStatesStore();
+    CPostEffects::ImmediateModeRenderStatesSet();
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nullptr);
+
+    const auto numSlicesToDraw = (int32)((1.0f - m_fWaterFogInsideFade) * (float)numSlices);
+    const auto color           = CRGBA{ m_WaterFogCol.r, m_WaterFogCol.g, m_WaterFogCol.b, m_WaterFogCol.a }.ToIntARGB();
+
+    auto& verts   = TempBufferVertices.m_3d;
+    auto  numUsed = 0;
+    const auto Flush = [&] {
+        if (numUsed <= 0) {
+            return;
+        }
+        if (RwIm3DTransform(verts, numUsed, nullptr, rwIM3D_VERTEXXYZ)) {
+            RwIm3DRenderPrimitive(rwPRIMTYPETRILIST);
+            RwIm3DEnd();
+        }
+        numUsed = 0;
+    };
+
+    for (auto fog = 0; fog < numFogs; fog++) {
+        if (numSlicesToDraw <= 0) {
+            continue;
+        }
+
+        const auto minX = (float)ms_WaterFog.minX[fog];
+        const auto minY = (float)ms_WaterFog.minY[fog];
+        const auto maxX = (float)ms_WaterFog.maxX[fog];
+        const auto maxY = (float)ms_WaterFog.maxY[fog];
+        const float xs[6]{ minX, maxX, maxX, minX, maxX, minX };
+        const float ys[6]{ minY, minY, maxY, minY, maxY, maxY };
+
+        auto z = ms_WaterFog.z[fog];
+        for (auto slice = 0; slice < numSlicesToDraw; slice++, z += sliceHeight) {
+            for (auto i = 0; i < 6; i++) {
+                auto& v      = verts[numUsed++];
+                v.objVertex  = { xs[i], ys[i], z };
+                v.color      = color;
+                if (numUsed == 0x7FE) {
+                    Flush();
+                }
+            }
+        }
+    }
+    Flush();
+
+    CPostEffects::ImmediateModeRenderStatesReStore();
 }
 
 // 0x6E6EF0

@@ -129,6 +129,11 @@ class CWaterLevel {
     static inline auto& gWaterFogIndex = StaticRef<uint32>(0xC228E4);
     static inline auto& m_fWaterFogHeight = StaticRef<float>(0x8D37E4);
     static inline auto& gbPlayerIsInsideWaterFog = StaticRef<bool>(0xC228E8);
+    static inline auto& m_WaterFogCol = StaticRef<CRGBA>(0x8D37E8);                  // Color of the fog slices
+    static inline auto& m_WaterFogInsideCol = StaticRef<CRGBA>(0x8D37EC);            // Color of the overlay when inside of the fog
+    static inline auto& m_fWaterFogInsideFadeSpeed = StaticRef<float>(0x8D37F0);
+    static inline auto& m_fWaterFogInsideFade = StaticRef<float>(0xC228EC);          // [0, 1]
+    static inline auto& m_fWaterFogInsideFadeTimer = StaticRef<float>(0xC228F0);
 
 
     // In reality the alpha component isn't used and instead `WaterLayerAlpha` is used
