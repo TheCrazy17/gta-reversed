@@ -49,7 +49,7 @@ void FxInfoManager_c::InjectHooks() {
     RH_ScopedCategory("Fx");
 
     RH_ScopedInstall(AddFxInfo, 0x4A7B00);
-    RH_ScopedInstall(Load, 0x5C0B70, { .Reversed = false });
+    RH_ScopedInstall(Load, 0x5C0B70);
     RH_ScopedInstall(ProcessEmissionInfo, 0x4A4960);
     RH_ScopedInstall(ProcessMovementInfo, 0x4A4A10);
     RH_ScopedInstall(ProcessRenderInfo, 0x4A4A80);
@@ -137,19 +137,25 @@ constexpr struct { int32 type; const char* name; } FXINFOMANAGER_C_LOAD_MAPPING[
 
 // 0x5C0B70
 void FxInfoManager_c::Load(FILESTREAM file, int32 version) {
-    plugin::CallMethod<0x5C0B70, FxInfoManager_c*, FILESTREAM, int32>(this, file, version);
-    return;
+    // Only the infos that aren't for the emission have the `TIMEMODEPRT:` field, and only from this version on
+    constexpr int32  FIRST_VERSION_WITH_TIME_MODE_PRT = 1;
+    constexpr uint16 CATEGORY_EMISSION = 0x1000;
+    constexpr uint16 CATEGORY_MOVEMENT = 0x2000;
+    constexpr uint16 CATEGORY_RENDER   = 0x4000 | 0x8000;
 
     ReadField<void>(file);
     m_nNumInfos = ReadField<int32>(file, "NUM_INFOS:");
+
     m_MovementOffset = -1;
-    m_RenderOffset = -1;
+    m_RenderOffset   = -1;
 
     m_pInfos = g_fxMan.Allocate<FxInfo_c*>(m_nNumInfos);
     assert(m_pInfos);
 
     char line[256], field[128];
-    for (auto& info : GetInfos()) {
+    for (auto i = 0; i < m_nNumInfos; i++) {
+        auto& info = m_pInfos[i];
+
         ReadLine(file, line, sizeof(line));
         VERIFY(sscanf(line, "%s", field) == 1);
 
@@ -161,10 +167,10 @@ void FxInfoManager_c::Load(FILESTREAM file, int32 version) {
             }
             NOTSA_UNREACHABLE("Unknown FX Info: %s", field); // NOTSA
         };
-        auto infoType = GetType();
+        const auto infoType = GetType();
 
         bool bTimeModePrt = true;
-        if ((infoType & 0xF000) > 0x1000 && version >= 0.7f) {
+        if ((infoType & 0xF000) > CATEGORY_EMISSION && version >= FIRST_VERSION_WITH_TIME_MODE_PRT) {
             bTimeModePrt = ReadField<bool>(file, "TIMEMODEPRT:");
         }
 
@@ -174,13 +180,26 @@ void FxInfoManager_c::Load(FILESTREAM file, int32 version) {
         ReadField<void>(file);
 
         info->m_bTimeModeParticle = bTimeModePrt;
+
+        // Where the first movement and the first render info are
+        const auto category = static_cast<uint16>(info->m_nType);
+        if ((category & CATEGORY_EMISSION) == 0) {
+            if ((category & CATEGORY_MOVEMENT) != 0) {
+                if (m_MovementOffset == -1) {
+                    m_MovementOffset = static_cast<int8>(i);
+                }
+            } else if ((category & CATEGORY_RENDER) != 0 && m_RenderOffset == -1) {
+                m_RenderOffset = static_cast<int8>(i);
+            }
+        }
     }
 
-    if (m_RenderOffset == -1)
-        m_RenderOffset = m_nNumInfos;
-
-    if (m_MovementOffset == -1)
+    if (m_RenderOffset == -1) {
+        m_RenderOffset = static_cast<int8>(m_nNumInfos);
+    }
+    if (m_MovementOffset == -1) {
         m_MovementOffset = m_RenderOffset;
+    }
 }
 
 /* todo:

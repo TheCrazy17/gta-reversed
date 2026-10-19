@@ -2,6 +2,7 @@
 
 #include "CarFXRenderer.h"
 #include "CustomCarEnvMapPipeline.h"
+#include "ClothesBuilder.h"
 
 void CCarFXRenderer::InjectHooks() {
     RH_ScopedClass(CCarFXRenderer);
@@ -9,7 +10,7 @@ void CCarFXRenderer::InjectHooks() {
 
     RH_ScopedInstall(RegisterPlugins, 0x5D5B00);
     RH_ScopedInstall(Initialise, 0x5D5AC0);
-    RH_ScopedInstall(InitialiseDirtTexture, 0x5D5BC0, { .Reversed = false });
+    RH_ScopedInstall(InitialiseDirtTexture, 0x5D5BC0);
     RH_ScopedInstall(Shutdown, 0x5D5AD0);
     RH_ScopedInstall(PreRenderUpdate, 0x5D5B10);
     RH_ScopedInstall(IsCCPCPipelineAttached, 0x5D5B80);
@@ -30,8 +31,33 @@ bool CCarFXRenderer::Initialise() {
 }
 
 // 0x5D5BC0
-void CCarFXRenderer::InitialiseDirtTexture() {
-    plugin::Call<0x5D5BC0>();
+bool CCarFXRenderer::InitialiseDirtTexture() {
+    CTxdStore::ScopedTXDSlot txd{ "vehicle" };
+
+    auto* const grunge = RwTextureRead("vehiclegrunge256", nullptr);
+    RwTextureSetFilterMode(grunge, rwFILTERLINEAR);
+
+    const auto width  = RwRasterGetWidth(RwTextureGetRaster(grunge));
+    const auto height = RwRasterGetHeight(RwTextureGetRaster(grunge));
+
+    // Each copy fades the grunge in from white, the first one is clean and the last one is almost the original
+    for (auto i = 0; i < NUM_DIRT_TEXTURES; i++) {
+        auto* const texture = CClothesBuilder::CopyTexture(grunge);
+        ms_aDirtTextures[i] = texture;
+        RwTextureSetName(texture, "vehiclegrunge256");
+
+        auto* const raster = RwTextureGetRaster(texture);
+        auto*       pixel  = RwRasterLock(raster, 0, rwRASTERLOCKREADWRITE);
+        // The rows are taken as `width * 4` bytes long, like the original does
+        for (auto p = 0; p < width * height; p++, pixel += 4) {
+            for (auto c = 0; c < 3; c++) { // The alpha stays as it is
+                pixel[c] = static_cast<RwUInt8>(pixel[c] * i / NUM_DIRT_TEXTURES + (255 * NUM_DIRT_TEXTURES - 255 * i) / NUM_DIRT_TEXTURES);
+            }
+        }
+        RwRasterUnlock(raster);
+    }
+
+    return true;
 }
 
 // 0x5D5AD0
