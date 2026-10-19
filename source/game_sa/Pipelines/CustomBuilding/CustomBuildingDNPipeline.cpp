@@ -226,7 +226,27 @@ uint32 CCustomBuildingDNPipeline::UsesThisPipeline(RpAtomic* atomic) {
 
 // 0x5D7120
 RpMaterial* CCustomBuildingDNPipeline::CustomPipeMaterialSetup(RpMaterial* material, void* data) {
-    return plugin::CallAndReturn<RpMaterial*, 0x5D7120, RpMaterial*, void*>(material, data);
+    CCustomCarEnvMapPipeline::SetMaterialFlags(material, CCustomCarEnvMapPipeline::MF_NONE);
+
+    auto** const envMapData = &CCustomCarEnvMapPipeline::EnvMapPlGetData(material);
+
+    if (RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTENVMAP) {
+        if (auto* const envData = SetFxEnvTexture(envMapData)) {
+            envData->Texture = (MATFXD3D9ENVMAPGETDATA(material, 0))->texture;
+            if (envData->Texture) {
+                RwTextureSetAddressing(envData->Texture, rwTEXTUREADDRESSWRAP);
+                RwTextureSetFilterMode(envData->Texture, rwFILTERLINEAR);
+            }
+        }
+    }
+
+    CCustomCarEnvMapPipeline::SetMaterialFlags(
+        material,
+        *envMapData && (*envMapData)->Shininess != 0.f && (*envMapData)->Texture
+            ? CCustomCarEnvMapPipeline::MF_HAS_SHINE_CAM
+            : CCustomCarEnvMapPipeline::MF_NONE
+    );
+    return material;
 }
 
 // 0x5D6480
@@ -303,6 +323,6 @@ void CCustomBuildingDNPipeline::InjectHooks() {
     RH_ScopedInstall(CreateCustomObjPipe, 0x5D6750);
     RH_ScopedInstall(CustomPipeAtomicSetup, 0x5D71C0);
     RH_ScopedInstall(SetFxEnvTexture, 0x5D9570);
-    RH_ScopedInstall(CustomPipeMaterialSetup, 0x5D7120, { .Reversed = false });
+    RH_ScopedInstall(CustomPipeMaterialSetup, 0x5D7120);
     RH_ScopedInstall(CustomPipeRenderCB, 0x5D6480, { .Reversed = false });
 }
