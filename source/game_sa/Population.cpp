@@ -66,7 +66,7 @@ void CPopulation::InjectHooks() {
     RH_ScopedGlobalInstall(AddToPopulation, 0x614720, { .Reversed = false });
     RH_ScopedGlobalInstall(GeneratePedsAtAttractors, 0x615970);
     RH_ScopedGlobalInstall(GeneratePedsAtStartOfGame, 0x615C90);
-    RH_ScopedGlobalInstall(ManageObject, 0x615DC0, { .Reversed = false });
+    RH_ScopedGlobalInstall(ManageObject, 0x615DC0);
     RH_ScopedGlobalInstall(ManageDummy, 0x616000);
     RH_ScopedGlobalInstall(ManageAllPopulation, 0x6160A0);
     RH_ScopedGlobalInstall(ManagePopulation, 0x616190);
@@ -1711,7 +1711,63 @@ void CPopulation::GeneratePedsAtStartOfGame() {
 
 // 0x615DC0
 void CPopulation::ManageObject(CObject* object, const CVector& posn) {
-    ((void(__cdecl*)(CObject*, const CVector&))0x615DC0)(object, posn);
+    static_assert(offsetof(CObject, m_nObjectType) == 0x13C);
+    static_assert(offsetof(CObject, m_nRemovalTime) == 0x150);
+    static_assert(offsetof(CObject, m_pDummyObject) == 0x170);
+
+    if (!object->CanBeDeleted()) {
+        return;
+    }
+
+    const auto dist       = (object->GetPosition() - posn).Magnitude();
+    const auto modelIndex = (eModelID)object->m_nModelIndex;
+
+    const auto RemoveAndDelete = [&] {
+        CWorld::Remove(object);
+        delete object;
+    };
+
+    if (!object->IsTemporary()) {
+        // Far away objects with a dummy are turned back into it
+        const auto dummyDist = object->m_pDummyObject ? (object->m_pDummyObject->GetPosition() - posn).Magnitude() : 100000.0f;
+        const auto range     = (modelIndex == ModelIndices::MI_SAMSITE || modelIndex == ModelIndices::MI_SAMSITE2) ? 750.0f : 80.0f;
+        if (dist <= range || dummyDist <= FindDummyDistForModel(modelIndex)) {
+            return;
+        }
+        ConvertToDummyObject(object);
+        return;
+    }
+
+    if (modelIndex == ModelIndices::MI_ROADWORKBARRIER1
+        || modelIndex == ModelIndices::MI_ROADBLOCKFUCKEDCAR1
+        || modelIndex == ModelIndices::MI_ROADBLOCKFUCKEDCAR2
+        || modelIndex == ModelIndices::MI_BEACHBALL) {
+        if (dist > 120.0f) {
+            RemoveAndDelete();
+        }
+        return;
+    }
+
+    if (modelIndex >= ModelIndices::MI_BEACHTOWEL01 && modelIndex <= ModelIndices::MI_BEACHTOWEL04) {
+        if (dist <= 64.5f && (dist <= 35.0f || object->GetIsOnScreen())) {
+            return;
+        }
+        RemoveAndDelete();
+        return;
+    }
+
+    if (dist > 54.5f || (dist > 25.0f && !object->GetIsOnScreen()) || object->m_nRemovalTime < CTimer::GetTimeInMS()) {
+        RemoveAndDelete();
+        return;
+    }
+
+    // Anything that is fading in is only dropped once it is invisible
+    if (!object->GetRwObject() || RwObjectGetType(object->GetRwObject()) != rpCLUMP || !object->objectFlags.bFadingIn) {
+        return;
+    }
+    if (CVisibilityPlugins::GetClumpAlpha(object->GetRpClump()) == 0 || !object->IsVisible()) {
+        RemoveAndDelete();
+    }
 }
 
 // 0x616000
