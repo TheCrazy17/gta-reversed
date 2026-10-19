@@ -15,7 +15,7 @@ void CRealTimeShadow::InjectHooks() {
     RH_ScopedInstall(Create, 0x706460);
     RH_ScopedInstall(Update, 0x706600);
     RH_ScopedInstall(Destroy, 0x705990);
-    RH_ScopedInstall(SetupForThisEntity, 0x706520, { .Reversed = false });
+    RH_ScopedInstall(SetupForThisEntity, 0x706520);
 }
 
 CRealTimeShadow::~CRealTimeShadow() {
@@ -67,7 +67,41 @@ void CRealTimeShadow::Destroy() {
 
 // 0x706520
 bool CRealTimeShadow::SetupForThisEntity(CPhysical* owner) {
-    return plugin::CallMethodAndReturn<bool, 0x706520, CRealTimeShadow*, CPhysical*>(this, owner);
+    m_pOwner = owner;
+
+    auto* const object = owner->GetRwObject();
+    if (!object) {
+        return false;
+    }
+
+    m_nRwObjectType = RwObjectGetType(object);
+    switch (m_nRwObjectType) {
+    case rpATOMIC: {
+        const auto* const sphere = RpAtomicGetBoundingSphere(owner->GetRpAtomic());
+        m_boundingSphere = { sphere->center, sphere->radius };
+        break;
+    }
+    case rpCLUMP:
+        RpClumpGetBoundingSphere(owner->GetRpClump(), reinterpret_cast<RwSphere*>(&m_boundingSphere), true);
+        break;
+    default:
+        Destroy();
+        return false;
+    }
+
+    // The center in the world
+    m_baseSphere.m_fRadius = m_boundingSphere.m_fRadius;
+    RwV3dTransformPoints(
+        &m_baseSphere.m_vecCenter,
+        &m_boundingSphere.m_vecCenter,
+        1,
+        RwFrameGetMatrix(static_cast<RwFrame*>(rwObjectGetParent(object)))
+    );
+
+    m_camera.SetFrustum(m_boundingSphere.m_fRadius * 1.1f);
+    m_camera.SetCenter(m_baseSphere.m_vecCenter);
+
+    return true;
 }
 
 // 0x705A00
