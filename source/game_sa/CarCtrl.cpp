@@ -96,7 +96,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(RegisterVehicleOfInterest, 0x423DE0);
     RH_ScopedInstall(ScanForPedDanger, 0x42CE40, { .Reversed = false });
     RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0, { .Reversed = false });
-    RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0, { .Reversed = false });
+    RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0, { .Reversed = false });
@@ -910,7 +910,42 @@ void CCarCtrl::SetCoordsOfScriptCar(CVehicle* vehicle, float x, float y, float z
 
 // 0x4217C0
 void CCarCtrl::SetUpDriverAndPassengersForVehicle(CVehicle* vehicle, int32 arg2, int32 arg3, bool arg4, bool arg5, int32 passengersNum) {
-    plugin::Call<0x4217C0, CVehicle*, int32, int32, bool, bool, int32>(vehicle, arg2, arg3, arg4, arg5, passengersNum);
+    // Gang members (pedType 14 to 23) sometimes hold a cigarette
+    const auto MaybeGiveCigarette = [&](CPed* ped) {
+        if (ped && arg2 >= 14 && arg2 <= 23 && CGeneral::GetRandomNumber() < 0x3FFF) {
+            ped->GiveObjectToPedToHold(static_cast<uint16>(ModelIndices::MI_GANG_SMOKE), 1);
+        }
+    };
+
+    vehicle->SetUpDriver(arg2, arg4, arg5);
+    MaybeGiveCigarette(vehicle->m_pDriver);
+
+    // arg3 is the least number of passengers, every seat up to the limit has a chance to get one more
+    const int32 maxPassengers = std::min<int32>(vehicle->m_nMaxPassengers, passengersNum);
+    int32       numPassengers = arg3;
+    if (numPassengers < maxPassengers) {
+        for (int32 i = 0; i < maxPassengers - arg3; i++) {
+            numPassengers += static_cast<float>(CGeneral::GetRandomNumber()) * RAND_MAX_FLOAT_RECIPROCAL < 0.125f ? 1 : 0;
+        }
+        numPassengers = std::min(numPassengers, maxPassengers);
+    } else {
+        numPassengers = maxPassengers;
+    }
+
+    // Vans only get one passenger
+    if (CModelInfo::IsCarModel(vehicle->m_nModelIndex)
+        && CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetAnimFileIndex() == CAnimManager::GetAnimationBlockIndex("van")
+        && numPassengers >= 1
+    ) {
+        numPassengers = 1;
+    }
+
+    for (int32 seat = 0; seat < numPassengers; seat++) {
+        if (auto* const passenger = vehicle->SetupPassenger(seat, arg2, arg4, arg5)) {
+            passenger->UpdateStatEnteringVehicle();
+            MaybeGiveCigarette(passenger);
+        }
+    }
 }
 
 // 0x432420
