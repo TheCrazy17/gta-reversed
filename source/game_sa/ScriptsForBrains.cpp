@@ -55,7 +55,7 @@ void CScriptsForBrains::AddNewScriptBrain(int16 ImgIndex, int16 Model, uint16 pr
         scriptBrain.m_TypeOfBrain                   = attachType;
         scriptBrain.m_ObjectGroupingId              = Type;
         scriptBrain.m_bBrainActive                  = true;
-        scriptBrain.m_ObjectBrainActivationRadius   = Radius <= 0.0f ? 5.0f : Radius;
+        scriptBrain.m_ObjectBrainActivationRadius   = Radius < 0.0f ? 5.0f : Radius; // A radius of exactly 0 is kept
         return;
     }
 }

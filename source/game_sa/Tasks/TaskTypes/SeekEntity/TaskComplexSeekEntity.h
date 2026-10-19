@@ -404,7 +404,7 @@ public:
 
     // 0x6955D0
     void UpdateMaxEntityDist2D(float maxEntityDist2D) {
-        if (maxEntityDist2D > m_maxEntityDist2D) {
+        if (maxEntityDist2D != m_maxEntityDist2D) { // The original resets on any change, not only when it grows
             m_maxEntityDist2D = maxEntityDist2D;
             m_scanTimer.m_nStartTime = CTimer::GetTimeInMS();
             m_scanTimer.m_nInterval = 0;
