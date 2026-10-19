@@ -69,7 +69,7 @@ CTask* CTaskComplexGoToPointAndStandStillAndAchieveHeading::CreateFirstSubTask(C
 
 // 0x668E80
 CTask* CTaskComplexGoToPointAndStandStillAndAchieveHeading::ControlSubTask(CPed* ped) {
-    if (m_nFlags & 1) {
+    if (m_HasNewTarget) {
         return CreateFirstSubTask(ped);
     }
     if (m_pSubTask->GetTaskType() == TASK_SIMPLE_GO_TO_POINT) {

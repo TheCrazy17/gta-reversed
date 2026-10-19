@@ -3,6 +3,7 @@
 #include "TaskComplexGoToPointAiming.h"
 #include "TaskComplexGoToPointAndStandStill.h"
 #include "TaskSimpleGunControl.h"
+#include "TaskSimpleUseGun.h"
 
 void CTaskComplexGoToPointAiming::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGoToPointAiming, 0x86fe00, 11);
