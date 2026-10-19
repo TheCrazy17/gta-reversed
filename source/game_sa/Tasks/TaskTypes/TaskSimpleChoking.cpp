@@ -21,24 +21,32 @@ CTaskSimpleChoking::CTaskSimpleChoking(const CTaskSimpleChoking& o) :
 }
 
 // 0x6203F0
-bool CTaskSimpleChoking::MakeAbortable(CPed* ped, eAbortPriority priority, CEvent const* event) {
-    if (priority == ABORT_PRIORITY_URGENT || priority == ABORT_PRIORITY_IMMEDIATE) {
+bool CTaskSimpleChoking::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event) {
+    switch (priority) {
+    case ABORT_PRIORITY_URGENT:
+    case ABORT_PRIORITY_IMMEDIATE: {
         if (event && event->GetEventPriority() < 57) {
             return false;
         }
-        if (m_pAnim) {
-            m_pAnim->m_BlendDelta = -4.0f;
-            m_pAnim->SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
-            m_pAnim = nullptr;
-        }
         m_bIsFinished = true;
-    } else if (m_pAnim) {
-        m_pAnim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
-        m_pAnim->m_BlendDelta = -4.0f;
-        m_pAnim->SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nullptr);
-        m_pAnim = nullptr;
-        return true;
+        break;
     }
+    case ABORT_PRIORITY_LEISURE: {
+        if (m_pAnim) {
+            m_pAnim->SetFlag(ANIMATION_IS_BLEND_AUTO_REMOVE);
+        }
+        break;
+    }
+    default: {
+        NOTSA_UNREACHABLE_CASE(priority);
+    }
+    }
+
+    if (auto* const anim = std::exchange(m_pAnim, nullptr)) {
+        anim->SetBlendDelta(-4.f);
+        anim->SetDefaultFinishCallback();
+    }
+
     return true;
 }
 

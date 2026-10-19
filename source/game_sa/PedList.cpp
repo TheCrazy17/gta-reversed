@@ -14,9 +14,9 @@ void CPedList::InjectHooks() {
     RH_ScopedInstall(BuildListFromGroup_NoLeader, 0x699DD0);
     RH_ScopedInstall(FillUpHoles, 0x699E20);
     RH_ScopedInstall(ExtractPedsWithGuns, 0x69A4C0);
-    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340);
+    RH_ScopedInstall(BuildListFromGroup_NotInCar_NoLeader, 0x69A340, { .Reversed = false });
     RH_ScopedInstall(BuildListOfPedsOfPedType, 0x69A3B0);
-    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450);
+    RH_ScopedInstall(RemovePedsAttackingPedType, 0x69A450, { .Reversed = false });
     RH_ScopedInstall(RemovePedsThatDontListenToPlayer, 0x69A420);
 }
 
@@ -67,11 +67,17 @@ void CPedList::BuildListFromGroup_NotInCar_NoLeader(CPedGroupMembership* pedGrou
 // 0x69A3B0
 void CPedList::BuildListOfPedsOfPedType(int32 pedType) {
     m_count = 0;
-    for (auto& ped : GetPedPool()->GetAllValid()) {
-        if (ped.m_nPedType == pedType && m_count < std::size(m_peds)) {
-            AddMember(&ped);
+
+    // NOTE: The original code iterates the pool backwards (last slot first),
+    // which affects which peds make it into the list if there are more than 30.
+    for (auto i = GetPedPool()->GetSize(); i-- > 0;) {
+        if (auto* const ped = GetPedPool()->GetAt(i)) {
+            if (ped->m_nPedType == (ePedType)pedType && m_count < m_peds.size()) {
+                AddMember(ped);
+            }
         }
     }
+
     ClearUnused();
 }
 
@@ -90,10 +96,10 @@ void CPedList::RemovePedsAttackingPedType(int32 pedType) {
 
 // 0x69A420
 void CPedList::RemovePedsThatDontListenToPlayer() {
-    for (auto i = 0u; i < m_count; i++) {
+    // NOTE: Going backwards, so `m_count` being modified inside the loop doesn't matter
+    for (auto i = (int32)m_count; i-- > 0;) {
         if (m_peds[i]->bDoesntListenToPlayerGroupCommands) {
-            m_peds[i] = nullptr;
-            m_count--;
+            RemoveMemberNoFill(i);
         }
     }
     FillUpHoles();

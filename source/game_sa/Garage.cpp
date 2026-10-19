@@ -10,37 +10,23 @@ void CGarage::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(BuildRotatedDoorMatrix, 0x4479F0);
-    RH_ScopedInstall(TidyUpGarageClose, 0x449D10);
-    RH_ScopedInstall(TidyUpGarage, 0x449C50);
+    RH_ScopedInstall(TidyUpGarageClose, 0x449D10, { .Reversed = false });
+    RH_ScopedInstall(TidyUpGarage, 0x449C50, { .Reversed = false });
     RH_ScopedInstall(StoreAndRemoveCarsForThisHideOut, 0x449900);
-    RH_ScopedInstall(StoreAndRemoveCarsForThisImpoundingGarage, 0x449A50);
-    RH_ScopedInstall(RestoreCarsForThisHideOut, 0x156D8D0);
-    RH_ScopedInstall(RestoreCarsForThisImpoundingGarage, 0x1561490);
-    RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050);
-    RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690);
-    RH_ScopedInstall(IsPlayerOutsideGarage, 0x1569180);
-    RH_ScopedInstall(CountCarsWithCenterPointWithinGarage, 0x1561400);
-    RH_ScopedInstall(IsEntityTouching3D, 0x448EE0);
-    RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30);
-    RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830);
-    RH_ScopedInstall(IsEntityEntirelyInside3D, 0x448BE0);
-    RH_ScopedOverloadedInstall(IsPointInsideGarage, "0", 0x448740, bool (CGarage::*)(CVector));
-    RH_ScopedInstall(PlayerArrestedOrDied, 0x4486C0);
+    RH_ScopedInstall(EntityHasASphereWayOutsideGarage, 0x449050, { .Reversed = false });
+    RH_ScopedInstall(RemoveCarsBlockingDoorNotInside, 0x449690, { .Reversed = false });
+    RH_ScopedInstall(IsEntityTouching3D, 0x448EE0, { .Reversed = false });
+    RH_ScopedInstall(IsEntityEntirelyOutside, 0x448D30, { .Reversed = false });
+    RH_ScopedInstall(IsStaticPlayerCarEntirelyInside, 0x44A830, { .Reversed = false });
+    RH_ScopedInstall(IsEntityEntirelyInside3D, 0x448BE0, { .Reversed = false });
+    RH_ScopedOverloadedInstall(IsPointInsideGarage, "CVector", 0x448740, bool(CGarage::*)(CVector), { .Reversed = false });
+    RH_ScopedInstall(PlayerArrestedOrDied, 0x4486C0, { .Reversed = false });
     RH_ScopedInstall(OpenThisGarage, 0x447D50);
     RH_ScopedInstall(CloseThisGarage, 0x447D70);
-    RH_ScopedInstall(InitDoorsAtStart, 0x447600);
-    RH_ScopedOverloadedInstall(IsPointInsideGarage, "1", 0x4487D0, bool (CGarage::*)(CVector, float));
-    RH_ScopedInstall(CalcDistToGarageRectangleSquared, 0x447D80);
-    RH_ScopedInstall(SlideDoorOpen, 0x44A660);
-    RH_ScopedInstall(SlideDoorClosed, 0x44A750);
-    RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0);
-    RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
-    RH_ScopedInstall(CenterCarInGarage, 0x449220);
-    RH_ScopedInstall(IsGarageEmpty, 0x44A9C0);
-    RH_ScopedInstall(IsAnyCarBlockingDoor, 0x156D610);
-    RH_ScopedInstall(IsAnyOtherCarTouchingGarage, 0x1566680);
-    RH_ScopedInstall(RightModTypeForThisGarage, 0x1565260);
-    RH_ScopedInstall(Update, 0x44AA50);
+    RH_ScopedInstall(InitDoorsAtStart, 0x447600, { .Reversed = false });
+    RH_ScopedOverloadedInstall(IsPointInsideGarage, "CVector-float", 0x4487D0, bool(CGarage::*)(CVector, float), { .Reversed = false });
+    RH_ScopedInstall(Update, 0x44AA50, { .Reversed = false });
+    RH_ScopedInstall(IsGarageEmpty, 0x44A9C0, { .Reversed = false });
 }
 
 // 0x4479F0

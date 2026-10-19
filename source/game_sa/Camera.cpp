@@ -115,7 +115,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(UpdateTargetEntity, 0x50C360);
     RH_ScopedInstall(TakeControl, 0x50C7C0);
     RH_ScopedInstall(TakeControlNoEntity, 0x50C8B0);
-    RH_ScopedInstall(TakeControlAttachToEntity, 0x50C910);
+    RH_ScopedInstall(TakeControlAttachToEntity, 0x50C910, { .Reversed = false });
     RH_ScopedInstall(TakeControlWithSpline, 0x50CAE0);
     RH_ScopedInstall(SetCamCollisionVarDataSet, 0x50CB60);
     RH_ScopedInstall(SetNearClipBasedOnPedCollision, 0x50CB90);
@@ -164,6 +164,9 @@ void CCamera::InjectHooks() {
     RH_ScopedOverloadedInstall(ProcessShake, "1", 0x516560, void(CCamera::*)(float));
 
     RH_ScopedGlobalInstall(CamShakeNoPos, 0x50A970);
+    RH_ScopedInstall(UpdateSoundDistances, 0x515BD0, { .Reversed = false });
+    RH_ScopedOverloadedInstall(IsSphereVisible, "", 0x420C40, bool(CCamera::*)(const CVector&, float, RwMatrix*), { .Reversed = false });
+    RH_ScopedOverloadedInstall(ProcessShake, "void", 0x51A6F0, void(CCamera::*)(), { .Reversed = false });
 }
 
 CCamera* CCamera::Constructor() { this->CCamera::CCamera(); return this; }

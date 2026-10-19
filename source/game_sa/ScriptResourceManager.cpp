@@ -21,50 +21,46 @@ void CScriptResourceManager::Initialise() {
 
 // 0x4704B0
 void CScriptResourceManager::AddToResourceManager(int32 modelId, eScriptResourceType type, CRunningScript* script) {
-    int32 freeSlot = -1;
-    for (auto i = 0u; i < m_aScriptResources.size(); i++) {
-        auto& res = m_aScriptResources[i];
+    tScriptResource* freeSlot{};
+    for (auto& res : m_aScriptResources) {
         if (res.m_nModelId == modelId && res.m_nType == type && res.m_pThread == script) {
-            return; // Already registered
+            return; // Don't allow duplicates
         }
         if (res.m_nType == RESOURCE_TYPE_DEFAULT) {
-            freeSlot = (int32)i;
+            freeSlot = &res; // NOTE: Ends up being the *last* free slot
         }
     }
-    if (freeSlot != -1) {
-        auto& res = m_aScriptResources[freeSlot];
-        res.m_nModelId = modelId;
-        res.m_nType    = type;
-        res.m_pThread  = script;
+    if (freeSlot) {
+        freeSlot->m_nModelId = modelId;
+        freeSlot->m_nType    = type;
+        freeSlot->m_pThread  = script;
     }
 }
 
 // 0x470510
 bool CScriptResourceManager::RemoveFromResourceManager(int32 modelId, eScriptResourceType type, CRunningScript* script) {
-    int32 matchedSlot     = -1;
-    int32 numOtherHolders = 0;
-    for (auto i = 0u; i < m_aScriptResources.size(); i++) {
-        auto& res = m_aScriptResources[i];
-        if (res.m_nModelId == modelId && res.m_nType == type) {
-            if (res.m_pThread == script) {
-                matchedSlot = (int32)i;
-            } else {
-                numOtherHolders++;
-            }
+    tScriptResource* ours{}; // NOTE: The original keeps the last match
+    auto numMatchesInOtherScripts = 0u;
+    for (auto& res : m_aScriptResources) {
+        if (res.m_nModelId != modelId || res.m_nType != type) {
+            continue;
+        }
+        if (res.m_pThread == script) {
+            assert(!ours && "There can be only 1 match for a resource");
+            ours = &res;
+        } else {
+            numMatchesInOtherScripts++;
         }
     }
-    if (matchedSlot != -1) {
-        auto& res = m_aScriptResources[matchedSlot];
-        res.m_nModelId = -1;
-        res.m_nType    = RESOURCE_TYPE_DEFAULT;
-        res.m_pThread  = nullptr;
+    if (ours) {
+        *ours = tScriptResource{}; // Resets to `-1`, `RESOURCE_TYPE_DEFAULT`, `nullptr`
     }
-    return numOtherHolders == 0;
+    return numMatchesInOtherScripts == 0; // Returns whenever this type+model was requested by any other script (Same logic as `HasResourceBeenRequested`)
 }
 
 // 0x470620
 bool CScriptResourceManager::HasResourceBeenRequested(int32 modelId, eScriptResourceType type) {
-    return rng::any_of(m_aScriptResources, [=](const auto& res) {
+    return rng::any_of(m_aScriptResources, [&](const tScriptResource& res) {
         return res.m_nModelId == modelId && res.m_nType == type;
     });
 }
