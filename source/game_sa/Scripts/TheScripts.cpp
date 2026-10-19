@@ -90,7 +90,7 @@ void CTheScripts::InjectHooks() {
     // RH_ScopedInstall(DrawDebugCube, 0x0);
     // RH_ScopedInstall(DrawDebugAngledCube, 0x0)
     RH_ScopedInstall(DrawScriptSpritesAndRectangles, 0x464980);
-    RH_ScopedInstall(ScriptDebugCircle2D, 0x485C20, { .Reversed = false });
+    RH_ScopedInstall(ScriptDebugCircle2D, 0x485C20);
     RH_ScopedInstall(DrawScriptSpheres, 0x4810E0);
     RH_ScopedOverloadedInstall(HighlightImportantArea, "", 0x485E00, void(*)(uint32,float,float,float,float,float));
     RH_ScopedInstall(HighlightImportantAngledArea, 0x485EF0);
@@ -1802,9 +1802,6 @@ void CTheScripts::DrawScriptSpritesAndRectangles(bool drawBeforeFade) {
 //   CTheScripts::ScriptDebugCircle2D(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100, 50.f, 50.f, HudColour.GetRGB(HUD_COLOUR_RED).ToInt());
 // 0x485C20
 void CTheScripts::ScriptDebugCircle2D(float x, float y, float width, float height, CRGBA color) {
-    return plugin::Call<0x485C20, float, float, float, float, CRGBA>(x, y, width, height, color);
-
-    // untested
     RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(TRUE));
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       RWRSTATE(FALSE));
     RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(TRUE));
@@ -1813,19 +1810,27 @@ void CTheScripts::ScriptDebugCircle2D(float x, float y, float width, float heigh
     RwRenderStateSet(rwRENDERSTATETEXTUREFILTER,     RWRSTATE(rwFILTERLINEAR));
     RwRenderStateSet(rwRENDERSTATETEXTURERASTER,     RWRSTATE(NULL));
 
-    const auto iters = 16;
-    auto part = (CTimer::GetTimeInMS() >> 6) % iters;
-    for (auto i = 0; i < iters; i++) {
-        RwIm2DVertex vertex{
-            .x = std::sin((float)i * PI / 8.0f) * width + x,
-            .y = std::cos((float)i * PI / 8.0f) * height + y
-        };
-        if (part == i)
-            vertex.emissiveColor = (3 * color.g / 4) | (((3 * color.b / 4) | (((3 * color.a / 4) | ((3 * color.r / 4) << 8)) << 8)) << 8); // todo: (3 * color / 4).ToIntARGB();
-        else
-            vertex.emissiveColor = color.ToIntARGB();
-        RwIm2DVertex vertices[2] = { vertex, vertex };
-        RwIm2DRenderLine(vertices, std::size(vertices), 0, 1); // todo: RwIm2DRenderLine_BUGFIX
+    // The channels end up in this order in the vertex color, which is not ARGB
+    const auto Pack = [](uint32 r, uint32 g, uint32 b, uint32 a) {
+        return (r << 24) | (a << 16) | (b << 8) | g;
+    };
+    const auto normal = Pack(color.r, color.g, color.b, color.a);
+    const auto dimmed = Pack(3 * color.r / 4, 3 * color.g / 4, 3 * color.b / 4, 3 * color.a / 4);
+
+    // One segment of the circle is darker, and it moves around over time
+    const auto darkSegment = (CTimer::GetTimeInMS() >> 6) & 0xF;
+    constexpr auto SEGMENTS = 16;
+    for (auto i = 0; i < SEGMENTS; i++) {
+        const auto a0 = (float)i * 0.3926991f;
+        const auto a1 = (float)(i + 1) * 0.3926991f;
+
+        RwIm2DVertex vertices[2]{};
+        vertices[0].x             = std::sin(a0) * width + x;
+        vertices[0].y             = std::cos(a0) * height + y;
+        vertices[1].x             = std::sin(a1) * width + x;
+        vertices[1].y             = std::cos(a1) * height + y;
+        vertices[0].emissiveColor = vertices[1].emissiveColor = (uint32)i == darkSegment ? dimmed : normal;
+        RwIm2DRenderLine(vertices, std::size(vertices), 0, 1);
     }
 
     RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(FALSE));
