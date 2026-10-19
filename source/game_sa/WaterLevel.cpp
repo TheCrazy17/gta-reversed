@@ -42,7 +42,7 @@ void CWaterLevel::InjectHooks() {
 
     RH_ScopedOverloadedInstall(GetWaterLevel, "", 0x6EB690, bool(*)(float, float, float, float&, uint8, CVector*));
     RH_ScopedGlobalInstall(SetUpWaterFog, 0x6EA9F0);
-    RH_ScopedGlobalInstall(FindNearestWaterAndItsFlow, 0x6E9D70, { .Reversed = false });
+    RH_ScopedGlobalInstall(FindNearestWaterAndItsFlow, 0x6E9D70);
     RH_ScopedGlobalInstall(GetWaterLevelNoWaves, 0x6E8580);
     RH_ScopedGlobalInstall(TestQuadToGetWaterLevel, 0x6E5BB0);
     RH_ScopedGlobalInstall(TestTriangleToGetWaterLevel, 0x6E5E90);
@@ -686,7 +686,69 @@ void CWaterLevel::SetUpWaterFog(int32 minX, int32 minY, int32 maxX, int32 maxY) 
 
 // 0x6E9D70
 void CWaterLevel::FindNearestWaterAndItsFlow() {
-    plugin::Call<0x6E9D70>();
+    const auto& camPos = TheCamera.GetPosition();
+    const auto  x      = camPos.x;
+    const auto  y      = camPos.y;
+
+    if (!(x > -3000.0f && x < 3000.0f && y > -3000.0f && y < 3000.0f)) {
+        TheCamera.m_fDistanceToWater = 0.0f;
+        TheCamera.m_fHeightOfNearestWater = 0.0f;
+        m_CurrentDesiredFlow = CVector2D{};
+        return;
+    }
+
+    float nearestWaveDist = 1e7f; // Nearest quad that has waves
+    float nearestFlowDist = 1e7f; // Nearest quad of any kind, used for the flow
+    float waterHeight     = 0.0f;
+
+    for (const auto& quad : std::span{ WaterQuads }.first(NumWaterQuads)) {
+        const CWaterVertex* const v[]{
+            &m_aVertices[quad.verts[0]],
+            &m_aVertices[quad.verts[1]],
+            &m_aVertices[quad.verts[2]],
+            &m_aVertices[quad.verts[3]],
+        };
+
+        // Distance to the quad's bounds, v0 is the min corner and v1 / v2 hold the max x / y
+        const auto minX = (float)v[0]->x, maxX = (float)v[1]->x;
+        const auto minY = (float)v[0]->y, maxY = (float)v[2]->y;
+        const auto dx   = x < minX ? minX - x : (x <= maxX ? 0.0f : x - maxX);
+        const auto dy   = y < minY ? minY - y : (y <= maxY ? 0.0f : y - maxY);
+        const auto dist = std::sqrt(dx * dx + dy * dy);
+
+        if (dist < nearestWaveDist) {
+            const auto hasWaves = std::ranges::any_of(v, [](auto* vert) { return vert->rp.bigWaves != 0.0f || vert->rp.smallWaves != 0.0f; });
+            if (hasWaves) {
+                waterHeight     = v[0]->rp.z;
+                nearestWaveDist = dist;
+            }
+        }
+
+        if (dist < nearestFlowDist) {
+            nearestFlowDist = dist;
+
+            // Use the flow of the corner closest to the camera
+            const auto sqDist = [&](const CWaterVertex* vert) {
+                return sq((float)vert->y - y) + sq((float)vert->x - x);
+            };
+            const auto d0 = sqDist(v[0]), d1 = sqDist(v[1]), d2 = sqDist(v[2]), d3 = sqDist(v[3]);
+
+            const CWaterVertex* closest;
+            if (d1 <= d0 || d2 <= d0 || d3 <= d0) {
+                if (d2 <= d1 || d3 <= d1) {
+                    closest = d3 <= d2 ? v[3] : v[2];
+                } else {
+                    closest = v[1];
+                }
+            } else {
+                closest = v[0];
+            }
+            m_CurrentDesiredFlow = CVector2D{ (float)closest->rp.flowX, (float)closest->rp.flowY } * (1.0f / 64.0f);
+        }
+    }
+
+    TheCamera.m_fDistanceToWater = nearestWaveDist;
+    TheCamera.m_fHeightOfNearestWater = waterHeight;
 }
 
 // 0x6E5BB0
