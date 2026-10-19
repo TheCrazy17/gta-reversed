@@ -96,7 +96,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(PickNextNodeToChaseCar, 0x426EF0, { .Reversed = false });
     RH_ScopedInstall(PickNextNodeToFollowPath, 0x427740, { .Reversed = false });
     RH_ScopedInstall(PossiblyRemoveVehicle, 0x424F80, { .Reversed = false });
-    RH_ScopedInstall(ReconsiderRoute, 0x42FC40, { .Reversed = false });
+    RH_ScopedInstall(ReconsiderRoute, 0x42FC40);
     RH_ScopedInstall(RegisterVehicleOfInterest, 0x423DE0);
     RH_ScopedInstall(ScanForPedDanger, 0x42CE40);
     RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0, { .Reversed = false });
@@ -1001,7 +1001,95 @@ void CCarCtrl::PruneVehiclesOfInterest() {
 
 // 0x42FC40
 void CCarCtrl::ReconsiderRoute(CVehicle* vehicle) {
-    plugin::Call<0x42FC40, CVehicle*>(vehicle);
+    static_assert(offsetof(CAutoPilot, m_ucCarMissionModeCounter) == 0x35);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    // Only every two seconds, staggered by the vehicle's seed
+    const auto seed = (uint32)vehicle->m_nRandomSeed;
+    if ((seed + CTimer::GetTimeInMS()) / 2000 == (seed + CTimer::GetPreviousTimeInMS()) / 2000) {
+        return;
+    }
+
+    switch (autoPilot.m_nCarMission) {
+    case MISSION_RAMPLAYER_FARAWAY:
+    case MISSION_BLOCKPLAYER_FARAWAY:
+    case MISSION_GOTOCOORDINATES:
+    case MISSION_RAMCAR_FARAWAY:
+    case MISSION_BLOCKCAR_FARAWAY:
+    case MISSION_APPROACHPLAYER_FARAWAY:
+    case MISSION_FOLLOWCAR_FARAWAY:
+    case MISSION_KILLPED_FARAWAY:
+    case MISSION_DO_DRIVEBY_FARAWAY:
+        break;
+    default:
+        autoPilot.m_ucCarMissionModeCounter = 0;
+        return;
+    }
+
+    CNodeAddress nodeA, nodeB;
+    FindNodesThisCarIsNearestTo(vehicle, nodeA, nodeB);
+    if (nodeA.m_wAreaId == UINT16_MAX) {
+        return;
+    }
+
+    // Nothing to do while the car is already on the route towards these nodes
+    const auto& current = autoPilot.m_currentAddress;
+    const auto& start   = autoPilot.m_startingRouteNode;
+    const auto& end     = autoPilot.m_endingRouteNode;
+    if ((current == nodeA && start == nodeB)
+        || (current == nodeB && start == nodeA)
+        || (end == nodeA && current == nodeB)
+        || (end == nodeB && current == nodeA)
+        || current == nodeB
+        || end == nodeB) {
+        autoPilot.m_ucCarMissionModeCounter = 0;
+        return;
+    }
+
+    // The route has to be wrong for a few checks in a row before doing anything about it
+    if (++autoPilot.m_ucCarMissionModeCounter <= 4) {
+        return;
+    }
+
+    CVector target;
+    switch (autoPilot.m_nCarMission) {
+    case MISSION_RAMPLAYER_FARAWAY:
+    case MISSION_BLOCKPLAYER_FARAWAY:
+    case MISSION_APPROACHPLAYER_FARAWAY:
+        target = FindPlayerCoors();
+        break;
+    case MISSION_GOTOCOORDINATES:
+        target = autoPilot.m_vecDestinationCoors;
+        break;
+    default:
+        target = autoPilot.m_TargetEntity->GetPosition();
+        break;
+    }
+
+    const auto  oneSideOnly           = autoPilot.carCtrlFlags.bCantGoAgainstTraffic;
+    const auto  includeNodesNoLinks   = vehicle->m_nModelIndex == MODEL_VORTEX;
+    constexpr auto MAX_SEARCH_DISTANCE = 999999.875f;
+
+    // First only measure the new route, and only take it when it is reasonable
+    int16 nodesCount = 0;
+    float distance   = 0.0f;
+    ThePaths.DoPathSearch(
+        PATH_TYPE_VEH, vehicle->GetPosition(), nodeB, target, nullptr, nodesCount, 0, &distance,
+        MAX_SEARCH_DISTANCE, nullptr, MAX_SEARCH_DISTANCE, oneSideOnly, current, includeNodesNoLinks, false
+    );
+    if (distance < 90000.0f && nodesCount >= 2) {
+        autoPilot.m_currentAddress      = nodeA;
+        autoPilot.m_startingRouteNode   = nodeB;
+        FindLinksToGoWithTheseNodes(vehicle);
+
+        ThePaths.DoPathSearch(
+            PATH_TYPE_VEH, vehicle->GetPosition(), nodeB, target, autoPilot.m_aPathFindNodesInfo.data(), reinterpret_cast<int16&>(autoPilot.m_nPathFindNodesCount), 8, nullptr,
+            MAX_SEARCH_DISTANCE, nullptr, MAX_SEARCH_DISTANCE, oneSideOnly, autoPilot.m_currentAddress, includeNodesNoLinks, false
+        );
+        autoPilot.RemoveOnePathNode();
+    }
+    autoPilot.m_ucCarMissionModeCounter = 0;
 }
 
 // 0x423DE0
