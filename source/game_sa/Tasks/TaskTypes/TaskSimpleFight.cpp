@@ -14,22 +14,35 @@ CTaskSimpleFight::~CTaskSimpleFight() {
 
 // 0x61C5E0
 bool CTaskSimpleFight::ControlFight(CEntity* entity, uint8 command) {
-    return plugin::CallMethodAndReturn<bool, 0x61C5E0, CTaskSimpleFight*, CEntity*, uint8>(this, entity, command);
+    m_bIsInControl = true;
+    if (entity != m_pTargetEntity) {
+        CEntity::ChangeEntityReference(m_pTargetEntity, entity);
+    }
+    if (static_cast<int8>(m_nNextCommand) < static_cast<int8>(command)) {
+        m_nNextCommand = command;
+    }
+    return true;
 }
 
 // 0x4ABDC0
 bool CTaskSimpleFight::IsComboSet() {
-    return plugin::CallMethodAndReturn<bool, 0x4ABDC0, CTaskSimpleFight*>(this);
+    return (CurrentComboData().m_wFlags & (0x10 << m_nCurrentMove)) != 0;
 }
 
 // 0x4ABDF0
 bool CTaskSimpleFight::IsHitComboSet() {
-    return plugin::CallMethodAndReturn<bool, 0x4ABDF0, CTaskSimpleFight*>(this);
+    return m_nCurrentMove < FIGHT_ATTACK_FIGHT_BLOCK
+        && (CurrentComboData().m_wFlags & (0x1000 << m_nCurrentMove)) != 0;
 }
 
 // 0x4ABDA0
 AssocGroupId CTaskSimpleFight::GetComboAnimGroupID() {
-    return plugin::CallMethodAndReturn<AssocGroupId, 0x4ABDA0, CTaskSimpleFight*>(this);
+    return CurrentComboData().m_nAnimGroup;
+}
+
+// The data of the combo that is set, a negative index (no combo) is treated as the first one
+const CMeleeInfo& CTaskSimpleFight::CurrentComboData() const {
+    return m_aComboData[std::max(0, m_nComboSet - MELEE_COMBO_UNARMED_1)];
 }
 
 // 0x5BEDC0
@@ -53,10 +66,10 @@ void CTaskSimpleFight::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleFight, 0x86D684, 9);
     RH_ScopedCategory("Tasks/TaskTypes");
 
-    RH_ScopedInstall(ControlFight, 0x61C5E0, { .Reversed = false });
-    RH_ScopedInstall(IsComboSet, 0x4ABDC0, { .Reversed = false });
-    RH_ScopedInstall(IsHitComboSet, 0x4ABDF0, { .Reversed = false });
-    RH_ScopedInstall(GetComboAnimGroupID, 0x4ABDA0, { .Reversed = false });
+    RH_ScopedInstall(ControlFight, 0x61C5E0);
+    RH_ScopedInstall(IsComboSet, 0x4ABDC0);
+    RH_ScopedInstall(IsHitComboSet, 0x4ABDF0);
+    RH_ScopedInstall(GetComboAnimGroupID, 0x4ABDA0);
     RH_ScopedInstall(LoadMeleeData, 0x5BEDC0, { .Reversed = false });
 }
 

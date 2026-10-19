@@ -92,6 +92,7 @@ public:
     void GetAvailableComboSet(CPed* ped, int8);
     void GetComboType(char*);
     AssocGroupId GetComboAnimGroupID();
+    const CMeleeInfo& CurrentComboData() const;
     void GetHitLevel(const char*);
     void GetHitSound(int32);
     void GetRange();
