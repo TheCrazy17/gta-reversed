@@ -137,6 +137,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(UpdateCarCount, 0x424000);
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
     RH_ScopedInstall(WeaveForObject, 0x426BC0, { .Reversed = false });
+    RH_ScopedInstall(WeaveForPed, 0x426970);
     RH_ScopedInstall(WeaveForOtherCar, 0x426350, { .Reversed = false });
     RH_ScopedInstall(WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D680);
     RH_ScopedInstall(WeaveThroughObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D950);
@@ -1312,7 +1313,48 @@ void CCarCtrl::WeaveForObject(CEntity* entity, CVehicle* vehicle, float* arg3, f
 
 // 0x426970 (not reversed yet)
 void CCarCtrl::WeaveForPed(CPed* ped, CVehicle* vehicle, float* arg3, float* arg4) {
-    plugin::Call<0x426970, CPed*, CVehicle*, float*, float*>(ped, vehicle, arg3, arg4);
+    // Vehicles ramming or hunting this very ped don't try to go around it
+    const auto mission = vehicle->m_autoPilot.m_nCarMission;
+    if ((mission == MISSION_RAMPLAYER_CLOSE && ped == FindPlayerPed())
+        || (mission == MISSION_KILLPED_CLOSE && (CEntity*)ped == (CEntity*)vehicle->m_autoPilot.m_TargetEntity)
+    ) {
+        return;
+    }
+
+    const auto delta   = ped->GetPosition() - vehicle->GetPosition();
+    const auto heading = CGeneral::GetATanOfXY(delta.x, delta.y);
+    const auto dist    = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+    if (dist < 1.0f) {
+        return;
+    }
+
+    // Brings an angle into [-pi, pi]
+    const auto Wrap = [](float angle) {
+        while (angle < -3.1415927f) {
+            angle += 6.2831855f;
+        }
+        while (angle > 3.1415927f) {
+            angle -= 6.2831855f;
+        }
+        return angle;
+    };
+
+    // Half of the angle the vehicle takes up when seen from the ped
+    const auto halfAngle = ((CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox().m_vecMax.x * 2.4f + 0.8f) / dist) * 0.5f;
+
+    // Extend the range of angles that are blocked
+    if (std::abs(Wrap(heading - *arg3)) < halfAngle) {
+        *arg3 = heading - halfAngle;
+        while (*arg3 < -3.1415927f) {
+            *arg3 += 6.2831855f;
+        }
+    }
+    if (std::abs(Wrap(heading - *arg4)) < halfAngle) {
+        *arg4 = halfAngle + heading;
+        while (*arg4 > 3.1415927f) {
+            *arg4 -= 6.2831855f;
+        }
+    }
 }
 
 // 0x426350
