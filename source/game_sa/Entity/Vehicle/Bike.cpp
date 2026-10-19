@@ -16,6 +16,14 @@
 #include "Enums/eWantedLevel.h"
 #include "VehicleRecording.h"
 #include "Shadows.h"
+#include "RwHelper.h"
+#include "SurfaceInfos_c.h"
+#include "Events/EventVehicleOnFire.h"
+#include "Fx/FxManager.h"
+#include "Stats.h"
+#include "Cheat.h"
+#include "Replay.h"
+#include "CullZones.h"
 #include "Plugins/RpAnimBlendPlugin/RpAnimBlend.h"
 #include "Animation/AnimBlendAssociation.h"
 
@@ -53,7 +61,7 @@ void CBike::InjectHooks() {
     RH_ScopedVMTInstall(Render, 0x6BDE20);
     RH_ScopedVMTInstall(PreRender, 0x6BD090);
     RH_ScopedVMTInstall(Teleport, 0x6BCFC0);
-    RH_ScopedVMTInstall(ProcessControl, 0x6B9250, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessControl, 0x6B9250);
     RH_ScopedVMTInstall(VehicleDamage, 0x6B8EC0);
     RH_ScopedVMTInstall(SetupSuspensionLines, 0x6B89B0);
     RH_ScopedVMTInstall(SetModelIndex, 0x6B8970);
@@ -1098,7 +1106,796 @@ int32 CBike::ProcessEntityCollision(CEntity* entity, CColPoint* outColPoints) {
 
 // 0x6B9250
 void CBike::ProcessControl() {
-    plugin::CallMethod<0x6B9250, CBike*>(this);
+    auto* const colModel = GetColModel();
+    auto* const colData  = colModel->m_pColData;
+    auto* const mi       = GetVehicleModelInfo();
+    const auto  ts       = CTimer::GetTimeStep();
+
+    uint32 extraHandlingFlags = 0;
+
+    m_vehicleAudio.Service();
+
+    vehicleFlags.bWarnedPeds        = false;
+    m_bLeanMatrixCalculated         = false;
+    m_nBrakesOn                     = 0;
+    bikeFlags.bPlayerBoost          = false;
+    vehicleFlags.bRestingOnPhysical = false;
+
+    if (CReplay::Mode == MODE_PLAYBACK) {
+        return;
+    }
+
+    ProcessCarAlarm();
+    ActivateBombWhenEntered();
+    UpdateClumpAlpha();
+
+    // Peds in the bike only collide with it after a frame of grace
+    if (!m_pDriver || (!m_pDriver->IsPlayer() && (!m_apPassengers[0] || !m_apPassengers[0]->IsPlayer()))) {
+        m_nTestPedCollision = 0;
+    } else if (m_nTestPedCollision == 1) {
+        m_nTestPedCollision = 2;
+    } else if (m_nTestPedCollision == 0) {
+        m_nTestPedCollision = 1;
+    }
+
+    ProcessAI(extraHandlingFlags);
+    if (GetStatus() == STATUS_SIMPLE) {
+        return;
+    }
+
+    if (bikeFlags.bOnSideStand) {
+        if (std::abs(GetRight().z) > 0.35f || std::abs(GetForward().z) > 0.5f) {
+            bikeFlags.bOnSideStand = false;
+        }
+    }
+
+    // Held up (side stand, being picked up or forced by the AI): the bike gets rotational damping and the centre of mass of the model
+    const auto IsHeldUp = [&] { return (extraHandlingFlags & 2) || bikeFlags.bGettingPickedUp || bikeFlags.bOnSideStand; };
+    if (!IsHeldUp()) {
+        m_vecCentreOfMass.x = m_pHandlingData->m_vecCentreOfMass.x;
+        m_vecCentreOfMass.y = m_pHandlingData->m_vecCentreOfMass.y;
+        m_vecCentreOfMass.z = m_BikeHandling->m_fNoPlayerCOMz;
+    } else {
+        const auto localTurn = GetMatrix().InverseTransformVector(m_vecTurnSpeed);
+
+        float pitchDamping = 0.9995f;
+        float rollDamping  = 0.9f;
+        float pitchWeight  = 1.0f;
+        if (GetStatus() == STATUS_PLAYER) {
+            if (m_aWheelRatios[0] < 1.0f || m_aWheelRatios[1] < 1.0f) {
+                // Front wheel on the ground, rear wheel in the air (a stoppie)
+                if (m_WheelCounts[2] <= 0.0f && m_WheelCounts[3] <= 0.0f) {
+                    pitchWeight = 100.0f;
+                    const auto limit  = CStats::GetFatAndMuscleModifier(STAT_MOD_13) * 0.075f;
+                    const auto weight = CStats::GetFatAndMuscleModifier(STAT_MOD_13) * 0.25f;
+                    if (GetForward().z < 0.0f) {
+                        const auto amount = std::abs(m_BikeHandling->m_fStoppieAng - GetForward().z) * weight;
+                        pitchDamping = (std::min(amount, limit) + 0.9f) * pitchDamping;
+                    }
+                }
+            } else {
+                // Front wheel in the air (a wheelie)
+                pitchWeight = 100.0f;
+                const auto weight = CStats::GetFatAndMuscleModifier(STAT_MOD_13) * 0.2f;
+                if ((m_aWheelRatios[2] >= 1.0f && m_aWheelRatios[3] >= 1.0f) || GetForward().z <= 0.0f) {
+                    pitchDamping = 0.98f;
+                } else {
+                    const auto amount = std::abs(m_BikeHandling->m_fWheelieAng - GetForward().z) * weight;
+                    pitchDamping = amount <= 0.05f ? pitchDamping - amount : pitchDamping - 0.05f;
+                }
+            }
+        }
+
+        pitchDamping = pitchDamping / (localTurn.x * localTurn.x * pitchWeight + 1.0f);
+        rollDamping  = rollDamping / (1000.0f * localTurn.y * localTurn.y + 1.0f);
+        pitchDamping = std::pow(pitchDamping, ts);
+        rollDamping  = std::pow(rollDamping, ts);
+
+        const auto pitchChange = localTurn.x * pitchDamping - localTurn.x;
+        const auto rollChange  = localTurn.y * rollDamping - localTurn.y;
+
+        ApplyTurnForce(-GetUp() * rollChange * m_fTurnMass, GetMatrix().TransformVector(m_vecCentreOfMass) + GetRight());
+        ApplyTurnForce(GetUp() * pitchChange * m_fTurnMass, GetMatrix().TransformVector(m_vecCentreOfMass) + GetForward());
+
+        if (GetStatus() != STATUS_PLAYER) {
+            m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
+        }
+    }
+
+    // Wrecked and abandoned bikes that stopped moving get their speed zeroed after a few frames
+    auto speedZeroed = false;
+    if (!m_bIsStuck && (GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_WRECKED) && !bikeFlags.bGettingPickedUp) {
+        const auto isIdle = !vehicleFlags.bVehicleColProcessed
+            && m_vecMoveSpeed.x == 0.0f && m_vecMoveSpeed.y == 0.0f && m_vecMoveSpeed.z == 0.0f
+            && m_aRatioHistory[3] != 1.0f;
+
+        float forceLimit, torqueLimit, movingLimit;
+        if (GetStatus() == STATUS_WRECKED) {
+            forceLimit  = 0.006f;
+            torqueLimit = 0.0015f;
+            movingLimit = 0.015f;
+        } else {
+            forceLimit  = 0.003f;
+            torqueLimit = 0.0009f;
+            movingLimit = 0.005f;
+        }
+
+        m_vecForce  = (m_vecForce + m_vecMoveSpeed) / 2.0f;
+        m_vecTorque = (m_vecTorque + m_vecTurnSpeed) / 2.0f;
+
+        forceLimit *= ts;
+        const auto isSlowForce = !(forceLimit * forceLimit < m_vecForce.SquaredMagnitude());
+        torqueLimit *= ts;
+        const auto isSlowTorque = !(torqueLimit * torqueLimit < m_vecTorque.SquaredMagnitude());
+
+        if ((isSlowForce && isSlowTorque && m_fMovingSpeed < movingLimit) || isIdle) {
+            m_nFakePhysics++;
+            if (m_nFakePhysics > 10 || isIdle) {
+                if (!isIdle || m_nFakePhysics > 10) {
+                    m_nFakePhysics = 10;
+                }
+                m_vecMoveSpeed = CVector{};
+                m_vecTurnSpeed = CVector{};
+                speedZeroed    = true;
+            }
+        } else {
+            m_nFakePhysics = 0;
+        }
+    }
+
+    for (auto* const phys : m_aGroundPhysicalPtrs) {
+        if (!phys) {
+            continue;
+        }
+        vehicleFlags.bRestingOnPhysical = true;
+        if (CWorld::bForceProcessControl && phys->m_bIsInSafePosition) {
+            SetWasPostponed(true);
+            return;
+        }
+    }
+    if (vehicleFlags.bRestingOnPhysical) {
+        speedZeroed    = false;
+        m_nFakePhysics = 0;
+    }
+
+    VehicleDamage(0.0f, eVehicleCollisionComponent::DEFAULT, nullptr, nullptr, nullptr, WEAPON_RAMMEDBYCAR);
+
+    // Hit from the side, standing still or being picked up
+    auto hitFromSide = false;
+    if (m_fDamageIntensity > 0.0f
+        && std::abs(DotProduct(m_vecLastCollisionImpactVelocity, GetRight())) > 0.5f
+        && m_vecMoveSpeed.SquaredMagnitude() < 0.1f) {
+        hitFromSide = true;
+    }
+    if (bikeFlags.bGettingPickedUp) {
+        hitFromSide = true;
+    }
+
+    // Ground contact of the wheels is read through these in every part that follows
+    static auto& wheelThrust     = StaticRef<float>(0xC1C27C);
+    static auto& frontWheelState = StaticRef<tWheelState>(0xC1C26C);
+    static auto& rearWheelState  = StaticRef<tWheelState>(0xC1C270);
+
+    if (speedZeroed) {
+        SkipPhysics();
+        vehicleFlags.bVehicleColProcessed = false;
+        vehicleFlags.bAudioChangingGear   = false;
+
+        if (bikeFlags.bOnSideStand) {
+            if (m_RideAnimData.BarSteerAngle < 0.34906587f) {
+                m_RideAnimData.BarSteerAngle += ts * 0.017453292f;
+            }
+
+            // The bike leans on the stand, the lean follows the way it sits
+            const auto smoothing = (float)std::pow(0.97, (double)ts);
+            const auto sideness  = std::clamp(GetRight().z, -1.0f, 1.0f);
+            const auto lean      = smoothing * m_RideAnimData.DesiredLeanAngle - (std::asin(sideness) + 0.2617994f) * (1.0f - smoothing);
+            m_RideAnimData.DesiredLeanAngle = lean;
+            m_RideAnimData.LeanAngle        = lean;
+        }
+    } else {
+        if (!vehicleFlags.bVehicleColProcessed) {
+            ProcessControlCollisionCheck(true);
+        }
+
+        // Steers by itself towards the side it falls to
+        if (!IsHeldUp()) {
+            if (GetRight().z >= 0.0f) {
+                if (m_fSteerAngle < 0.43633232f) {
+                    m_fSteerAngle += ts * 0.008726646f;
+                }
+            } else if (m_fSteerAngle > -0.43633232f) {
+                m_fSteerAngle -= ts * 0.008726646f;
+            }
+        }
+
+        // The wheelie animation of the player lowers the air resistance for the time it lasts
+        const auto airResistance = m_fAirResistance;
+        if (GetStatus() == STATUS_PLAYER && m_pDriver) {
+            if (auto* const assoc = RpAnimBlendClumpGetAssociation(m_pDriver->GetRpClump(), (uint32)ANIM_ID_BIKE_FWD);
+                assoc && assoc->m_BlendAmount > 0.5f && assoc->m_CurrentTime > 0.06f && assoc->m_CurrentTime < 0.14f) {
+                m_fAirResistance *= CCullZones::DoExtraAirResistanceForPlayer() ? 0.85f : 0.6f;
+                if (m_GasPedal > 0.5f && DotProduct(m_vecMoveSpeed, GetForward()) > 0.25f) {
+                    ApplyMoveForce(GetForward() * (ts * m_fMass * 0.0016f));
+                    bikeFlags.bPlayerBoost = true;
+                }
+            }
+        }
+
+        const auto wasSubmerged = physicalFlags.bSubmergedInWater;
+        CPhysical::ProcessControl();
+        m_fAirResistance = airResistance;
+        ProcessBuoyancy();
+
+        if (!wasSubmerged && physicalFlags.bSubmergedInWater) {
+            if (m_pDriver && m_pDriver->IsPlayer()) {
+                m_pDriver->AsPlayer()->ResetPlayerBreath();
+            } else {
+                for (auto i = 0; i < m_nMaxPassengers; i++) {
+                    if (m_apPassengers[i] && m_apPassengers[i]->IsPlayer()) {
+                        m_apPassengers[i]->AsPlayer()->ResetPlayerBreath();
+                    }
+                }
+            }
+        }
+
+        for (size_t i = 0; i < 4; i++) {
+            const auto restRatio = 1.0f - m_fSuspensionLength[i] / m_fLineLength[i];
+            m_aWheelRatios[i]    = (m_aWheelRatios[i] - restRatio) / (1.0f - restRatio);
+        }
+
+        const auto* const lines = colData->m_pLines;
+
+        std::array<CVector, 4> springDirs{};     // Direction of the suspension line of each wheel
+        std::array<CVector, 4> contactPoints{};  // Where the wheel touches, relative to the bike
+        std::array<CVector, 4> contactSpeeds{};  // Speed of that point
+        std::array<float, 4>   springForces{};
+
+        for (size_t i = 0; i < 4; i++) {
+            if (m_aWheelRatios[i] < 1.0f) {
+                contactPoints[i] = m_aWheelColPoints[i].m_vecPoint - GetPosition();
+                springDirs[i]    = GetMatrix().TransformVector(lines[i].m_vecEnd - lines[i].m_vecStart);
+                springDirs[i].Normalise();
+            }
+        }
+
+        m_aWheelSkidmarkType[0] = m_aWheelSkidmarkType[1] = (eSkidmarkType)0;
+        m_bMoreSkidMarks[0]     = m_bMoreSkidMarks[1]     = false;
+        for (size_t i = 0; i < 4; i++) {
+            if (m_aWheelRatios[i] < 1.0f) {
+                auto bias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
+                if (i >= 2) {
+                    bias = 1.0f - bias;
+                }
+
+                if (m_aWheelColPoints[i].m_vecNormal.z <= 0.35f) {
+                    ApplySpringCollision(m_pHandlingData->m_fSuspensionForceLevel, springDirs[i], contactPoints[i], m_aWheelRatios[i], bias, springForces[i]);
+                } else {
+                    ApplySpringCollisionAlt(m_pHandlingData->m_fSuspensionForceLevel, springDirs[i], contactPoints[i], m_aWheelRatios[i], bias, m_aWheelColPoints[i].m_vecNormal, springForces[i]);
+                }
+
+                const auto skidmark = g_surfaceInfos.GetSkidmarkType(m_aWheelColPoints[i].m_nSurfaceTypeB);
+                m_aWheelSkidmarkType[i >= 2 ? 1 : 0] = (eSkidmarkType)skidmark;
+                if (skidmark == 2) {
+                    m_bMoreSkidMarks[i >= 2 ? 1 : 0] = true;
+                }
+            } else {
+                contactPoints[i] = GetMatrix().TransformVector(lines[i].m_vecEnd);
+            }
+        }
+
+        // Speed of every contact point, relative to what the wheel stands on
+        const auto UpdateContactSpeeds = [&] {
+            for (size_t i = 0; i < 4; i++) {
+                contactSpeeds[i] = GetSpeed(contactPoints[i]);
+                if (m_aGroundPhysicalPtrs[i]) {
+                    contactSpeeds[i] -= m_aGroundPhysicalPtrs[i]->GetSpeed(m_aGroundOffsets[i]);
+                }
+            }
+        };
+        UpdateContactSpeeds();
+
+        // Wheels that touch a steep surface push along its normal instead of the suspension line
+        const auto UseNormalAsSpringDir = [&](size_t wheel, size_t colPoint) {
+            if (m_aWheelColPoints[colPoint].m_vecNormal.z > 0.35f) {
+                springDirs[wheel] = -m_aWheelColPoints[colPoint].m_vecNormal;
+            }
+        };
+        if (m_aWheelRatios[0] < 1.0f || m_aWheelRatios[1] < 1.0f) {
+            UseNormalAsSpringDir(0, m_aWheelRatios[0] >= 1.0f ? 1 : 0);
+            UseNormalAsSpringDir(1, m_aWheelRatios[1] >= 1.0f ? 0 : 1);
+        }
+        if (m_aWheelRatios[2] < 1.0f || m_aWheelRatios[3] < 1.0f) {
+            UseNormalAsSpringDir(2, m_aWheelRatios[2] >= 1.0f ? 3 : 2);
+            UseNormalAsSpringDir(3, m_aWheelRatios[3] >= 1.0f ? 2 : 3);
+        }
+
+        for (size_t i = 0; i < 4; i++) {
+            if (m_aWheelRatios[i] < 1.0f) {
+                ApplySpringDampening(m_pHandlingData->m_fSuspensionDampingLevel, springForces[i], springDirs[i], contactPoints[i], contactSpeeds[i]);
+            }
+        }
+        UpdateContactSpeeds();
+
+        // Engine and brakes
+        auto speedForward = DotProduct(m_vecMoveSpeed, GetForward());
+        auto acceleration = m_pHandlingData->GetTransmission().CalculateDriveAcceleration(
+            m_GasPedal,
+            m_nCurrentGear,
+            m_fGearChangeCount,
+            speedForward,
+            nullptr,
+            nullptr,
+            m_NumDriveWheelsOnGround,
+            CCheat::IsActive(CHEAT_PERFECT_HANDLING)
+        );
+        acceleration /= m_fVelocityFrequency;
+
+        auto brake = m_pHandlingData->m_fBrakeDeceleration * m_BrakePedal * ts;
+
+        float frontBrakeShare, rearBrakeShare, frontTractionShare, rearTractionShare;
+        if (GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_REMOTE_CONTROLLED && m_pHandlingData->m_bNpcNeutralHandl) {
+            frontBrakeShare = rearBrakeShare = frontTractionShare = rearTractionShare = 1.0f;
+        } else {
+            frontBrakeShare    = m_pHandlingData->m_fBrakeBias * 2.0f;
+            rearBrakeShare     = (1.0f - m_pHandlingData->m_fBrakeBias) * 2.0f;
+            frontTractionShare = m_pHandlingData->m_fTractionBias * 2.0f;
+            rearTractionShare  = 2.0f - frontTractionShare;
+        }
+
+        // Which wheels touch the ground, for how long, and the mean of their normals
+        m_NumDriveWheelsOnGroundLastFrame = m_NumDriveWheelsOnGround;
+        m_nNoOfContactWheels              = 0;
+        m_NumDriveWheelsOnGround          = 0;
+        for (size_t i = 0; i < 4; i++) {
+            if (m_aWheelRatios[i] >= 1.0f) {
+                m_WheelCounts[i] = std::max(m_WheelCounts[i] - ts, 0.0f);
+                if (m_WheelCounts[i] <= 0.0f) {
+                    continue;
+                }
+            } else {
+                m_WheelCounts[i] = 4.0f;
+            }
+
+            m_nNoOfContactWheels++;
+            if (i == 2 || i == 3) {
+                m_NumDriveWheelsOnGround = 1;
+            }
+            if (m_nNoOfContactWheels == 1) {
+                m_vecAveGroundNormal = m_aWheelColPoints[i].m_vecNormal;
+            } else {
+                m_vecAveGroundNormal += m_aWheelColPoints[i].m_vecNormal;
+            }
+        }
+        if (m_nNoOfContactWheels == 0) {
+            m_vecAveGroundNormal = CVector{ 0.0f, 0.0f, 1.0f };
+        } else {
+            m_vecAveGroundNormal *= 1.0f / (float)m_nNoOfContactWheels;
+            if (DotProduct(GetUp(), m_vecAveGroundNormal) < -0.5f) {
+                m_vecAveGroundNormal *= -1.0f;
+            }
+        }
+
+        // The point of the front and rear wheel that touches the ground, relative to the bike
+        const size_t frontLine = m_aWheelRatios[1] <= m_aWheelRatios[0] ? 1 : 0;
+        const size_t rearLine  = m_aWheelRatios[3] <= m_aWheelRatios[2] ? 3 : 2;
+
+        const CVector frontContactLocal{
+            0.0f,
+            lines[0].m_vecStart.y,
+            lines[0].m_vecStart.z - m_aWheelRatios[frontLine] * m_fSuspensionLength[0] - mi->m_fWheelSizeFront * 0.5f
+        };
+        const auto frontContact = GetMatrix().TransformVector(frontContactLocal);
+
+        const CVector rearContactLocal{
+            0.0f,
+            lines[3].m_vecStart.y,
+            lines[2].m_vecStart.z - m_aWheelRatios[rearLine] * m_fSuspensionLength[2] - mi->m_fWheelSizeRear * 0.5f
+        };
+        const auto rearContact = GetMatrix().TransformVector(rearContactLocal);
+
+        constexpr auto TRACTION_UNIT = (1.0f / (50.0f * 50.0f)) * 10.0f;
+        const auto     traction      = m_pHandlingData->m_fTractionMultiplier * m_fExtraTractionMult * TRACTION_UNIT * 0.25f;
+
+        // Handlebars
+        if (GetStatus() != STATUS_PLAYER && bikeFlags.bOnSideStand && !bikeFlags.bGettingPickedUp) {
+            if (m_RideAnimData.BarSteerAngle < 0.34906587f) {
+                m_RideAnimData.BarSteerAngle += ts * 0.02617994f;
+            }
+        } else if (std::abs(m_vecMoveSpeed.x) < 0.01f && std::abs(m_vecMoveSpeed.y) < 0.01f && m_fSteerAngle == 0.0f) {
+            m_RideAnimData.BarSteerAngle = (float)std::pow(0.96, (double)ts) * m_RideAnimData.BarSteerAngle;
+        } else {
+            auto steerShare = 1.0f;
+            if (speedForward > 0.01f && (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f) && GetStatus() == STATUS_PLAYER) {
+                CColPoint adhesionProbe{};
+                adhesionProbe.m_nSurfaceTypeA = (eSurfaceType)0x3C;
+                adhesionProbe.m_nSurfaceTypeB = (eSurfaceType)1;
+                auto limit = g_surfaceInfos.GetAdhesiveLimit(&adhesionProbe) * m_BikeHandling->m_fSpeedSteer * traction * 4.0f;
+
+                const auto adhesionGroup = g_surfaceInfos.GetAdhesionGroup(m_aWheelColPoints[rearLine].m_nSurfaceTypeB);
+                if (adhesionGroup == 3 || adhesionGroup == 4) {
+                    limit *= m_BikeHandling->m_fSlipSteer;
+                }
+
+                const auto ratio = std::min(limit / (speedForward * speedForward), 1.0f);
+                steerShare = std::asin(ratio) / (m_pHandlingData->m_fSteeringLock * 0.017453292f);
+                if ((m_fSteerAngle < 0.0f && m_RideAnimData.LeanAngle < 0.0f) || (m_fSteerAngle > 0.0f && m_RideAnimData.LeanAngle > 0.0f)) {
+                    steerShare *= 2.0f;
+                }
+                if (steerShare > 1.0f) {
+                    steerShare = 1.0f;
+                }
+            }
+            if (GetStatus() != STATUS_PLAYER) {
+                steerShare = 1.0f;
+            }
+            m_RideAnimData.BarSteerAngle = steerShare * m_fSteerAngle;
+        }
+
+        const auto moveSpeedBefore = m_vecMoveSpeed;
+        const auto rearWheelFirst  = m_pHandlingData->m_bProcRearwheelFirst;
+
+        // Projects the forward of the bike on the ground the wheel stands on, the result is the way the tyre rolls and slides
+        const auto GetWheelAxes = [&](const CVector& forward, size_t colPoint, CVector& outFwd, CVector& outRight) {
+            const auto& normal = m_aWheelColPoints[colPoint].m_vecNormal;
+            outFwd = forward - normal * DotProduct(forward, normal);
+            outFwd.Normalise();
+            outRight = CrossProduct(outFwd, normal);
+            outRight.Normalise();
+            if (hitFromSide) {
+                outRight.z = 0.0f;
+            }
+        };
+
+        // Grip of the tyre of the given wheel. The thrust and the surface type of the wheel are set before the lookup
+        const auto GetWheelAdhesion = [&](size_t colPoint, float thrust) {
+            wheelThrust = thrust;
+            m_aWheelColPoints[colPoint].m_nSurfaceTypeA = (eSurfaceType)0x3C;
+            return g_surfaceInfos.GetAdhesiveLimit(&m_aWheelColPoints[colPoint]);
+        };
+
+        // How much of the grip is kept while sliding on the given surface
+        const auto GetDestabilisation = [&](size_t colPoint) {
+            auto destab = 1.0f;
+            if (m_fBrakingSlide > 0.0f) {
+                switch (g_surfaceInfos.GetAdhesionGroup(m_aWheelColPoints[colPoint].m_nSurfaceTypeB)) {
+                case 1:
+                case 3: destab = 0.9f; break;
+                case 2: destab = 0.7f; break;
+                default: break;
+                }
+            }
+            return destab;
+        };
+
+        const auto GetWheelContactSpeed = [&](const CVector& contact, size_t groundIdx) {
+            auto speed = GetSpeed(contact);
+            if (m_aGroundPhysicalPtrs[groundIdx]) {
+                speed -= m_aGroundPhysicalPtrs[groundIdx]->GetSpeed(m_aGroundOffsets[groundIdx]);
+            }
+            return speed;
+        };
+
+        // The front wheel
+        const auto ProcessFrontWheel = [&](bool decayWithTime) {
+            if (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f) {
+                CVector steerDir = GetMatrix().TransformVector(CVector{ -std::sin(m_RideAnimData.BarSteerAngle), std::cos(m_RideAnimData.BarSteerAngle), 0.0f });
+
+                CVector wheelFwd, wheelRight;
+                GetWheelAxes(steerDir, frontLine, wheelFwd, wheelRight);
+
+                auto adhesion = GetWheelAdhesion(frontLine, 0.0f) * traction;
+                const auto destab = GetDestabilisation(frontLine);
+                if (GetStatus() == STATUS_PLAYER) {
+                    adhesion *= g_surfaceInfos.GetWetMultiplier(m_aWheelColPoints[frontLine].m_nSurfaceTypeB);
+                }
+                if (m_nWheelStatus[0] == 1) {
+                    adhesion *= 0.4f;
+                }
+
+                frontWheelState = m_WheelStates[0];
+                auto contactSpeed = GetWheelContactSpeed(frontContact, frontLine);
+                auto contact      = frontContact;
+                ProcessBikeWheel(wheelFwd, wheelRight, contactSpeed, contact, 2, wheelThrust, brake * frontBrakeShare, adhesion * frontTractionShare, destab, 0, &m_aWheelAngularVelocity[0], &frontWheelState, 0, m_nWheelStatus[0]);
+                if ((extraHandlingFlags & 4) && (frontWheelState == WHEEL_STATE_SPINNING || frontWheelState == WHEEL_STATE_SKIDDING)) {
+                    frontWheelState = WHEEL_STATE_NORMAL;
+                }
+            } else {
+                m_aWheelAngularVelocity[0] *= 0.95f;
+                m_aWheelPitchAngles[0] += decayWithTime ? m_aWheelAngularVelocity[0] * ts : m_aWheelAngularVelocity[0];
+            }
+        };
+
+        // Whether the original runs the front wheel before or after the rear one depends on the handling
+        if (!rearWheelFirst) {
+            ProcessFrontWheel(false);
+        }
+
+        // The rear wheel
+        if (m_WheelCounts[2] <= 0.0f && m_WheelCounts[3] <= 0.0f) {
+            if (vehicleFlags.bIsHandbrakeOn) {
+                m_aWheelAngularVelocity[1] = 0.0f;
+            } else if (acceleration != 0.0f) {
+                if (acceleration > 0.0f) {
+                    if (m_aWheelAngularVelocity[1] < 1.0f) {
+                        m_aWheelAngularVelocity[1] -= 0.1f;
+                    }
+                } else if (m_aWheelAngularVelocity[1] > -1.0f) {
+                    m_aWheelAngularVelocity[1] += 0.05f;
+                }
+            }
+            m_aWheelPitchAngles[1] += ts * m_aWheelAngularVelocity[1];
+        } else {
+            CVector wheelFwd, wheelRight;
+            GetWheelAxes(GetForward(), rearLine, wheelFwd, wheelRight);
+
+            // The rear wheel works on its own copy of the brake and the traction
+            auto rearBrake    = brake;
+            auto rearTraction = traction;
+            if (vehicleFlags.bIsHandbrakeOn) {
+                rearBrake   = 20000.0f;
+                m_fTyreTemp = 1.0f;
+            } else if (m_nBrakesOn) {
+                // The original passes the contact point as the force here, so the lever and the push swap places
+                const auto side = GetRight() * (m_fSteerAngle * m_fTurnMass * -0.0007f) * ts;
+                rearBrake       = 0.0f;
+                rearTraction    = 0.0f;
+                ApplyTurnForce(contactPoints[2], side);
+            } else if (m_fTyreTemp < 1.0f && m_GasPedal > 0.75f) {
+                rearTraction    = traction * m_fTyreTemp;
+                const auto side = GetRight() * ((1.0f - m_fTyreTemp) * m_fSteerAngle * m_fTurnMass * -0.0007f) * ts;
+                ApplyTurnForce(contactPoints[2], side);
+            }
+
+            if (wheelThrust > 0.0f && brake > 0.0f) {
+                brake = 0.0f;
+            }
+
+            auto adhesion = GetWheelAdhesion(rearLine, acceleration) * rearTraction;
+            const auto destab = GetDestabilisation(rearLine);
+            if (GetStatus() == STATUS_PLAYER) {
+                adhesion *= g_surfaceInfos.GetWetMultiplier(m_aWheelColPoints[rearLine].m_nSurfaceTypeB);
+            }
+            if (m_nWheelStatus[1] == 1) {
+                adhesion *= 0.4f;
+            }
+
+            rearWheelState = m_WheelStates[1];
+            auto contactSpeed = GetWheelContactSpeed(rearContact, rearLine);
+            auto contact      = rearContact;
+            ProcessBikeWheel(wheelFwd, wheelRight, contactSpeed, contact, 2, wheelThrust, rearBrake * rearBrakeShare, adhesion * rearTractionShare, destab, 1, &m_aWheelAngularVelocity[1], &rearWheelState, 1, m_nWheelStatus[1]);
+            if ((extraHandlingFlags & 4) && (rearWheelState == WHEEL_STATE_SPINNING || rearWheelState == WHEEL_STATE_SKIDDING)) {
+                rearWheelState = WHEEL_STATE_NORMAL;
+            }
+        }
+
+        if (m_nBrakesOn && m_WheelStates[1] == WHEEL_STATE_SPINNING) {
+            m_fTyreTemp -= ts * 0.002f;
+            if (m_fTyreTemp < 0.0f) {
+                m_fTyreTemp = 0.0f;
+            }
+        } else if (m_fTyreTemp < 1.0f) {
+            m_fTyreTemp += ts * 0.005f;
+        }
+
+        if (rearWheelFirst) {
+            ProcessFrontWheel(true);
+        }
+
+        m_aGroundPhysicalPtrs.fill(nullptr);
+
+        // How far the rider has leaned forward in the animation
+        auto animLean = 0.0f;
+        if (m_pDriver) {
+            if (auto* const assoc = RpAnimBlendClumpGetAssociation(m_pDriver->GetRpClump(), (uint32)ANIM_ID_BIKE_STILL)) {
+                animLean = assoc->m_BlendAmount * 0.17453294f;
+            }
+        }
+
+        if (hitFromSide) {
+            m_vecAveGroundNormal = CVector{ 0.0f, 0.0f, 1.0f };
+            auto sideAxis = CrossProduct(GetForward(), m_vecAveGroundNormal);
+            sideAxis.Normalise();
+            m_vecAveGroundNormal = CrossProduct(sideAxis, GetForward());
+            m_vecAveGroundNormal.Normalise();
+        }
+
+        float lean;
+        if ((extraHandlingFlags & 2) || bikeFlags.bGettingPickedUp) {
+            m_vecGroundRight = CrossProduct(GetForward(), m_vecAveGroundNormal);
+            m_vecGroundRight.Normalise();
+
+            float lateral;
+            if (m_pAttachedTo) {
+                lateral = 0.0f;
+            } else if (m_nNoOfContactWheels == 0) {
+                lateral = m_fSteerAngle / (m_pHandlingData->m_fSteeringLock * 0.017453292f) * ts * -0.004f;
+            } else {
+                CVector change;
+                if (physicalFlags.bDisableCollisionForce) {
+                    change = moveSpeedBefore - m_vecOldSpeedForPlayback;
+                    m_vecOldSpeedForPlayback = moveSpeedBefore;
+                } else {
+                    change = m_vecMoveSpeed - moveSpeedBefore;
+                }
+                lateral = DotProduct(change, m_vecGroundRight);
+            }
+
+            auto roll = lateral / (std::max(ts, 0.01f) * 0.008f);
+
+            const auto maxLean = (m_nWheelStatus[0] == 1 ? 0.4f : 1.0f) * m_BikeHandling->m_fMaxLean;
+            roll = std::max(-maxLean, std::min(roll, maxLean));
+
+            const auto smoothing = std::pow(m_BikeHandling->m_fDesLean, ts);
+            lean = (std::asin(roll) - animLean) * (1.0f - smoothing) + smoothing * m_RideAnimData.DesiredLeanAngle;
+        } else if (bikeFlags.bOnSideStand) {
+            const auto smoothing = (float)std::pow(0.97, (double)ts);
+            lean = smoothing * m_RideAnimData.DesiredLeanAngle - (std::asin(GetRight().z) + animLean + 0.2617994f) * (1.0f - smoothing);
+        } else {
+            lean = (float)std::pow(0.95, (double)ts) * m_RideAnimData.DesiredLeanAngle;
+        }
+        m_RideAnimData.DesiredLeanAngle = lean;
+        m_RideAnimData.LeanAngle        = lean;
+
+        m_WheelStates[0] = frontWheelState;
+        m_WheelStates[1] = rearWheelState;
+
+        if (m_GasPedal < 0.0f && m_WheelStates[1] == WHEEL_STATE_SPINNING) {
+            m_WheelStates[1] = WHEEL_STATE_NORMAL;
+        }
+
+        if (GetStatus() == STATUS_PLAYER) {
+            ProcessSirenAndHorn(true);
+        } else if (m_HornCounter) {
+            m_HornCounter--;
+        }
+    }
+
+    // On fire
+    if (m_fHealth < 250.0f && GetStatus() != STATUS_WRECKED) {
+        if (m_nVehicleSubType != VEHICLE_TYPE_BMX) {
+            auto* const modellingMatrix = GetModellingMatrix();
+            if (!m_pFireParticle && modellingMatrix) {
+                m_pFireParticle = g_fxMan.CreateFxSystem("fire_bike", GetDummyPositionObjSpace(DUMMY_ENGINE), modellingMatrix, false);
+                if (m_pFireParticle) {
+                    m_pFireParticle->Play();
+                    GetEventGlobalGroup()->Add(CEventVehicleOnFire{ this });
+                }
+            }
+        }
+
+        m_BlowUpTimer += (float)(uint32)(int32)(ts * 0.02f * 1000.0f);
+        if (m_BlowUpTimer > 5000.0f) {
+            BlowUpCar(m_Damager, false);
+        }
+    } else {
+        m_BlowUpTimer = 0.0f;
+        FxSystem_c::SafeKillAndClear(m_pFireParticle);
+    }
+
+    ProcessDelayedExplosion();
+
+    // Hard landings and rough ground shake the pad of the player
+    const auto speedSq   = m_vecMoveSpeed.SquaredMagnitude();
+    auto       landing   = 0.0f;
+    auto       roughness = 0.0f;
+    for (size_t i = 0; i < 4; i++) {
+        const auto drop = m_aRatioHistory[i] - m_aWheelRatios[i];
+        if (drop > 0.3f && (i == 0 || i == 2) && speedSq > 0.04f && (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PHYSICS) && drop > landing) {
+            landing = drop;
+        }
+        if (m_aWheelRatios[i] < 1.0f && GetStatus() == STATUS_PLAYER) {
+            roughness = std::max(roughness, (float)g_surfaceInfos.GetRoughness(m_aWheelColPoints[i].m_nSurfaceTypeB) * 0.1f);
+        }
+        m_aRatioHistory[i] = m_aWheelRatios[i];
+        m_aWheelRatios[i]  = 1.0f;
+    }
+    if ((CTimer::GetTimeInMS() & 0x7FF) > 800) {
+        if (roughness >= 0.29f) {
+            landing = 0.0f;
+        }
+        roughness = 0.0f;
+    }
+    if ((landing > 0.0f || roughness > 0.0f) && GetStatus() == STATUS_PLAYER && speedSq > 0.01f) {
+        const auto speed = std::sqrt(speedSq);
+        if (landing > 0.0f) {
+            const auto strength = (uint8)(int32)std::min(speed / m_fMass * landing * 400000.0f + 100.0f, 250.0f);
+            const auto time     = (int32)(ts * 20000.0f / (float)strength);
+            CPad::GetPad(0)->StartShake((int16)time, strength, 0);
+        } else {
+            const auto strength = (uint8)(int32)std::min(speed / m_fMass * roughness * 400000.0f + 40.0f, 150.0f);
+            const auto time     = (int32)(ts * 5000.0f / (float)strength);
+            CPad::GetPad(0)->StartShake((int16)time, strength, 0);
+        }
+    }
+
+    vehicleFlags.bVehicleColProcessed = false;
+    vehicleFlags.bAudioChangingGear   = false;
+    if (!vehicleFlags.bWarnedPeds) {
+        CCarCtrl::ScanForPedDanger(this);
+    }
+
+    if (physicalFlags.bDisableCollisionForce && physicalFlags.bCollidable) {
+        m_vecMoveSpeed         = CVector{};
+        m_vecTurnSpeed         = CVector{};
+        m_vecFrictionMoveSpeed = CVector{};
+        m_vecFrictionTurnSpeed = CVector{};
+    } else if (!speedZeroed
+               && (m_GasPedal == 0.0f || GetStatus() == STATUS_WRECKED)
+               && std::abs(m_vecMoveSpeed.x) < 0.005f && std::abs(m_vecMoveSpeed.y) < 0.005f && std::abs(m_vecMoveSpeed.z) < 0.005f
+               && (m_fDamageIntensity <= 0.0f || m_pDamageEntity != FindPlayerPed(-1))) {
+        m_vecTurnSpeed.z = 0.0f;
+        m_vecMoveSpeed   = CVector{};
+    }
+
+    if (!IsHeldUp()) {
+        return;
+    }
+
+    // Held up: pull the bike towards the way the ground tells it to stand
+    const auto groundSide = std::clamp(DotProduct(m_vecAveGroundNormal, GetRight()), -1.0f, 1.0f);
+    const auto comOffset  = GetMatrix().TransformVector(m_vecCentreOfMass);
+    const auto sidePoint  = comOffset + GetRight();
+    if (extraHandlingFlags & 2) {
+        ApplyTurnForce(GetUp() * (groundSide * m_fTurnMass * -0.07f) * ts, sidePoint);
+        bikeFlags.bOnSideStand = false;
+    } else {
+        ApplyTurnForce(GetUp() * (groundSide * m_fTurnMass * -0.1f) * ts, sidePoint);
+    }
+
+    if (GetStatus() != STATUS_PLAYER) {
+        return;
+    }
+
+    const auto& forward = GetForward();
+    const auto  nose    = comOffset + forward;
+    const auto  speedLength = m_vecMoveSpeed.Magnitude();
+
+    // How far the nose is from the wheelie or stoppie angle decides how strongly the bike is held
+    if (m_WheelCounts[0] <= 0.0f && m_WheelCounts[1] <= 0.0f && forward.z > 0.0f && (m_WheelCounts[2] > 0.0f || m_WheelCounts[3] > 0.0f)) {
+        const auto diff = m_BikeHandling->m_fWheelieAng - forward.z;
+        float error;
+        if (diff > 0.15f) {
+            error = std::max(0.3f - diff, 0.0f);
+        } else if (diff >= -0.08f) {
+            error = diff;
+        } else {
+            error = std::min(-0.14f - diff, 0.0f);
+        }
+
+        const auto limitedSpeed = std::min(speedLength, 0.1f);
+        const auto fat          = CStats::GetFatAndMuscleModifier(STAT_MOD_12);
+        const auto holdForce    = fat * (error * m_BikeHandling->m_fWheelieStabMult * limitedSpeed) * m_fTurnMass * ts * 0.5f;
+        ApplyTurnForce(GetUp() * holdForce, nose);
+
+        const auto steerForce = m_BikeHandling->m_fWheelieSteer * m_RideAnimData.BarSteerAngle * m_fTurnMass * ts * 0.5f;
+        ApplyTurnForce(GetRight() * steerForce, nose);
+
+        const auto sideForce = speedLength * m_fMass * m_BikeHandling->m_fWheelieSteer * m_RideAnimData.BarSteerAngle * ts * 0.01f;
+        ApplyMoveForce(GetRight() * sideForce * speedLength);
+
+        m_RideAnimData.LeanAngle += ts * m_RideAnimData.BarSteerAngle * -0.1f;
+    } else if (m_WheelCounts[2] <= 0.0f && m_WheelCounts[3] <= 0.0f && forward.z < 0.0f && (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f)) {
+        const auto diff = m_BikeHandling->m_fStoppieAng - forward.z;
+        float error;
+        if (diff > 0.15f) {
+            error = std::max(0.3f - diff, 0.0f);
+        } else if (diff >= -0.15f) {
+            error = diff;
+        } else {
+            error = std::min(-0.3f - diff, 0.0f);
+        }
+
+        const auto limitedSpeed = std::min(speedLength, 0.1f);
+        const auto fat          = CStats::GetFatAndMuscleModifier(STAT_MOD_12);
+        const auto holdForce    = fat * (error * m_BikeHandling->m_fStoppieStabMult * limitedSpeed) * m_fTurnMass * ts * 0.5f;
+        ApplyTurnForce(GetUp() * holdForce, nose);
+
+        auto heading = CrossProduct(CVector{ 0.0f, 0.0f, 1.0f }, GetRight());
+        heading.Normalise();
+        const auto headingForce = DotProduct(m_vecMoveSpeed, GetRight()) * m_fTurnMass * ts * 0.05f;
+        ApplyTurnForce(GetRight() * -headingForce, -heading);
+    }
 }
 
 // 0x6B6740
