@@ -5,12 +5,27 @@
 #include "CarCtrl.h"
 #include "FireManager.h"
 
+#include <numbers>
+
 auto& HARRIER_NOZZLE_ROTATERATE = StaticRef<float>(0x8D33DC);       // 25.0f
 auto& PLANE_DAMAGE_WAVE_COUNTER_VAR = StaticRef<float>(0x8D33E0);   // 0.75f
 auto& PLANE_DAMAGE_THRESHHOLD = StaticRef<float>(0x8D33E4);         // 500.0f
 auto& PLANE_DAMAGE_SCALE_MASS = StaticRef<float>(0x8D33E8);         // 10000.0f
 auto& PLANE_DAMAGE_DESTROY_THRESHHOLD = StaticRef<float>(0x8D33EC); // 5000.0f
 auto& vecRCBaronGunPos = StaticRef<CVector>(0x8D33F0);            // <0.0f, 0.45f, 0.0f>
+auto& PLANE_HYDRA_HOVER_ACCEL = StaticRef<float>(0x8D341C);         // 0.25f
+auto& PLANE_AILERON_PANEL_PULL = StaticRef<float>(0x8D3420);        // 10.0f
+auto& PLANE_AILERON_PANEL_SHAKE = StaticRef<float>(0x8D3424);       // 0.002f
+auto& PLANE_AILERON_DRIFT = StaticRef<float>(0x8D3428);             // 0.05f
+auto& PLANE_ELEVATOR_PANEL_PULL = StaticRef<float>(0x8D342C);       // 10.0f
+auto& PLANE_ELEVATOR_PANEL_SHAKE = StaticRef<float>(0x8D3430);      // 0.002f
+auto& PLANE_ELEVATOR_DRIFT = StaticRef<float>(0x8D3434);            // 0.05f
+auto& PLANE_RUDDER_PANEL_PULL = StaticRef<float>(0x8D3438);         // 10.0f
+auto& PLANE_RUDDER_PANEL_SHAKE = StaticRef<float>(0x8D343C);        // 0.002f
+auto& PLANE_RUDDER_DRIFT = StaticRef<float>(0x8D3440);              // 0.05f
+auto& PLANE_PROP_DAMAGE_SLOWDOWN = StaticRef<float>(0x8D3444);      // 0.2f
+auto& PLANE_DAMAGE_WAVE_PERIOD = StaticRef<int32>(0x8D3448);        // 2500
+auto& PLANE_PROP_DAMAGE_SPREAD = StaticRef<float>(0x8D344C);        // 0.8f
 
 void CPlane::InjectHooks() {
     RH_ScopedVirtualClass(CPlane, 0x871948, 71);
@@ -30,7 +45,7 @@ void CPlane::InjectHooks() {
     RH_ScopedVMTInstall(OpenDoor, 0x6CACB0);
     RH_ScopedVMTInstall(ProcessControl, 0x6C9260);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6CADD0);
-    RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6CB7C0, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6CB7C0);
     RH_ScopedVMTInstall(VehicleDamage, 0x6CC4B0);
     RH_ScopedInstall(CountPlanesAndHelis, 0x6CCA50);
     RH_ScopedInstall(AreWeInNoPlaneZone, 0x6CCAA0);
@@ -992,5 +1007,212 @@ void CPlane::ProcessControlInputs(uint8 playerNum) {
 
 // 0x6CB7C0
 void CPlane::ProcessFlyingCarStuff() {
-    plugin::CallMethod<0x6CB7C0, CPlane*>(this);
+    const auto dt = CTimer::GetTimeStep();
+    if (dt <= 0.0f) {
+        return;
+    }
+
+    // Phase of the shaking that the damaged parts apply, it moves by a random amount each frame
+    m_planeDamageWave += static_cast<int32>(
+        CGeneral::GetRandomNumberInRange(1.0f - PLANE_DAMAGE_WAVE_COUNTER_VAR, PLANE_DAMAGE_WAVE_COUNTER_VAR + 1.0f)
+        * static_cast<float>(static_cast<uint32>(static_cast<int32>(dt * 0.02f * 1000.0f)))
+    );
+
+    const auto speedFactor = std::min(m_vecMoveSpeed.Magnitude() * 3.0f, 1.0f);
+
+    // The inputs that end up in the flight model, they can be pushed by the damage
+    float skid      = m_fLeftRightSkid;
+    float upDown    = m_fSteeringUpDown;
+    float leftRight = m_fSteeringLeftRight;
+
+    if (m_fHealth < 250.0f && GetStatus() == STATUS_PLAYER) {
+        m_damageManager.SetAeroplaneCompStatus(PLANE_STATIC_PROP, DAMSTATE_DAMAGED);
+        m_damageManager.SetAeroplaneCompStatus(PLANE_MOVING_PROP, DAMSTATE_DAMAGED);
+
+        skid += 0.5f;
+        if (std::abs(GetRoll()) < 3.0f * std::numbers::pi_v<float> / 4.0f) {
+            leftRight += 0.75f;
+        }
+        if (std::abs(GetRoll()) > std::numbers::pi_v<float> / 2.0f) {
+            upDown += 0.5f;
+        }
+    }
+
+    if (m_nModelIndex != MODEL_RCBARON) {
+        for (int32 node = PLANE_STATIC_PROP; node < PLANE_NUM_NODES; node++) {
+            const auto state = static_cast<int32>(m_damageManager.GetAeroplaneCompStatus(node));
+            if (!m_aCarNodes[node] || state <= 0) {
+                continue;
+            }
+
+            // The bouncing panel of this part, if it has one. The original also looks one entry past the panels.
+            int32 panelIdx = -1;
+            for (int32 i = 0; i < static_cast<int32>(m_panels.size()); i++) {
+                if (static_cast<int16>(m_panels[i].m_nFrameId) == node) {
+                    panelIdx = i;
+                    break;
+                }
+            }
+
+            const auto  stateF  = static_cast<float>(state);
+            const auto  stateSq = static_cast<float>(state * state);
+            float       amount;
+
+            // The control surfaces drift on their own and pull their panel along
+            const auto DriftSurface = [&](float& axis, float& axisCopy, float drift, float panelShake, float panelPull) {
+                axis += CGeneral::GetRandomNumberInRange(-drift, drift) * stateSq * dt * speedFactor;
+                axisCopy = axis;
+                if (panelIdx >= 0) {
+                    auto& panel = m_panels[panelIdx];
+                    panel.m_vecPos.y += CGeneral::GetRandomNumberInRange(-panelShake, panelShake) * stateSq * dt * speedFactor;
+
+                    const auto pull = panelPull * panel.m_vecRotation.y;
+                    if (node == PLANE_AILERON_L) {
+                        axisCopy += pull;
+                    } else {
+                        axisCopy -= pull;
+                    }
+                }
+            };
+
+            switch (node) {
+            case PLANE_STATIC_PROP:
+            case PLANE_MOVING_PROP:
+            case PLANE_STATIC_PROP2:
+            case PLANE_MOVING_PROP2: {
+                if (m_fAccelerationBreakStatus > 0.0f) {
+                    const auto spread = CGeneral::GetRandomNumberInRange(1.0f - PLANE_PROP_DAMAGE_SPREAD, PLANE_PROP_DAMAGE_SPREAD + 1.0f);
+                    const auto wave   = std::sin(static_cast<float>(static_cast<uint32>(m_planeDamageWave)) * (2.0f * std::numbers::pi_v<float>) / static_cast<float>(static_cast<uint32>(PLANE_DAMAGE_WAVE_PERIOD)));
+                    m_fAccelerationBreakStatus += (wave - 1.0f) * spread * stateF * stateF * dt * PLANE_PROP_DAMAGE_SLOWDOWN;
+                }
+                amount = stateF * 0.5f;
+                break;
+            }
+            case PLANE_RUDDER: {
+                const auto s = stateF * 0.2f;
+                amount = s;
+                m_fLeftRightSkid *= 1.0f - s;
+                DriftSurface(m_fLeftRightSkid, skid, PLANE_RUDDER_DRIFT, PLANE_RUDDER_PANEL_SHAKE, PLANE_RUDDER_PANEL_PULL);
+                break;
+            }
+            case PLANE_ELEVATOR_L:
+            case PLANE_ELEVATOR_R: {
+                m_fSteeringUpDown *= 1.0f - stateF * 0.2f;
+                DriftSurface(m_fSteeringUpDown, upDown, PLANE_ELEVATOR_DRIFT, PLANE_ELEVATOR_PANEL_SHAKE, PLANE_ELEVATOR_PANEL_PULL);
+                amount = stateF * 0.15f;
+                break;
+            }
+            case PLANE_AILERON_L:
+            case PLANE_AILERON_R: {
+                m_fSteeringLeftRight *= 1.0f - stateF * 0.2f;
+                DriftSurface(m_fSteeringLeftRight, leftRight, PLANE_AILERON_DRIFT, PLANE_AILERON_PANEL_SHAKE, PLANE_AILERON_PANEL_PULL);
+                amount = stateF * 0.25f;
+                break;
+            }
+            default:
+                continue;
+            }
+
+            if (amount <= 0.0f || vehicleFlags.bIsDrowning) {
+                continue;
+            }
+
+            // Smoke is not made every frame at low speed, nor for planes far from the camera unless it is the player's
+            if (!(speedFactor > 0.3f) && (CGeneral::GetRandomNumber() & 7)) {
+                continue;
+            }
+            if (!((GetPosition() - TheCamera.GetPosition()).SquaredMagnitude() < sq(80.0f)) && GetStatus() != STATUS_PLAYER) {
+                continue;
+            }
+
+            const auto pos = GetMatrix().TransformPoint(CVector{ RwFrameGetMatrix(m_aCarNodes[node])->pos });
+
+            FxPrtMult_c prtMult{ 0.0f, 0.0f, 0.0f, 0.2f, 1.0f, 1.0f, amount };
+
+            CVector vel = m_vecMoveSpeed * 0.25f * 50.0f;
+            vel.x *= CGeneral::GetRandomNumberInRange(0.9f, 1.1f);
+            vel.y *= CGeneral::GetRandomNumberInRange(0.9f, 1.1f);
+            vel.z *= CGeneral::GetRandomNumberInRange(0.9f, 1.1f);
+
+            // Replaces the life that was given to the constructor
+            prtMult.m_fLife = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+
+            const CVector spawnPos{
+                pos.x + CGeneral::GetRandomNumberInRange(-amount, amount),
+                pos.y + CGeneral::GetRandomNumberInRange(-amount, amount),
+                pos.z + CGeneral::GetRandomNumberInRange(-amount, amount),
+            };
+            g_fx.m_SmokeHuge->AddParticle(spawnPos, vel, 0.0f, prtMult);
+        }
+    }
+
+    const auto status = GetStatus();
+    if (status != STATUS_PLAYER && status != STATUS_PHYSICS && status != STATUS_REMOTE_CONTROLLED) {
+        // Nobody flies it, the propeller winds down
+        const auto windDown = dt * 0.001f;
+        if (m_fPropSpeed <= windDown) {
+            vehicleFlags.bEngineOn = false;
+            m_fPropSpeed           = 0.0f;
+            return;
+        }
+        m_nFakePhysics = 0;
+        m_fPropSpeed -= m_fPropSpeed > PLANE_STD_PROP_SPEED ? dt * 0.003f : windDown;
+        return;
+    }
+
+    float targetPropSpeed = PLANE_STD_PROP_SPEED;
+    if (m_fAccelerationBreakStatus > 0.0f) {
+        targetPropSpeed = (PLANE_MAX_PROP_SPEED - PLANE_STD_PROP_SPEED) * m_fAccelerationBreakStatus + PLANE_STD_PROP_SPEED;
+    } else if (m_fAccelerationBreakStatus < 0.0f) {
+        targetPropSpeed = (PLANE_STD_PROP_SPEED - PLANE_MIN_PROP_SPEED) * m_fAccelerationBreakStatus + PLANE_STD_PROP_SPEED;
+    }
+
+    // Above the ceiling the engine loses power
+    if (status == STATUS_PLAYER || status == STATUS_REMOTE_CONTROLLED) {
+        const auto flightModel = m_nModelIndex != MODEL_RCBARON ? FLIGHTMODEL_PLANE : FLIGHTMODEL_RCPLANE;
+        const auto aboveCeiling = HeightAboveCeiling(GetPosition().z, flightModel);
+        if (aboveCeiling > 0.0f) {
+            targetPropSpeed *= std::max(0.0f, aboveCeiling * 0.02f);
+            m_fAccelerationBreakStatus = std::max(-1.0f, m_fAccelerationBreakStatus - aboveCeiling * 0.04f);
+        }
+    }
+
+    m_fPropSpeed += (targetPropSpeed - m_fPropSpeed) * dt * PLANE_ROC_PROP_SPEED;
+
+    if (vehicleFlags.bIsDrowning) {
+        vehicleFlags.bEngineOn     = false;
+        m_fPropSpeed               = 0.0f;
+        m_fAccelerationBreakStatus = 0.0f;
+    }
+
+    if (m_nModelIndex == MODEL_RCBARON) {
+        if (!vehicleFlags.bIsDrowning && vehicleFlags.bEngineOn) {
+            FlyingControl(FLIGHTMODEL_RCPLANE, skid, upDown, leftRight, m_fAccelerationBreakStatus);
+        }
+        return;
+    }
+
+    if (!vehicleFlags.bEngineOn) {
+        return;
+    }
+    if (m_fPropSpeed <= PLANE_MIN_PROP_SPEED && m_vecMoveSpeed.SquaredMagnitude() <= 0.05f) {
+        return;
+    }
+
+    // The Hydra flies like the Hunter while its nozzles point down
+    if (m_nModelIndex == MODEL_HYDRA && GetStatus() == STATUS_PLAYER
+        && static_cast<int32>(m_wMiscComponentAngle) >= static_cast<int16>(HARRIER_NOZZLE_SWITCH_LIMIT)
+    ) {
+        auto* const planeHandling = m_pFlyingHandlingData;
+        m_pFlyingHandlingData = gHandlingDataMgr.GetFlyingPointer(static_cast<uint8>(CModelInfo::GetVehicleModelInfo(MODEL_HUNTER)->m_nHandlingId));
+
+        if (m_fAccelerationBreakStatus > 0.0f || (m_nNumContactWheels < 4 && !physicalFlags.bTouchingWater)) {
+            FlyingControl(FLIGHTMODEL_HELI, skid, upDown, -leftRight, PLANE_HYDRA_HOVER_ACCEL * m_fAccelerationBreakStatus);
+        }
+
+        m_pFlyingHandlingData = planeHandling;
+        return;
+    }
+
+    FlyingControl(FLIGHTMODEL_PLANE, skid, upDown, leftRight, m_fAccelerationBreakStatus);
 }
