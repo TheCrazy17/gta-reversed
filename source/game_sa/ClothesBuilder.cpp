@@ -43,7 +43,7 @@ void CClothesBuilder::InjectHooks() {
     RH_ScopedOverloadedInstall(BlendTextures, "Dst-Src1-Src2-Tat", 0x5A5BC0, void (*)(RwTexture*, RwTexture*, RwTexture*, float, float, float, int32, RwTexture*));
     RH_ScopedGlobalInstall(GetTextureFromTxdAndLoadNextTxd, 0x5A5F70);
     RH_ScopedInstall(ConstructTextures, 0x5A6040, { .Reversed = false });
-    RH_ScopedInstall(ConstructGeometryAndSkinArrays, 0x5A6530, { .Reversed = false });
+    RH_ScopedInstall(ConstructGeometryAndSkinArrays, 0x5A6530);
     RH_ScopedInstall(CreateSkinnedClump, 0x5A69D0);
 }
 
@@ -495,8 +495,97 @@ void CClothesBuilder::ConstructTextures(RwTexDictionary* dict, uint32* hashes, f
 }
 
 // 0x5A6530
-void CClothesBuilder::ConstructGeometryAndSkinArrays(RpHAnimHierarchy* pBoneHier, RpGeometry** ppGeometry, RwMatrixWeights** ppWeights, uint32** ppIndices, uint32 numModels, RpGeometry** pGeometrys, RpMaterial** pMaterial) {
-    plugin::Call<0x5A6530>(pBoneHier, ppGeometry, ppWeights, ppIndices, numModels, pGeometrys, pMaterial);
+void CClothesBuilder::ConstructGeometryAndSkinArrays(RpHAnimHierarchy* boneHier, RpGeometry** outGeometry, RwMatrixWeights** outWeights, uint32** outBoneIdxs, uint32 numModels, RpGeometry** geometries, RpMaterial** materials) {
+    int32 totalNumVerts{}, totalNumTris{};
+    for (auto i = 0u; i < numModels; i++) {
+        if (const auto g = geometries[i]) {
+            totalNumTris  += RpGeometryGetNumTriangles(g);
+            totalNumVerts += RpGeometryGetNumVertices(g);
+        }
+    }
+
+    // All of the parts end up in a single geometry
+    const auto geo = RpGeometryCreate(
+        totalNumVerts,
+        totalNumTris,
+        rpGEOMETRYTRISTRIP | rpGEOMETRYTEXTURED | rpGEOMETRYNORMALS | rpGEOMETRYLIGHT
+    );
+    *outGeometry = geo;
+
+    const auto morphTarget = RpGeometryGetMorphTarget(geo, 0);
+    auto*      dstVerts    = RpMorphTargetGetVertices(morphTarget);
+    auto*      dstNormals  = RpMorphTargetGetVertexNormals(morphTarget);
+    auto*      dstUVs      = RpGeometryGetVertexTexCoords(geo, 1);
+    auto*      dstTri      = RpGeometryGetTriangles(geo);
+
+    auto vertexOffset = 0;
+    for (auto i = 0u; i < numModels; i++) {
+        const auto g = geometries[i];
+        if (!g) {
+            continue;
+        }
+
+        const auto numVerts  = RpGeometryGetNumVertices(g);
+        const auto srcMorph  = RpGeometryGetMorphTarget(g, 0);
+        const auto srcVerts  = RpMorphTargetGetVertices(srcMorph);
+        const auto srcNormls = RpMorphTargetGetVertexNormals(srcMorph);
+        const auto srcUVs    = RpGeometryGetVertexTexCoords(g, 1);
+        for (auto v = 0; v < numVerts; v++) {
+            *dstVerts++   = srcVerts[v];
+            *dstNormals++ = srcNormls[v];
+            *dstUVs++     = srcUVs[v];
+        }
+
+        const auto* srcTri = RpGeometryGetTriangles(g);
+        for (auto t = RpGeometryGetNumTriangles(g); t > 0; t--, srcTri++, dstTri++) {
+            RpGeometryTriangleSetVertexIndices(
+                geo,
+                dstTri,
+                srcTri->vertIndex[0] + (RwUInt16)vertexOffset,
+                srcTri->vertIndex[1] + (RwUInt16)vertexOffset,
+                srcTri->vertIndex[2] + (RwUInt16)vertexOffset
+            );
+            RpGeometryTriangleSetMaterial(geo, dstTri, materials[i]);
+        }
+        vertexOffset += numVerts;
+    }
+
+    RwSphere sphere;
+    RpMorphTargetCalcBoundingSphere(morphTarget, &sphere);
+    RpMorphTargetSetBoundingSphere(morphTarget, &sphere);
+    RpGeometryUnlock(geo);
+
+    // Bone indices have to be remapped to the bones of the combined skeleton
+    auto* const weights = (RwMatrixWeights*)::operator new(totalNumVerts * sizeof(RwMatrixWeights));
+    auto* const boneIdx = (uint8*)::operator new(totalNumVerts * sizeof(uint32));
+    *outWeights         = weights;
+    *outBoneIdxs        = (uint32*)boneIdx;
+
+    auto* dstWeights = weights;
+    auto* dstBones   = boneIdx;
+    for (auto i = 0u; i < numModels; i++) {
+        const auto g = geometries[i];
+        if (!g) {
+            continue;
+        }
+
+        const auto skin     = RpSkinGeometryGetSkin(g);
+        const auto numVerts = RpGeometryGetNumVertices(g);
+
+        uint8 boneTable[64];
+        BuildBoneIndexConversionTable(boneTable, boneHier, i);
+
+        for (auto v = 0; v < numVerts; v++) {
+            const auto* srcBones = (const uint8*)RpSkinGetVertexBoneIndices(skin) + v * 4;
+            dstBones[0] = boneTable[srcBones[0]];
+            dstBones[1] = boneTable[srcBones[1]];
+            dstBones[2] = boneTable[srcBones[2]];
+            dstBones[3] = boneTable[srcBones[3]];
+            *dstWeights = RpSkinGetVertexBoneWeights(skin)[v];
+            dstWeights++;
+            dstBones += 4;
+        }
+    }
 }
 
 // 0x5A69D0
