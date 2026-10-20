@@ -9,6 +9,7 @@
 #include "Entity/Object/Object.h"
 #include "Models/ModelInfo.h"
 #include "World.h"
+#include "Building.h"
 
 // One-shot flag: has the rare/special office filler item already been placed this game session?
 // Sits right next to InteriorGroup_c.cpp's bInteriorPedsEnabled (0xBB3DC2) in the same small block of flags.
@@ -84,7 +85,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(FindBoundingBox, 0x5922C0);
     RH_ScopedInstall(CalcExitPts, 0x5924A0);
     RH_ScopedInstall(IsVisible, 0x5929F0);
-    RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .Reversed = false });
+    RH_ScopedInstall(PlaceFurniture, 0x592AA0);
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120);
     RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340);
     RH_ScopedInstall(FindEmptyTiles, 0x591C50);
@@ -2154,17 +2155,113 @@ bool Interior_c::IsVisible() {
 }
 
 // 0x592AA0
-// NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows
-// callers TEST/JZ on EAX and pass the result straight into AddInteriorInfo's CEntity* param).
-CObject* Interior_c::PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9) {
-    return plugin::CallMethodAndReturn<CObject*, 0x592AA0, Interior_c*, Furniture_c*, int32, int32, float, int32, int32, int32*, int32*, uint8>(this, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+// NOTSA: Header signature only - the return value is the placed entity (a CBuilding here, callers only use it as the
+// CEntity* to ignore in AddInteriorInfo and test it against null).
+// mode: 0 hangs from the ceiling, 1 stands on the floor and takes up tiles, 2 stands on the floor without taking tiles.
+// rotation: quarter turns around Z. Out parameters get the tiles the furniture covers after the rotation.
+CEntity* Interior_c::PlaceFurniture(Furniture_c* furniture, int32 x, int32 y, float offsetZ, int32 mode, int32 rotation, int32* outXSpan, int32* outYSpan, uint8 skipTileCheck) {
+    const auto Fail = [&]() -> CEntity* {
+        *outXSpan = 0;
+        *outYSpan = 0;
+        return nullptr;
+    };
+
+    if (g_furnitureEntityFreeList.GetNumItems() <= 0) {
+        return Fail();
+    }
+
+    // The tiles taken are swapped when it is turned a quarter
+    const int32 widthX = (uint8)furniture->m_nWidthX;
+    const int32 widthY = (uint8)furniture->m_nWidthY;
+    const bool  swap   = rotation == 1 || rotation == 3;
+    const int32 xSpan  = swap ? widthY : widthX;
+    const int32 ySpan  = swap ? widthX : widthY;
+
+    if (mode == 1 && !skipTileCheck && !CheckTilesEmpty(x, y, xSpan, ySpan, furniture->m_bCanPlaceInFrontOfWindow)) {
+        return Fail();
+    }
+
+    // A small random turn around the middle of the furniture
+    CMatrix jitter;
+    if ((uint8)furniture->m_nMaxAng > 0) {
+        const auto pivotX = 0.5f - (float)widthX * 0.5f;
+        const auto pivotY = 0.5f - (float)widthY * 0.5f;
+
+        CMatrix toPivot;
+        toPivot.SetUnity();
+        toPivot.SetTranslate({ pivotX, pivotY, 0.0f });
+
+        CMatrix turn;
+        turn.SetUnity();
+        turn.RotateZ((float)CGeneral::GetRandomNumberInRange<int32>(-(int32)(uint8)furniture->m_nMaxAng, (int32)(uint8)furniture->m_nMaxAng) * DEG_TO_RAD);
+
+        CMatrix fromPivot;
+        fromPivot.SetUnity();
+        fromPivot.SetTranslate({ -pivotX, -pivotY, 0.0f });
+
+        jitter = (fromPivot * turn) * toPivot;
+    } else {
+        jitter.SetUnity();
+    }
+
+    const CMatrix boxMatrix(&m_matrix, false);
+
+    CMatrix local;
+    local.SetUnity();
+    local.RotateZ((float)rotation * (PI / 2.0f));
+
+    // Turning around the corner of the footprint moves the origin to the other side of it
+    int32 extraX = 0;
+    int32 extraY = 0;
+    switch (rotation) {
+    case 1: extraX = xSpan - 1; break;
+    case 2: extraX = xSpan - 1; extraY = ySpan - 1; break;
+    case 3: extraY = ySpan - 1; break;
+    }
+
+    if (mode == 0 || mode == 1 || mode == 2) {
+        const auto  height = (float)(int32)m_box->m_height;
+        const auto& box    = *m_box;
+        const auto  posX   = (float)(-(int32)box.m_width) * 0.5f + (float)extraX + (float)x + 0.5f;
+        const auto  posY   = (float)(-(int32)box.m_depth) * 0.5f + (float)extraY + (float)y + 0.5f;
+        const auto  posZ   = mode == 0 ? height * 0.5f - offsetZ : (-height) * 0.5f + offsetZ;
+        local.GetPosition() += CVector{ posX, posY, posZ };
+    }
+
+    CMatrix finalMatrix = (boxMatrix * local) * jitter;
+
+    auto* const furn = g_furnitureEntityFreeList.RemoveHead();
+    if (!furn) {
+        return Fail();
+    }
+
+    auto* const building = new CBuilding();
+    furn->m_entity = building;
+    building->SetModelIndex(furniture->m_nModelId);
+    building->SetMatrix(finalMatrix);
+    building->SetAreaCode((eAreaCodes)m_areaCode);
+    building->m_bDontCastShadowsOn = true;
+    building->m_bIsTempBuilding    = true;
+    CWorld::Add(building);
+
+    furn->m_tileX = (uint16)x;
+    furn->m_tileY = (uint16)y;
+    m_list.AddItem(furn);
+
+    if (mode == 1) {
+        SetTilesStatus(x, y, xSpan, ySpan, furniture->m_bIsTall ? 6 : 5, true);
+    }
+
+    *outXSpan = xSpan;
+    *outYSpan = ySpan;
+    return furn->m_entity;
 }
 
 // 0x593120
 // NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows callers
 // TEST/JZ on EAX and feed the result straight into AddInteriorInfo/Lounge_Add*Info's CEntity* params, same
 // fix as PlaceFurniture).
-CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 side, int32 posAlongWall, int32 offset, int32* outSide,
+CEntity* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 side, int32 posAlongWall, int32 offset, int32* outSide,
                                       int32* outPos, int32* outX, int32* outY, int32* outA, int32* outB) {
     auto* const furniture = g_furnitureMan.GetFurniture(furnitureGroupId, furnitureSubgroupId, (int16)furnitureId, m_box->m_status);
     if (!furniture) {
@@ -2227,7 +2324,7 @@ CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitur
 // 0x593340
 // NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows the
 // caller TEST/JZ-ing EAX right after the call, same fix as PlaceFurniture/PlaceFurnitureOnWall).
-CObject* Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 cornerSide, int32 offset, int32* outSide, int32* outX, int32* outY,
+CEntity* Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 cornerSide, int32 offset, int32* outSide, int32* outX, int32* outY,
                                         int32* outA, int32* outB) {
     auto* const furniture = g_furnitureMan.GetFurniture(furnitureGroupId, furnitureSubgroupId, (int16)id, m_box->m_status);
     if (!furniture) {

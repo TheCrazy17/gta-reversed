@@ -113,10 +113,10 @@ public:
     void FindBoundingBox(int32 x, int32 y, int32* minX, int32* maxX, int32* minY, int32* maxY, int32* visited);
     void CalcExitPts();
     bool IsVisible();
-    CObject* PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a4, int32 a5, int32 a6, int32* a7, int32* a8, uint8 a9);
-    CObject* PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10, int32* a11,
+    CEntity* PlaceFurniture(Furniture_c* furniture, int32 x, int32 y, float offsetZ, int32 mode, int32 rotation, int32* outXSpan, int32* outYSpan, uint8 skipTileCheck);
+    CEntity* PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10, int32* a11,
                               int32* a12, int32* a13, int32* a14, int32* a15);
-    CObject* PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11, int32* a12,
+    CEntity* PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11, int32* a12,
                                 int32* a13);
     bool FindEmptyTiles(int32 xSpan, int32 ySpan, int32* outX, int32* outY);
     void FurnishShop(int8 furnitureGroupId); // NOTSA: header previously declared `int32 a2` - raw disasm shows only the low byte is ever read (stored straight into m_furnitureGroupId, itself int8)
