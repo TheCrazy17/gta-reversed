@@ -3,6 +3,8 @@
 #include <extensions/Shapes/AngledRect.hpp>
 #include "Tasks/TaskTypes/TaskSimpleFinishBrain.h"
 #include "Tasks/TaskSequences.h"
+#include "Tasks/PedScriptedTaskRecord.h"
+#include "Tasks/TaskTypes/TaskSimpleHoldEntity.h"
 #include "Tasks/TaskTypes/TaskSimpleAffectSecondaryBehaviour.h"
 #include "Tasks/TaskTypes/TaskSimpleRunNamedAnim.h"
 
@@ -84,7 +86,7 @@ void CRunningScript::InjectHooks() {
     RH_ScopedInstall(ShutdownThisScript, 0x465AA0);
     RH_ScopedInstall(IsPedDead, 0x464D70);
     RH_ScopedInstall(ThisIsAValidRandomPed, 0x489490);
-    RH_ScopedInstall(ScriptTaskPickUpObject, 0x46AF50, { .Reversed = false });
+    RH_ScopedInstall(ScriptTaskPickUpObject, 0x46AF50);
     RH_ScopedInstall(UpdateCompareFlag, 0x4859D0, { .StackArgumentsToPreserve = 1, .PreserveRegisters = true });
     RH_ScopedInstall(UpdatePC, 0x464DA0, { .StackArgumentsToPreserve = 1, .PreserveRegisters = true });
     RH_ScopedInstall(ProcessOneCommand, 0x469EB0);
@@ -1124,7 +1126,42 @@ int16 CRunningScript::GetPadState(uint16 playerIndex, eButtonId buttonId) {
 
 // 0x46AF50
 void CRunningScript::ScriptTaskPickUpObject(int32 commandId) {
-    plugin::CallMethod<0x46AF50, CRunningScript*, int32>(this, commandId);
+    constexpr auto OPCODE_PICK_UP_OBJECT_AS_SECONDARY = 0x70A;
+
+    CollectParameters(7);
+    const auto pedHandle = ScriptParams[0].iParam;
+    auto* const object   = GetObjectPool()->GetAtRef(ScriptParams[1].iParam);
+    const CVector offset{ ScriptParams[2].fParam, ScriptParams[3].fParam, ScriptParams[4].fParam };
+    const auto boneFrameId = (uint8)ScriptParams[5].iParam;
+    const auto boneFlags   = (uint8)ScriptParams[6].iParam;
+
+    char animName[24];
+    char animGroup[16];
+    ReadTextLabelFromScript(animName, sizeof(animName));
+    ReadTextLabelFromScript(animGroup, sizeof(animGroup));
+    const auto noAnim = !strcmp(animName, "NULL") || !strcmp(animGroup, "NULL");
+
+    CollectParameters(1);
+    const auto animFlags = ScriptParams[0].iParam == 0
+        ? (eAnimationFlags)(ANIMATION_IS_PARTIAL | ANIMATION_IS_FINISH_AUTO_REMOVE)
+        : ANIMATION_IS_PARTIAL;
+
+    CTask* task = noAnim
+        ? new CTaskSimpleHoldEntity{ object, &offset, boneFrameId, boneFlags, (AnimationId)0xBF, (AssocGroupId)0, false }
+        : new CTaskSimpleHoldEntity{ object, &offset, boneFrameId, boneFlags, animName, animGroup, animFlags };
+
+    if (pedHandle == -1) {
+        if (commandId != OPCODE_PICK_UP_OBJECT_AS_SECONDARY) {
+            delete task; // Nothing to put it in, the original just forgets about it
+            return;
+        }
+        CTaskSequences::AddTaskToActiveSequence(new CTaskSimpleAffectSecondaryBehaviour{ true, TASK_SECONDARY_PARTIAL_ANIM, task });
+        return;
+    }
+
+    auto* const ped = GetPedPool()->GetAtRef(pedHandle);
+    ped->GetTaskManager().SetTaskSecondary(task, commandId == OPCODE_PICK_UP_OBJECT_AS_SECONDARY ? TASK_SECONDARY_PARTIAL_ANIM : TASK_SECONDARY_ATTACK);
+    CPedScriptedTaskRecord::ms_scriptedTasks[CPedScriptedTaskRecord::GetVacantSlot()].Set(ped, commandId, task);
 }
 
 // 0x464DC0
