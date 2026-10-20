@@ -48,7 +48,7 @@ void CFont::InjectHooks() {
     RH_ScopedInstall(RenderFontBuffer, 0x719840);
     RH_ScopedInstall(GetStringWidth, 0x71A0E0);
     RH_ScopedInstall(DrawFonts, 0x71A210);
-    RH_ScopedInstall(ProcessCurrentString, 0x71A220, { .Reversed = false });
+    RH_ScopedInstall(ProcessCurrentString, 0x71A220);
     RH_ScopedInstall(GetNumberLines, 0x71A5E0);
     RH_ScopedInstall(ProcessStringToDisplay, 0x71A600);
     RH_ScopedInstall(GetTextRect, 0x71A620);
@@ -698,7 +698,117 @@ void CFont::DrawFonts() {
 
 // 0x71A220
 int16 CFont::ProcessCurrentString(bool print, float x, float y, const GxtChar* text) {
-    return plugin::CallAndReturn<int16, 0x71A220, bool, float, float, const GxtChar*>(print, x, y, text);
+    // Stores a line of text and its render state in the font buffer (0x719B40)
+    const auto PrintLine = [](float lineX, float lineY, const char* begin, const char* end, float spaceStep) {
+        plugin::Call<0x719B40, float, float, const char*, const char*, float>(lineX, lineY, begin, end, spaceStep);
+    };
+
+    const auto savedColor = m_Color;
+    const auto centred    = m_bFontCentreAlign;
+    const auto rightAlign = m_bFontRightAlign;
+
+    int16  numLines     = 0;
+    int32  numSpaces    = 0;
+    float  width        = (!centred && !rightAlign) ? x : 0.0f; // Width of what is in the current line
+    float  lastWordEnd  = 0.0f;                                 // Width up to the last space of the line
+    float  lineY        = y;
+    bool   firstWord    = true;
+    char   pendingTag   = '\0';
+    char   rebuilt[256];
+
+    auto* const textStart = reinterpret_cast<const char*>(text);
+    auto*       cur       = const_cast<char*>(textStart);
+    auto*       lineBegin = cur;
+
+    while (*cur) {
+        PS2Symbol = EXSYMBOL_NONE;
+
+        const auto wordWidth = GetStringWidth(reinterpret_cast<const GxtChar*>(cur), false, false);
+        if (*cur == '~') {
+            CRGBA unused;
+            cur = ParseToken(cur, unused, true, &pendingTag);
+        }
+
+        const auto limit    = centred ? m_fFontCentreSize : (rightAlign ? x - m_fRightJustifyWrap : m_fWrapx);
+        const auto newWidth = wordWidth + width;
+
+        if ((newWidth > limit && !firstWord) || m_bNewLine) {
+            // The line is full or it has a new line token, it ends here
+            float spaceStep = 0.0f;
+            if (PS2Symbol != EXSYMBOL_NONE) {
+                cur -= 3;
+            }
+            const char* lineEnd = m_bNewLine ? cur - 3 : cur;
+
+            float lineX;
+            if (centred) {
+                lineX = x - width * 0.5f;
+            } else {
+                if (m_bFontJustify) {
+                    spaceStep = (m_fWrapx - lastWordEnd) / (float)(int16)numSpaces;
+                }
+                lineX = rightAlign ? x - (width - GetCharacterSize(0)) : x;
+            }
+
+            numLines++;
+            if (print) {
+                PrintLine(lineX, lineY, lineBegin, lineEnd, spaceStep);
+            }
+
+            if (pendingTag) {
+                // The color token that was in effect goes in front of the rest of the text
+                char tagToken[8];
+                snprintf(tagToken, sizeof(tagToken), "~%c~", (unsigned char)pendingTag);
+                const auto* rest = m_bNewLine ? lineEnd + 3 : lineEnd;
+                const std::string joined = std::string{ tagToken } + rest; // The rest can be inside of the buffer already
+                strncpy_s(rebuilt, joined.c_str(), _TRUNCATE);
+                cur        = rebuilt;
+                pendingTag = '\0';
+            }
+            lineBegin = cur;
+
+            m_bNewLine = false;
+            lineY += m_Scale.y * 2.0f + m_Scale.y * 32.0f * 0.5f;
+
+            width       = (!centred && !rightAlign) ? x : 0.0f;
+            numSpaces   = 0;
+            lastWordEnd = 0.0f;
+            firstWord   = true;
+        } else {
+            width = newWidth;
+
+            // Skip to the end of the word
+            while (*cur != ' ' && *cur != '\0' && *cur != '~') {
+                cur++;
+            }
+
+            if (*cur == '\0') {
+                // Last line of the text
+                const auto lineX = centred ? x - width * 0.5f : (rightAlign ? x - width : x);
+                numLines++;
+                if (print) {
+                    PrintLine(lineX, lineY, lineBegin, cur, 0.0f);
+                }
+            } else {
+                if (!firstWord) {
+                    numSpaces++;
+                }
+                if (*cur != '~') {
+                    width += GetCharacterSize(0);
+                    cur++;
+                }
+                lastWordEnd = width;
+                firstWord   = false;
+            }
+        }
+
+        PS2Symbol = EXSYMBOL_NONE;
+    }
+
+    if (print) {
+        SetColor(savedColor);
+    }
+    return numLines;
 }
 
 // 0x71A5E0
