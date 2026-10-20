@@ -2,6 +2,9 @@
 
 #include "TaskComplexFollowPointRoute.h"
 #include "TaskComplexWalkRoundCar.h"
+#include "TaskComplexEnterCar.h"
+#include "TaskSimpleStandStill.h"
+#include "TaskSimpleAchieveHeading.h"
 #include "PedGeometryAnalyser.h"
 #include "CarEnterExit.h"
 
@@ -22,7 +25,7 @@ void CTaskComplexWalkRoundCar::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x655B00);
     RH_ScopedVMTInstall(GetTaskType, 0x654280);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x656B70);
-    RH_ScopedVMTInstall(CreateFirstSubTask, 0x658200, { .Reversed = false });
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x658200);
     RH_ScopedVMTInstall(ControlSubTask, 0x654370);
 }
 
@@ -191,7 +194,49 @@ CTask* CTaskComplexWalkRoundCar::CreateNextSubTask(CPed* ped) {
 
 // 0x658200
 CTask* CTaskComplexWalkRoundCar::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x658200, CTaskComplexWalkRoundCar*, CPed*>(this, ped);
+    m_Route->Clear();
+    const auto distToSide = m_Veh->vehicleFlags.bIsBig ? ComputeRouteRoundBigCar(ped) : ComputeRouteRoundSmallCar(ped);
+    if (m_Route->IsEmpty()) {
+        return nullptr;
+    }
+
+    // Give up after a while, much later when the vehicle is towing something or being towed
+    auto timeMs = m_MoveState == PEDMOVE_WALK ? 20'000 : 15'000;
+    if (m_Veh->m_pVehicleBeingTowed || m_Veh->m_pTowingVehicle) {
+        timeMs = (int32)((float)timeMs * 4.0f);
+    }
+    m_Timer.Start(timeMs);
+
+    // Remember how the vehicle stands, the route is only good while it stays like this
+    const auto& vehMatrix = m_Veh->GetMatrix();
+    m_VehPos      = m_Veh->GetPosition();
+    m_VehMatFwd   = vehMatrix.GetForward();
+    m_VehMatRight = vehMatrix.GetRight();
+
+    const auto& pedPos      = ped->GetPosition();
+    auto        toFirst     = m_Route->m_Entries[0] - pedPos;
+    const auto  distToFirst = toFirst.NormaliseAndMag();
+    const auto  facing      = DotProduct(toFirst, ped->GetForward());
+
+    const auto closeEnough = m_MoveState == PEDMOVE_WALK ? 2.0f : m_MoveState == PEDMOVE_RUN ? 4.0f : 6.0f;
+
+    if (ped->IsPlayer()) {
+        if (const auto* const task = ped->GetTaskManager().FindTaskByType(TASK_PRIMARY_PRIMARY, TASK_COMPLEX_ENTER_CAR_AS_DRIVER)) {
+            m_EnterCarStartTime = static_cast<const CTaskComplexEnterCar*>(task)->GetEnterCarStartTime();
+        }
+    }
+
+    // Already facing the way and far enough from the vehicle, no need to turn first
+    if (!m_Veh->vehicleFlags.bIsBig && distToFirst > closeEnough && distToSide > closeEnough && facing > 0.0f) {
+        return CreateRouteTask(ped);
+    }
+
+    // Stop first, then turn towards the start of the route
+    CTaskSimpleStandStill{ 0, false, false, 8.0f }.ProcessPed(ped);
+
+    const auto firstPoint = m_Route->m_Entries[0];
+    const auto heading    = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(firstPoint.x - pedPos.x, firstPoint.y - pedPos.y, 0.0f, 0.0f));
+    return new CTaskSimpleAchieveHeading{ heading, 1.0f, 0.1f };
 }
 
 // 0x654370
