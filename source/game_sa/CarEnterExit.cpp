@@ -32,7 +32,7 @@ void CCarEnterExit::InjectHooks() {
     RH_ScopedInstall(IsClearToDriveAway, 0x6509B0);
     RH_ScopedInstall(IsPathToDoorBlockedByVehicleCollisionModel, 0x651210);
     RH_ScopedInstall(IsPedHealthy, 0x64EEE0);
-    RH_ScopedInstall(IsPlayerToQuitCarEnter, 0x64F240, { .Reversed = false });
+    RH_ScopedInstall(IsPlayerToQuitCarEnter, 0x64F240);
     RH_ScopedInstall(IsRoomForPedToLeaveCar, 0x6504C0, { .Reversed = false });
     RH_ScopedInstall(IsVehicleHealthy, 0x64EEC0);
     RH_ScopedInstall(IsVehicleStealable, 0x6510D0);
@@ -507,7 +507,89 @@ bool CCarEnterExit::IsPedHealthy(CPed* ped) {
 
 // 0x64F240
 bool CCarEnterExit::IsPlayerToQuitCarEnter(const CPed* ped, const CVehicle* vehicle, int32 startTime, CTask* task) {
-    return plugin::CallAndReturn<bool, 0x64F240, const CPed*, const CVehicle*, int32, CTask*>(ped, vehicle, startTime, task);
+    constexpr float PI_F      = 3.1415927f;
+    constexpr float TWO_PI_F  = 6.2831855f;
+    constexpr float HALF_PI_F = 1.5707964f;
+
+    const auto pad     = static_cast<const CPlayerPed*>(ped)->GetPadFromPlayer();
+    auto       heading = ped->m_fCurrentRotation;
+    auto       isBeingDragged = false;
+
+    if (task) {
+        auto useVehicleHeading = false;
+        switch (task->GetTaskType()) {
+        case TASK_COMPLEX_LEAVE_CAR:
+        case TASK_SIMPLE_CAR_OPEN_DOOR_FROM_OUTSIDE:
+        case TASK_SIMPLE_CAR_OPEN_LOCKED_DOOR_FROM_OUTSIDE:
+        case TASK_SIMPLE_BIKE_PICK_UP:
+        case TASK_SIMPLE_CAR_QUICK_DRAG_PED_OUT:
+        case TASK_SIMPLE_CAR_SLOW_DRAG_PED_OUT:
+            isBeingDragged    = true;
+            useVehicleHeading = true;
+            break;
+        case TASK_SIMPLE_CAR_ALIGN:
+        case TASK_SIMPLE_STAND_STILL:
+        case TASK_COMPLEX_FALL_AND_GET_UP:
+        case TASK_SIMPLE_CAR_CLOSE_DOOR_FROM_INSIDE:
+        case TASK_SIMPLE_CAR_GET_IN:
+        case TASK_SIMPLE_CAR_SHUFFLE:
+        case TASK_SIMPLE_CAR_SET_PED_IN_AS_DRIVER:
+        case TASK_SIMPLE_CAR_SET_PED_OUT:
+        case TASK_SIMPLE_WAIT_UNTIL_PED_OUT_CAR:
+            useVehicleHeading = true;
+            break;
+        default:
+            break;
+        }
+
+        if (useVehicleHeading) {
+            // Which side of the vehicle the ped is on decides which way the ped is expected to face
+            const auto& vehMat = *vehicle->m_matrix;
+            const auto  dot    = (ped->GetPosition() - vehicle->GetPosition()).Dot(vehMat.GetRight());
+            heading = vehicle->GetHeading() + (dot <= 0.f ? -HALF_PI_F : HALF_PI_F);
+            if (vehMat.GetUp().z < 0.f) { // Upside down
+                heading += PI_F;
+                if (heading > PI_F) {
+                    heading -= TWO_PI_F;
+                }
+            }
+            if (heading > PI_F) {
+                heading -= TWO_PI_F;
+            } else if (heading < -PI_F) {
+                heading += TWO_PI_F;
+            }
+        }
+    }
+
+    if (vehicle->m_pFire) {
+        return true;
+    }
+    if (pad->DisablePlayerControls) {
+        return false;
+    }
+
+    if (isBeingDragged) {
+        if (pad->MeleeAttackJustDown(false)) {
+            return true;
+        }
+    } else {
+        const auto sinceStart = (float)(uint32)(CTimer::GetTimeInMS() - startTime);
+        if (sinceStart <= StaticRef<float>(0x8D2ED8)) {
+            return false;
+        }
+    }
+
+    // Quit if the player is clearly steering away from the car
+    const auto stickUpDown    = (float)pad->GetPedWalkUpDown();
+    const auto stickLeftRight = (float)pad->GetPedWalkLeftRight();
+    auto       stickAngle     = CGeneral::GetRadianAngleBetweenPoints(0.f, 0.f, -stickLeftRight, stickUpDown) - TheCamera.m_fOrientation;
+    const auto stickMagnitude = std::sqrt(stickUpDown * stickUpDown + stickLeftRight * stickLeftRight) * (1.f / 128.f);
+    if (stickAngle > heading + PI_F) {
+        stickAngle -= TWO_PI_F;
+    } else if (stickAngle < heading - PI_F) {
+        stickAngle += TWO_PI_F;
+    }
+    return stickMagnitude > 0.75f && std::abs(stickAngle - heading) > 0.7853982f;
 }
 
 // 0x6504C0
