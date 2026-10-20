@@ -24,7 +24,7 @@ void CCarEnterExit::InjectHooks() {
     RH_ScopedInstall(ComputeTargetDoorToExit, 0x64F110);
     RH_ScopedInstall(GetNearestCarDoor, 0x6528F0);
     RH_ScopedInstall(GetNearestCarPassengerDoor, 0x650BB0);
-    RH_ScopedInstall(GetPositionToOpenCarDoor, 0x64E740, { .Reversed = false });
+    RH_ScopedInstall(GetPositionToOpenCarDoor, 0x64E740);
     RH_ScopedInstall(IsCarDoorInUse, 0x64EC90);
     RH_ScopedInstall(IsCarDoorReady, 0x64ED90);
     RH_ScopedInstall(IsCarQuickJackPossible, 0x64EF00);
@@ -382,8 +382,8 @@ bool CCarEnterExit::GetNearestCarDoor(const CPed* ped, const CVehicle* vehicle, 
 bool CCarEnterExit::GetNearestCarPassengerDoor(const CPed* ped, const CVehicle* vehicle, CVector* outVec, int32* doorId, bool CheckIfOccupiedTandemSeat, bool CheckIfDoorIsEnterable, bool CheckIfRoomToGetIn) {
     const auto* const handling = vehicle->m_pHandlingData;
 
-    // Lowriders and trucks only have the front passenger door
-    if (const auto animGroup = handling->GetAnimGroupId(); animGroup == ANIM_GROUP_LOWCARAMIMS || animGroup == ANIM_GROUP_TRKCARANIMS) {
+    // Coaches and buses only have the front passenger door
+    if (const auto animGroup = handling->GetAnimGroupId(); animGroup == ANIM_GROUP_COACHCARANIMS || animGroup == ANIM_GROUP_BUSCARANIMS) {
         if (CheckIfDoorIsEnterable && (vehicle->m_nGettingInFlags & 4)) {
             return false;
         }
@@ -459,9 +459,79 @@ bool CCarEnterExit::GetNearestCarPassengerDoor(const CPed* ped, const CVehicle* 
 // 0x64E740
 // Originally RVO'd
 CVector CCarEnterExit::GetPositionToOpenCarDoor(const CVehicle* vehicle, int32 doorId) {
-    CVector out;
-    plugin::CallAndReturn<CVector*, 0x64E740, CVector*, const CVehicle*, int32>(&out, vehicle, doorId);
-    return out;
+    const auto* const handling   = vehicle->m_pHandlingData;
+    auto&             animGroup  = vehicle->GetAnimGroup();
+    auto&             matrix     = const_cast<CVehicle*>(vehicle)->GetMatrix();
+    const auto        isRear     = doorId == CAR_DOOR_LR || doorId == CAR_DOOR_RR;
+    const auto        isRight    = doorId == CAR_DOOR_RF || doorId == CAR_DOOR_RR;
+    const auto        seatOffset = handling->m_fSeatOffsetDistance;
+
+    const auto GetSeatPosition = [&](bool rear) {
+        return vehicle->GetDummyPositionObjSpace(
+            rear ? DUMMY_SEAT_REAR : (vehicle->GetVehicleModelInfo()->IsBoat() ? DUMMY_LIGHT_FRONT_MAIN : DUMMY_SEAT_FRONT)
+        );
+    };
+
+    // Bikes and vehicles with tandem seats
+    if (vehicle->IsBike() || handling->m_bTandemSeats) {
+        if (doorId == 18) {
+            const auto offsets = animGroup.ComputeAnimDoorOffsets(ENTER_BIKE_FRONT);
+            const auto seat    = GetSeatPosition(false);
+            return matrix.TransformPoint({ seat.x - offsets.x, seat.y + offsets.y, seat.z - offsets.z });
+        }
+
+        auto offsets = animGroup.ComputeAnimDoorOffsets(ENTER_FRONT);
+        auto seat    = GetSeatPosition(isRear);
+        if (isRight) {
+            offsets.x *= -1.0f;
+        }
+        if (vehicle->IsBike()) {
+            CVector out;
+            const_cast<CBike*>(static_cast<const CBike*>(vehicle))->GetCorrectedWorldDoorPosition(out, seat, offsets);
+            return out;
+        }
+        seat.x += isRight ? seatOffset : -seatOffset;
+        return matrix.TransformPoint(seat - offsets);
+    }
+
+    // The rear doors of this anim group are not moved towards the centre
+    const auto doorSeatOffset = (handling->m_nAnimGroup == 0x65 && isRear) ? 0.0f : seatOffset;
+
+    // The other doors do not use the offsets
+    const auto offsetType = (doorId == CAR_DOOR_LF || doorId == CAR_DOOR_RF)
+        ? ENTER_FRONT
+        : isRear
+            ? ENTER_REAR
+            : doorId == 18
+                ? ENTER_BIKE_FRONT
+                : ENTER_FRONT;
+    const auto offsets = animGroup.ComputeAnimDoorOffsets(offsetType);
+
+    CVector pos;
+    switch (doorId) {
+    case CAR_DOOR_RF:
+    case CAR_DOOR_RR: {
+        const auto seat = GetSeatPosition(isRear);
+        pos = CVector{ seat.x + doorSeatOffset + offsets.x, seat.y - offsets.y, seat.z - offsets.z };
+        break;
+    }
+    case CAR_DOOR_LF:
+    case CAR_DOOR_LR: {
+        const auto seat = GetSeatPosition(isRear);
+        pos = CVector{ -(seat.x + doorSeatOffset) - offsets.x, seat.y - offsets.y, seat.z - offsets.z };
+        break;
+    }
+    default:
+        pos = GetSeatPosition(false);
+        break;
+    }
+
+    // Monster trucks and big vehicles have the seat at a fixed height above the road
+    if (vehicle->IsSubMonsterTruck() || (handling->m_bIsBig && !vehicle->IsSubPlane())) {
+        pos.z = 0.95f - const_cast<CVehicle*>(vehicle)->GetHeightAboveRoad();
+    }
+
+    return matrix.TransformPoint(pos);
 }
 
 // 0x64EC90
