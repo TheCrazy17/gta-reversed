@@ -67,6 +67,7 @@ public:
     static inline auto& m_WeaponTimer = StaticRef<uint32>(0xBAA40C);
     static inline auto& m_LastWeapon = StaticRef<uint32>(0xBAA410);
 
+    static inline auto& bWantedLevelUnchanged = StaticRef<bool>(0xBAB228);
     static inline auto& m_WantedState = StaticRef<uint32>(0xBAA414);
     static inline auto& m_WantedFadeTimer = StaticRef<uint32>(0xBAA418);
     static inline auto& m_WantedTimer = StaticRef<uint32>(0xBAA41C);

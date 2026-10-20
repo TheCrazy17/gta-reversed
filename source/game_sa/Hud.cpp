@@ -54,7 +54,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawAmmo, 0x5893B0);
     RH_ScopedInstall(DrawPlayerInfo, 0x58EAF0, { .Reversed = false });
     RH_ScopedInstall(DrawTripSkip, 0x58A160);
-    RH_ScopedInstall(DrawWanted, 0x58D9A0, { .Reversed = false });
+    RH_ScopedInstall(DrawWanted, 0x58D9A0);
     RH_ScopedInstall(DrawWeaponIcon, 0x58D7D0);
     RH_ScopedInstall(RenderArmorBar, 0x5890A0);
     RH_ScopedInstall(RenderBreathBar, 0x589190);
@@ -823,7 +823,7 @@ void CHud::DrawCrossHairs() {
 
 // 0x58D580
 float CHud::DrawFadeState(DRAW_FADE_STATE fadingElement, int32 forceFadingIn) {
-    uint32 state, timer, fadeTimer;
+    int32 state, timer, fadeTimer;
     switch (fadingElement) {
     case WANTED_STATE:
         fadeTimer = m_WantedFadeTimer;
@@ -856,8 +856,8 @@ float CHud::DrawFadeState(DRAW_FADE_STATE fadingElement, int32 forceFadingIn) {
         switch (state) {
         case NAME_DONT_SHOW:
             fadeTimer = 0;
-            break;
-        case NAME_SWITCH:
+            [[fallthrough]];
+        case NAME_SHOW:
         case NAME_FADE_OUT:
             timer = 5;
             state = NAME_FADE_IN;
@@ -878,25 +878,25 @@ float CHud::DrawFadeState(DRAW_FADE_STATE fadingElement, int32 forceFadingIn) {
             }
             break;
         case NAME_FADE_IN:
-            fadeTimer += (uint32)CTimer::GetTimeStepInMS();
+            fadeTimer += (int32)CTimer::GetTimeStepInMS();
             if (fadeTimer > 1000) {
-                state = NAME_SHOW;  
+                state = NAME_SHOW;
                 fadeTimer = 1000;
             }
-            alpha = float(fadeTimer) / 1000.0f * 255.0f;
+            alpha = (float)fadeTimer * 0.001f * 255.0f;
             break;
         case NAME_FADE_OUT:
-            fadeTimer -= (uint32)CTimer::GetTimeStepInMS();
+            fadeTimer -= (int32)CTimer::GetTimeStepInMS();
             if (fadeTimer < 0) {
                 fadeTimer = 0;
                 state = NAME_DONT_SHOW;
             }
-            alpha = float(fadeTimer) / 1000.0f * 255.0f;
+            alpha = (float)fadeTimer * 0.001f * 255.0f;
             break;
         default:
             break;
         }
-        timer += (uint32)CTimer::GetTimeStepInMS();
+        timer += (int32)CTimer::GetTimeStepInMS();
     }
 
     switch (fadingElement) {
@@ -1822,7 +1822,66 @@ void CHud::DrawTripSkip() {
 
 // 0x58D9A0
 void CHud::DrawWanted() {
-    return plugin::Call<0x58D9A0>();
+    const auto* const wanted = FindPlayerWanted(-1);
+    const auto        level  = (int32)wanted->m_WantedLevel;
+    const auto        beforeParole = (int32)wanted->m_WantedLevelBeforeParole;
+
+    // A change of the level shows the stars again from the start
+    const auto changed = m_LastWanted != (uint32)level;
+    const auto alpha   = DrawFadeState(WANTED_STATE, changed);
+    if (changed) {
+        m_LastWanted = level;
+    }
+    bWantedLevelUnchanged = !changed;
+
+    if (m_WantedState == NAME_DONT_SHOW) {
+        return;
+    }
+
+    CFont::SetBackground(false, false);
+    CFont::SetScale(SCREEN_STRETCH_X(0.605f), SCREEN_SCALE_Y(1.21f));
+    CFont::SetOrientation(eFontAlignment::ALIGN_RIGHT);
+    CFont::SetProportional(true);
+    CFont::SetFontStyle(FONT_GOTHIC);
+
+    GxtChar star[2];
+    AsciiToGxtChar("]", star);
+
+    auto x = SCREEN_WIDTH - SCREEN_STRETCH_X(29.0f);
+    if (!((level > 0 && bWantedLevelUnchanged) || beforeParole > 0)) {
+        return;
+    }
+
+    const auto alphaByte = (uint8)(int32)alpha;
+    for (auto i = 0; i < 6; i++) {
+        CFont::SetEdge(1);
+        CFont::SetDropColor({ 0, 0, 0, alphaByte });
+        CFont::SetScale(SCREEN_STRETCH_X(0.605f), SCREEN_SCALE_Y(1.21f));
+
+        if (i < level && (CTimer::GetTimeInMS() > wanted->m_LastTimeWantedLevelChanged + 2000 || (CTimer::GetFrameCounter() & 4) != 0)) {
+            // Stars of the current level
+            CFont::SetColor(HudColour.GetRGBA(HUD_COLOUR_GOLD, alphaByte));
+            CFont::PrintString(x, GetYPosBasedOnHealth(CWorld::PlayerInFocus, SCREEN_SCALE_Y(114.0f), 12), star);
+        } else if (i < beforeParole && (CTimer::GetFrameCounter() & 4) != 0) {
+            // Stars that come back after the parole, darker and blinking
+            const auto& gold = HudColour.m_aColours[HUD_COLOUR_GOLD];
+            CFont::SetColor({
+                (uint8)(int32)((float)gold.r * 0.8f),
+                (uint8)(int32)((float)gold.g * 0.8f),
+                (uint8)(int32)((float)gold.b * 0.8f),
+                alphaByte
+            });
+            CFont::PrintString(x, GetYPosBasedOnHealth(CWorld::PlayerInFocus, SCREEN_SCALE_Y(114.0f), 12), star);
+        } else if (i >= level) {
+            // Empty slot, a bigger and fainter star
+            CFont::SetEdge(0);
+            CFont::SetColor({ 0, 0, 0, (uint8)(int32)(alpha * 0.7f) });
+            CFont::SetScale(SCREEN_STRETCH_X(0.605f) * 1.2f, SCREEN_SCALE_Y(1.21f) * 1.2f);
+            CFont::PrintString(x, GetYPosBasedOnHealth(CWorld::PlayerInFocus, SCREEN_SCALE_Y(114.0f), 12) - SCREEN_SCALE_Y(2.0f), star);
+        }
+        x -= SCREEN_STRETCH_X(18.0f);
+    }
+    CFont::SetEdge(0);
 }
 
 // 0x58D7D0
