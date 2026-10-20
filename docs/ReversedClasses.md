@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 98%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 11:41:40 UTC
-(Triggered by commit [6bc296fa](https://github.com/TheCrazy17/gta-reversed/commit/6bc296fa0d9ea79c7264bdac1660de5ae12b2f24))
+Last update was at Oct 20, 2026 at 12:17:19 UTC
+(Triggered by commit [28ea63a7](https://github.com/TheCrazy17/gta-reversed/commit/28ea63a774ee1d365967eef6813732e85dc81f8a))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8188 out of 8342 functions done in 720 categories)
+## Stats (8196 out of 8342 functions done in 720 categories)
 
-#### Completely reversed categories (670/720) [93%]
+#### Completely reversed categories (675/720) [94%]
 
 <details>
 <summary>See list of categories</summary>
@@ -222,6 +222,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - FxInfoManager_c (5)<br />
 - FxManager_c (25)<br />
 - FxEmitterPrt_c (1)<br />
+- FxEmitter_c (1)<br />
 - Fx_c (9)<br />
 - CPedAttractorPedPlacer (1)<br />
 - CCopPed (7)<br />
@@ -542,6 +543,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - CTaskSimpleAnim (1)<br />
 - CTaskSimpleRunAnim (5)<br />
 - CTaskComplexPartnerGreet (7)<br />
+- CTaskComplexWalkRoundCar (13)<br />
 - CTaskComplexMedicTreatInjuredPed (9)<br />
 - CTaskSimplePlayHandSignalAnim (2)<br />
 - CTaskComplexCarDrive (11)<br />
@@ -565,6 +567,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - CTaskSimpleIKLookAt (8)<br />
 - CTaskComplexDie (5)<br />
 - CTaskComplexEnterBoatAsDriver (8)<br />
+- CTaskSimpleFight (5)<br />
 - CTaskComplexUseWaterCannon (5)<br />
 - CTaskSimplePickUpEntity (4)<br />
 - CTaskComplexBeInGroup (10)<br />
@@ -596,6 +599,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - CMissionTextOffsets (1)<br />
 - CData (2)<br />
 - CKeyArray (4)<br />
+- CCustomBuildingDNPipeline (16)<br />
 - CCustomCarEnvMapPipeline (37)<br />
 - CConversations (11)<br />
 - CConversationForPed (2)<br />
@@ -681,6 +685,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
 - InteriorManager_c (21)<br />
+- CRunningScript (39)<br />
 - CTheScripts (69)<br />
 - CStreamedScripts (12)<br />
 - CScripted2dEffects (5)<br />
@@ -688,7 +693,7 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 
 </details>
 
-#### Partially reversed categories (48/720) [7%]
+#### Partially reversed categories (44/720) [6%]
 
 <details>
 <summary>See list of categories</summary>
@@ -725,9 +730,6 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - CTaskSimpleCarDrive (12/13) [92%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
-- CTaskComplexWalkRoundCar (10/13) [77%]<br />
-- CTaskSimpleFight (4/5) [80%]<br />
-- CCustomBuildingDNPipeline (15/16) [94%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEPedAudioEntity (17/20) [85%]<br />
@@ -739,15 +741,13 @@ Last update was at Oct 20, 2026 at 11:41:40 UTC
 - CAEAmbienceTrackManager (6/7) [86%]<br />
 - Interior_c (50/52) [96%]<br />
 - InteriorGroup_c (22/24) [92%]<br />
-- CRunningScript (37/39) [95%]<br />
 
 </details>
 
-#### Not-at-all reversed categories (2/720) [0.3%]
+#### Not-at-all reversed categories (1/720) [0.1%]
 
 <details>
 <summary>See list of categories</summary>
-- FxEmitter_c (1)<br />
 - CMemoryMgr (7)<br />
 
 </details>

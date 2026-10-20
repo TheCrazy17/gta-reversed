@@ -18292,7 +18292,7 @@
   {
     "Category": "FxEmitter_c",
     "Name": "CreateParticles",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "Fx_c",
@@ -31157,7 +31157,7 @@
   {
     "Category": "CTaskComplexWalkRoundCar",
     "Name": "ComputeRouteRoundSmallCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexWalkRoundCar",
@@ -31167,7 +31167,7 @@
   {
     "Category": "CTaskComplexWalkRoundCar",
     "Name": "ComputeRouteRoundBigCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexWalkRoundCar",
@@ -31192,7 +31192,7 @@
   {
     "Category": "CTaskComplexWalkRoundCar",
     "Name": "CreateFirstSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexWalkRoundCar",
@@ -32007,7 +32007,7 @@
   {
     "Category": "CTaskSimpleFight",
     "Name": "LoadMeleeData",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexUseWaterCannon",
@@ -33187,7 +33187,7 @@
   {
     "Category": "CCustomBuildingDNPipeline",
     "Name": "CustomPipeRenderCB",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCustomCarEnvMapPipeline",
@@ -41042,7 +41042,7 @@
   {
     "Category": "CRunningScript",
     "Name": "PlayAnimScriptCommand",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRunningScript",
@@ -41197,7 +41197,7 @@
   {
     "Category": "CRunningScript",
     "Name": "ScriptTaskPickUpObject",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRunningScript",
