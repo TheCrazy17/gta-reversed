@@ -12672,7 +12672,7 @@
   {
     "Category": "CClouds",
     "Name": "RenderBottomFromHeight",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClouds",
@@ -15682,7 +15682,7 @@
   {
     "Category": "CRadar",
     "Name": "DrawEntityBlip",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRadar",

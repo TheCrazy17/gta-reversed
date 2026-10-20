@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 18:10:50 UTC
-(Triggered by commit [de5f0a7b](https://github.com/TheCrazy17/gta-reversed/commit/de5f0a7b0dbf117f4b932e5145f9e7003d2d310a))
+Last update was at Oct 20, 2026 at 18:34:39 UTC
+(Triggered by commit [9baf56f4](https://github.com/TheCrazy17/gta-reversed/commit/9baf56f43003798617de612c1116d8e09327d7c6))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8244 out of 8344 functions done in 720 categories)
+## Stats (8246 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (686/720) [95%]
+#### Completely reversed categories (688/720) [96%]
 
 <details>
 <summary>See list of categories</summary>
@@ -146,6 +146,7 @@ Last update was at Oct 20, 2026 at 18:10:50 UTC
 - CGlass (19)<br />
 - CPedGroups (11)<br />
 - CClock (9)<br />
+- CClouds (21)<br />
 - CCoronas (11)<br />
 - CRegisteredCorona (1)<br />
 - CCustomCarPlateMgr (15)<br />
@@ -181,6 +182,7 @@ Last update was at Oct 20, 2026 at 18:10:50 UTC
 - CIplStore (34)<br />
 - cHandlingDataMgr (11)<br />
 - CLoadingScreen (20)<br />
+- CRadar (65)<br />
 - ModelIndices (2)<br />
 - CWaterCannons (4)<br />
 - CWaterCannon (5)<br />
@@ -704,7 +706,7 @@ Last update was at Oct 20, 2026 at 18:10:50 UTC
 
 </details>
 
-#### Partially reversed categories (33/720) [5%]
+#### Partially reversed categories (31/720) [4%]
 
 <details>
 <summary>See list of categories</summary>
@@ -721,10 +723,8 @@ Last update was at Oct 20, 2026 at 18:10:50 UTC
 - CFont (34/36) [94%]<br />
 - CGangWars (33/35) [94%]<br />
 - CRoadBlocks (7/8) [88%]<br />
-- CClouds (20/21) [95%]<br />
 - CPlayerInfo (27/28) [96%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
-- CRadar (64/65) [98%]<br />
 - CProjectileInfo (11/12) [92%]<br />
 - CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
