@@ -37,6 +37,24 @@
 auto& apCarsToKeep = StaticRef<CVehicle*[2]>(0x969084);
 auto& aCarsToKeepTime = StaticRef<std::array<uint32, 2>>(0x96907C);
 
+// Calls `fn` for every repeat sector the rectangle touches, with a fresh scan code
+template<typename Fn>
+static void ForEachRepeatSectorInRect(float minX, float minY, float maxX, float maxY, Fn&& fn) {
+    const auto Sector = [](float coord) { return (int32)std::floor(coord * 0.02f + 60.0f); };
+
+    const auto startX = std::max(Sector(minX), 0);
+    const auto startY = std::max(Sector(minY), 0);
+    const auto endX   = std::min(Sector(maxX), 119);
+    const auto endY   = std::min(Sector(maxY), 119);
+
+    CWorld::AdvanceCurrentScanCode();
+    for (auto y = startY; y <= endY; y++) {
+        for (auto x = startX; x <= endX; x++) {
+            fn(CWorld::GetRepeatSector(x, y));
+        }
+    }
+}
+
 void CCarCtrl::InjectHooks()
 {
     RH_ScopedClass(CCarCtrl);
@@ -75,7 +93,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0, { .Reversed = false });
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
     RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470, { .Reversed = false });
-    RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400, { .Reversed = false });
+    RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400);
     RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20, { .Reversed = false });
     RH_ScopedInstall(FindPathDirection, 0x422090);
     RH_ScopedInstall(FindPercDependingOnDistToLink, 0x422620);
@@ -398,7 +416,41 @@ void CCarCtrl::FindLinksToGoWithTheseNodes(CVehicle* vehicle) {
 
 // 0x434400
 float CCarCtrl::FindMaximumSpeedForThisCarInTraffic(CVehicle* vehicle) {
-    return plugin::CallAndReturn<float, 0x434400, CVehicle*>(vehicle);
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    const auto cruiseSpeed = (float)autoPilot.m_nCruiseSpeed * autoPilot.m_SpeedMult;
+    switch (autoPilot.m_nCarDrivingStyle) {
+    case DRIVING_STYLE_AVOID_CARS:
+    case DRIVING_STYLE_PLOUGH_THROUGH:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_OBEYLIGHTS:
+        return cruiseSpeed;
+    default:
+        break;
+    }
+
+    // Look at what is around the vehicle, each of those can slow it down
+    const auto& pos  = vehicle->GetPosition();
+    const auto  minX = pos.x - 14.0f;
+    const auto  minY = pos.y - 14.0f;
+    const auto  maxX = pos.x + 14.0f;
+    const auto  maxY = pos.y + 14.0f;
+
+    auto speed = cruiseSpeed;
+    ForEachRepeatSectorInRect(minX, minY, maxX, maxY, [&](CRepeatSector& sector) {
+        const auto cruiseNow = (float)autoPilot.m_nCruiseSpeed * autoPilot.m_SpeedMult;
+        if (autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS) {
+            SlowCarDownForCarsSectorList(sector.Vehicles, vehicle, minX, minY, maxX, maxY, &speed, cruiseNow);
+        }
+        SlowCarDownForPedsSectorList(sector.Peds, vehicle, minX, minY, maxX, maxY, &speed, (float)autoPilot.m_nCruiseSpeed * autoPilot.m_SpeedMult);
+        SlowCarDownForObjectsSectorList(sector.Objects, vehicle, minX, minY, maxX, maxY, &speed, (float)autoPilot.m_nCruiseSpeed * autoPilot.m_SpeedMult);
+    });
+
+    vehicle->vehicleFlags.bWarnedPeds = true;
+
+    if (autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_STOP_FOR_CARS && autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_STOP_FOR_CARS_IGNORE_LIGHTS) {
+        return ((float)autoPilot.m_nCruiseSpeed * autoPilot.m_SpeedMult + speed) * 0.5f;
+    }
+    return speed;
 }
 
 // 0x42BD20
@@ -1277,28 +1329,18 @@ void CCarCtrl::ScanForPedDanger(CVehicle* vehicle) {
     const auto range = vehicle == FindPlayerVehicle() ? 44.0f : 11.0f;
     const auto honk  = vehicle->m_autoPilot.carCtrlFlags.bHonkAtPed;
 
-    const auto& pos    = vehicle->GetPosition();
-    const auto  minX   = pos.x - range;
-    const auto  minY   = pos.y - range;
-    const auto  maxX   = pos.x + range;
-    const auto  maxY   = pos.y + range;
-    const auto  Sector = [](float coord) { return (int32)std::floor(coord * 0.02f + 60.0f); };
-
-    const auto startX = std::max(Sector(minX), 0);
-    const auto startY = std::max(Sector(minY), 0);
-    const auto endX   = std::min(Sector(maxX), 119);
-    const auto endY   = std::min(Sector(maxY), 119);
-
-    CWorld::AdvanceCurrentScanCode();
+    const auto& pos  = vehicle->GetPosition();
+    const auto  minX = pos.x - range;
+    const auto  minY = pos.y - range;
+    const auto  maxX = pos.x + range;
+    const auto  maxY = pos.y + range;
 
     auto speed = (float)vehicle->m_autoPilot.m_nCruiseSpeed;
-    for (auto y = startY; y <= endY; y++) {
-        for (auto x = startX; x <= endX; x++) {
-            SlowCarDownForPedsSectorList(CWorld::GetRepeatSector(x, y).Peds, vehicle, minX, minY, maxX, maxY, &speed, (float)vehicle->m_autoPilot.m_nCruiseSpeed);
-        }
-    }
+    ForEachRepeatSectorInRect(minX, minY, maxX, maxY, [&](CRepeatSector& sector) {
+        SlowCarDownForPedsSectorList(sector.Peds, vehicle, minX, minY, maxX, maxY, &speed, (float)vehicle->m_autoPilot.m_nCruiseSpeed);
+    });
 
-    vehicle->vehicleFlags.bWarnedPeds                = true;
+    vehicle->vehicleFlags.bWarnedPeds            = true;
     vehicle->m_autoPilot.carCtrlFlags.bHonkAtPed = honk;
 }
 
