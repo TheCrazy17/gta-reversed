@@ -37,7 +37,7 @@ void CPedGroupIntelligence::InjectHooks() {
     RH_ScopedInstall(ComputeEventResponseTasks, 0x5FC440);
     RH_ScopedInstall(Process, 0x5FC4A0);
     RH_ScopedInstall(ReportAllTasksFinished, 0x5F7730);
-    RH_ScopedInstall(ComputeScriptCommandTasks, 0x5F7800, { .Reversed = false });
+    RH_ScopedInstall(ComputeScriptCommandTasks, 0x5F7800);
 }
 
 // 0x5F7250
@@ -439,5 +439,47 @@ CTaskAllocator* CPedGroupIntelligence::ComputeEventResponseTasks() {
 }
 
 void CPedGroupIntelligence::ComputeScriptCommandTasks() {
-    plugin::CallMethod<0x5F7800>(this);
+    // Rebuild the pairs so each one sits at the same index as its ped in the group's membership.
+    // Only the ped and the task are moved around, the other fields of a pair stay where they were.
+    struct Moved {
+        CPed*  Ped{};
+        CTask* Task{};
+    };
+    std::array<Moved, TOTAL_PED_GROUP_MEMBERS> moved{};
+
+    auto& pairs = m_ScriptCommandPedTaskPairs;
+    for (auto i = 0; i < TOTAL_PED_GROUP_MEMBERS; i++) {
+        auto* const member = m_pPedGroup->GetMembership().GetMember(i);
+
+        moved[i] = { pairs[i].Ped, pairs[i].Task };
+        if (member == pairs[i].Ped) {
+            continue;
+        }
+        moved[i] = { member, nullptr };
+        for (const auto& pair : pairs) {
+            if (pair.Ped == member) {
+                moved[i].Task = pair.Task;
+                break;
+            }
+        }
+    }
+
+    // Tasks that no longer belong to any member are dropped
+    for (auto& pair : pairs) {
+        if (!pair.Task) {
+            continue;
+        }
+        const auto it = rng::find(moved, pair.Ped, &Moved::Ped);
+        if (it != moved.end() && it->Task) {
+            continue;
+        }
+        delete pair.Task;
+        pair.Ped  = nullptr;
+        pair.Task = nullptr;
+    }
+
+    for (auto i = 0; i < TOTAL_PED_GROUP_MEMBERS; i++) {
+        pairs[i].Ped  = moved[i].Ped;
+        pairs[i].Task = moved[i].Task;
+    }
 }
