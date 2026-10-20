@@ -118,7 +118,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
     RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20);
     RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0);
-    RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0);
     RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900, { .Reversed = false });
@@ -1649,7 +1649,54 @@ void CCarCtrl::SteerAICarParkParallel(CVehicle* vehicle, float* arg2, float* arg
 
 // 0x433EA0
 void CCarCtrl::SteerAICarParkPerpendicular(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x433EA0, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    // arg2: steering, arg3: gas, arg4: brake, arg5: handbrake
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    if (!ThePaths.IsAreaLoaded(autoPilot.m_startingRouteNode.m_wAreaId) || !ThePaths.IsAreaLoaded(autoPilot.m_currentAddress.m_wAreaId)) {
+        autoPilot.m_nCarMission = MISSION_STOP_FOREVER;
+        *arg2 = 0.0f;
+        *arg3 = 0.0f;
+        *arg4 = 0.0f;
+        return;
+    }
+
+    const auto& currentNode = *ThePaths.GetPathNode(autoPilot.m_currentAddress);
+    const auto& parkNode    = *ThePaths.GetPathNode(autoPilot.m_startingRouteNode);
+
+    // First get in line with the park node, the way the road goes
+    if (autoPilot.m_nCarMission == MISSION_PARK_PERPENDICULAR) {
+        const CVector parkPos{ parkNode.GetPosition().x, parkNode.GetPosition().y, 0.0f };
+        const CVector roadPos{ currentNode.GetPosition().x, currentNode.GetPosition().y, 0.0f };
+        const CVector vehPos{ vehicle->GetPosition().x, vehicle->GetPosition().y, 0.0f };
+        if (CCollision::DistToMathematicalLine(&parkPos, &roadPos, &vehPos) < 6.0f) {
+            autoPilot.m_nCarMission = MISSION_PARK_PERPENDICULAR_2;
+        }
+    }
+
+    const auto target = autoPilot.m_nCarMission == MISSION_PARK_PERPENDICULAR
+        ? currentNode.GetPosition()
+        : parkNode.GetPosition();
+    SteerAICarWithPhysicsHeadingForTarget(vehicle, nullptr, target.x, target.y, arg2, arg3, arg4, arg5);
+    autoPilot.m_nCruiseSpeed = std::min<uint8>(autoPilot.m_nCruiseSpeed, 8);
+
+    const auto dist = (CVector2D{ parkNode.GetPosition() } - CVector2D{ vehicle->GetPosition() }).Magnitude();
+    if (dist >= 2.0f) {
+        return;
+    }
+
+    // Parked, everybody gets out
+    autoPilot.m_nCarMission = MISSION_STOP_FOREVER;
+    autoPilot.movementFlags.bIsParked = true;
+    vehicle->vehicleFlags.bEngineOn = false;
+    vehicle->vehicleFlags.bLightsOn = false;
+    if (auto* const driver = vehicle->m_pDriver) {
+        driver->GetTaskManager().SetTask(new CTaskComplexLeaveAnyCar{ 0, true, false }, TASK_PRIMARY_PRIMARY, false);
+    }
+    for (auto* const passenger : vehicle->m_apPassengers) {
+        if (passenger) {
+            passenger->GetTaskManager().SetTask(new CTaskComplexLeaveAnyCar{ 0, true, false }, TASK_PRIMARY_PRIMARY, false);
+        }
+    }
 }
 
 // 0x4336D0
