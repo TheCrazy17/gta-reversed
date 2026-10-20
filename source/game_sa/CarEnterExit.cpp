@@ -33,7 +33,7 @@ void CCarEnterExit::InjectHooks() {
     RH_ScopedInstall(IsPathToDoorBlockedByVehicleCollisionModel, 0x651210);
     RH_ScopedInstall(IsPedHealthy, 0x64EEE0);
     RH_ScopedInstall(IsPlayerToQuitCarEnter, 0x64F240);
-    RH_ScopedInstall(IsRoomForPedToLeaveCar, 0x6504C0, { .Reversed = false });
+    RH_ScopedInstall(IsRoomForPedToLeaveCar, 0x6504C0);
     RH_ScopedInstall(IsVehicleHealthy, 0x64EEC0);
     RH_ScopedInstall(IsVehicleStealable, 0x6510D0);
     RH_ScopedInstall(MakeUndraggedDriverPedLeaveCar, 0x64F600);
@@ -737,7 +737,101 @@ bool CCarEnterExit::IsPlayerToQuitCarEnter(const CPed* ped, const CVehicle* vehi
 
 // 0x6504C0
 bool CCarEnterExit::IsRoomForPedToLeaveCar(const CVehicle* vehicle, int32 doorId, const CVector* pos) {
-    return plugin::CallAndReturn<bool, 0x6504C0>(vehicle, doorId, pos);
+    auto& matrix = const_cast<CVehicle*>(vehicle)->GetMatrix();
+
+    // Position of the seat that belongs to the door (in the space of the vehicle)
+    const auto isRear = doorId == CAR_DOOR_LR || doorId == CAR_DOOR_RR;
+    const auto GetSeatPosition = [&] {
+        return vehicle->GetDummyPositionObjSpace(
+            isRear ? DUMMY_SEAT_REAR : (vehicle->GetVehicleModelInfo()->IsBoat() ? DUMMY_LIGHT_FRONT_MAIN : DUMMY_SEAT_FRONT)
+        );
+    };
+
+    CVector seatPos;
+    if (vehicle->IsBike() || vehicle->m_pHandlingData->m_bTandemSeats) {
+        seatPos = GetSeatPosition();
+    } else {
+        switch (doorId) {
+        case CAR_DOOR_RF:
+        case CAR_DOOR_RR:
+        case CAR_DOOR_LF:
+        case CAR_DOOR_LR:
+            seatPos = GetSeatPosition();
+            break;
+        default:
+            return false;
+        }
+    }
+    if (doorId == CAR_DOOR_LF || doorId == CAR_DOOR_LR) { // Left side
+        seatPos.x = -seatPos.x;
+    }
+
+    auto       seatWorldPos = matrix.TransformPoint(seatPos);
+    CVector    doorPos      = GetPositionToOpenCarDoor(vehicle, doorId);
+    if (pos) {
+        auto offset = *pos;
+        if (doorId == CAR_DOOR_RF || doorId == CAR_DOOR_RR) {
+            offset.x = -offset.x;
+        }
+        doorPos += matrix.TransformVector(offset);
+    }
+
+    // The vehicle is upside down
+    if (matrix.GetUp().z < 0.0f) {
+        seatWorldPos.z += 0.5f;
+        doorPos.z      += 0.5f;
+    }
+
+    // The line from the seat to the door (and a bit further) has to be clear
+    CVector lineEnd;
+    const auto delta = doorPos - seatWorldPos;
+    if (vehicle->IsBike()) {
+        lineEnd   = CVector{ doorPos.x, doorPos.y, doorPos.z + 0.2f };
+        doorPos.z = doorPos.z + 0.2f + 0.35f;
+    } else {
+        const auto len    = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+        const auto factor = (len + 0.35f) / len;
+        lineEnd           = CVector{ delta.x * factor + seatWorldPos.x, delta.y * factor + seatWorldPos.y, doorPos.z };
+    }
+    if (!CWorld::GetIsLineOfSightClear(seatWorldPos, lineEnd, true, false, false, true, false, false, false)) {
+        return false;
+    }
+
+    // Nothing should be where the ped would stand, apart from what the vehicle is attached to
+    const auto hitEntity = CWorld::TestSphereAgainstWorld(doorPos, 0.35f, const_cast<CVehicle*>(vehicle), !vehicle->IsTrain(), true, false, true, false, false);
+    if (hitEntity
+        && !(hitEntity->m_nModelIndex == MODEL_TUGSTAIR && vehicle->m_nModelIndex == MODEL_AT400)
+        && hitEntity != vehicle->m_pAttachedTo
+    ) {
+        return false;
+    }
+
+    CColPoint colPoint{};
+    CEntity*  tmpEntity{};
+
+    // There has to be some space above, and then ground below
+    const auto hasCeiling = CWorld::ProcessVerticalLine(doorPos, 1000.0f, colPoint, tmpEntity, true, false, false, true, false, false, nullptr);
+    const auto ceilingZ   = colPoint.m_vecPoint.z;
+    if (hasCeiling && ceilingZ > doorPos.z && doorPos.z + 0.6f > ceilingZ) {
+        return false;
+    }
+
+    float groundZ;
+    if (vehicle->IsBoat()
+        || vehicle->m_nModelIndex == MODEL_SKIMMER
+        || vehicle->m_nModelIndex == MODEL_VORTEX
+        || vehicle->m_nModelIndex == MODEL_SEASPAR
+        || vehicle->m_nModelIndex == MODEL_LEVIATHN
+    ) {
+        groundZ = colPoint.m_vecPoint.z - 1.0f;
+    } else {
+        if (!CWorld::ProcessVerticalLine(doorPos, -1000.0f, colPoint, tmpEntity, true, false, false, true, false, false, nullptr)) {
+            return false;
+        }
+        groundZ = colPoint.m_vecPoint.z;
+    }
+
+    return !(ceilingZ != 0.0f && ceilingZ < groundZ);
 }
 
 // 0x64EEC0
