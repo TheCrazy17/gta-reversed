@@ -141,45 +141,46 @@ CPhysical::~CPhysical()
 // 0x544A30
 void CPhysical::Add()
 {
-    // TODO: Refactor `CEntryInfoNode` to be templated then use it here
-#if 0
     if (m_bIsBIGBuilding) {
         CEntity::Add();
         return;
     }
 
-    const auto boundRect = GetBoundRect();
-    int32 startSectorX = CWorld::GetSectorX(boundRect.left);
-    int32 startSectorY = CWorld::GetSectorY(boundRect.bottom);
-    int32 endSectorX = CWorld::GetSectorX(boundRect.right);
-    int32 endSectorY = CWorld::GetSectorY(boundRect.top);
-    for (int32 sectorY = startSectorY; sectorY <= endSectorY; ++sectorY) {
-        for (int32 sectorX = startSectorX; sectorX <= endSectorX; ++sectorX) {
-            CPtrListDoubleLink* list = nullptr;
-            CRepeatSector* repeatSector = GetRepeatSector(sectorX, sectorY);
-            switch (m_nType) {
-            case ENTITY_TYPE_VEHICLE:
-                list = &repeatSector.Vehicles;
-                break;
-            case ENTITY_TYPE_PED:
-                list = &repeatSector.Peds;
-                break;
-            case ENTITY_TYPE_OBJECT:
-                list = &repeatSector.Objects;
-                break;
+    // Same conversion the original does, in the precision of the FPU
+    const auto Sector = [](float coord) {
+        return (int32)std::floor((double)coord * (double)0.02f + (double)60.0f);
+    };
+    const auto rect   = GetBoundRect();
+    const auto startX = Sector(rect.left);
+    const auto startY = Sector(rect.bottom);
+    const auto endX   = Sector(rect.right);
+    const auto endY   = Sector(rect.top);
+
+    for (auto y = startY; y <= endY; y++) {
+        for (auto x = startX; x <= endX; x++) {
+            auto& repeatSector = CWorld::GetRepeatSector(x, y);
+
+            CPtrListDoubleLink<CPhysical*>* list{};
+            switch (GetType()) {
+            case ENTITY_TYPE_VEHICLE: list = reinterpret_cast<CPtrListDoubleLink<CPhysical*>*>(&repeatSector.Vehicles); break;
+            case ENTITY_TYPE_PED:     list = reinterpret_cast<CPtrListDoubleLink<CPhysical*>*>(&repeatSector.Peds);     break;
+            case ENTITY_TYPE_OBJECT:  list = reinterpret_cast<CPtrListDoubleLink<CPhysical*>*>(&repeatSector.Objects);  break;
+            default:                  NOTSA_UNREACHABLE();
             }
 
-            auto newEntityInfoNode = new CEntryInfoNode();
-            if (newEntityInfoNode) {
-                newEntityInfoNode->m_doubleLink = list->AddItem(this);
-                newEntityInfoNode->m_repeatSector = repeatSector;
-                newEntityInfoNode->m_doubleLinkList = list;
+            // Remember where the entity was put so it can be taken out of there later
+            auto* const node       = new CEntryInfoNode{};
+            node->m_doubleLink     = list->AddItem(this);
+            node->m_repeatSector   = &repeatSector;
+            node->m_doubleLinkList = list;
+            node->m_previous       = nullptr;
+            node->m_next           = m_pCollisionList.m_node;
+            if (m_pCollisionList.m_node) {
+                m_pCollisionList.m_node->m_previous = node;
             }
-            newEntityInfoNode->AddToList(m_pCollisionList.m_node);
-            m_pCollisionList.m_node = newEntityInfoNode;
+            m_pCollisionList.m_node = node;
         }
     }
-#endif
 }
 
 // 0x5424C0
