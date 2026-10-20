@@ -21,7 +21,7 @@ void CFont::InjectHooks() {
 
     RH_ScopedInstall(Initialise, 0x5BA690);
     RH_ScopedInstall(Shutdown, 0x7189B0);
-    RH_ScopedInstall(PrintChar, 0x718A10, { .Reversed = false });
+    RH_ScopedInstall(PrintChar, 0x718A10);
     RH_ScopedInstall(ParseToken, 0x718F00);
 
     // styling functions
@@ -180,122 +180,80 @@ void CFont::Shutdown() {
 // this adds a single character into rendering buffer
 // 0x718A10
 void CFont::PrintChar(float x, float y, char character) {
-    return plugin::Call<0x718A10, float, float, char>(x, y, character);
-
-    // todo: check the fucking uv values
-
     // out of screen
-    if (x < 0.0f || x > SCREEN_WIDTH || y < 0.0f || y > SCREEN_HEIGHT)
-        return;
-
-    if (PS2Symbol) {
-        // extra symbol to be drawn (e.g. PS2 buttons)
-
-        CRect rt = {
-            x,
-            2.0f * RenderState.m_fHeight + y,
-            17.0f * RenderState.m_fHeight + x,
-            19.0f * RenderState.m_fHeight + y
-        };
-
-        ButtonSprite[PS2Symbol].Draw(rt, { 255, 255, 255, RenderState.m_color.a });
-
+    if (y < 0.0f || y > (float)RsGlobal.maximumHeight || x < 0.0f || x > (float)RsGlobal.maximumWidth) {
         return;
     }
 
-    if (!character || character == '?') {
-        float propValue = GetLetterIdPropValue(character) / 32.0f;
-        bool zeroed = false;
+    if (PS2Symbol) { // extra symbol to be drawn (e.g. PS2 buttons)
+        CRect rect;
+        rect.left   = x;
+        rect.bottom = RenderState.m_fHeight + RenderState.m_fHeight + y;
+        rect.right  = RenderState.m_fHeight * 17.0f + x;
+        rect.top    = RenderState.m_fHeight * 19.0f + y;
+        ButtonSprite[PS2Symbol].Draw(rect, { 255, 255, 255, RenderState.m_color.a });
+        return;
+    }
 
-        if (RenderState.m_nFontStyle == 1 && character == 208) {
-            character = 0;
-            zeroed = true;
-        }
+    auto code    = (uint8)character;
+    auto isBlank = false;
+    if (code == 0 || code == '?') {
+        code      = 0;
+        isBlank   = true;
+        character = 0;
+    }
+    const auto propValue = GetLetterIdPropValue(character);
+    if (RenderState.m_nFontStyle == 1 && code == 0xD0) {
+        code = 0;
+    }
 
-        //auto v1 = (character >> 4);
-        //auto u1 = (character & 0xf) / 16.0f;
-
-        auto propval = propValue / 32.0f;
-
-        if (RenderState.m_wFontTexture && RenderState.m_wFontTexture != 1) {
-            if (!zeroed) {
-                CRect rt = {
-                    y,
-                    x,
-                    32.0f * propValue * RenderState.m_fWidth + x,
-                    16.0f * RenderState.m_fHeight + y,
-                };
-
-                float u1 = (character & 0xF) / 16.0f;
-                float v1 = (character >> 4) / 16.0f;
-                float u2 = propval / 16.0f + u1;
-                float v2 = v1;
-                float u3 = u1;
-                float v3 = v1 + 0.0625f;
-                float u4 = u2 - 0.0001f;
-                float v4 = v3 - 0.0001f;
-
-                CSprite2d::AddToBuffer(rt, RenderState.m_color, u1, v1, u2, v2, u3, v3, u4, v4);
-            }
-
+    const auto u = (float)(code & 0xF) * 0.0625f;
+    if (RenderState.m_wFontTexture == 0 || RenderState.m_wFontTexture == 1) {
+        if (isBlank) {
             return;
         }
 
-        if (!zeroed) {
-            CRect rt;
+        const auto v = (float)(code >> 4) * 0.078125f;
+        CRect rect;
+        rect.left = x;
+        if (RenderState.m_fSlant == 0.0f) {
+            rect.bottom = y;
+            rect.right  = RenderState.m_fWidth * 32.0f + x;
+            if (code < 0xC0) {
+                rect.top = RenderState.m_fHeight * 40.0f * 0.5f + y;
 
-            rt.left = x;
+                const auto v3 = (v + 0.078125f) - 0.0021f;
+                const auto u2 = (u + 0.0625f) - 0.001f;
+                CSprite2d::AddToBuffer(rect, RenderState.m_color, u, v + 0.0021f, u2, v + 0.0021f, u, v3, u2, v3);
+            } else {
+                rect.top = RenderState.m_fHeight * 32.0f * 0.5f + y;
 
-            if (RenderState.m_fSlant == 0.0f) {
-                rt.bottom = y;
-                rt.right = 32.0f * RenderState.m_fWidth + x;
-
-                if (character < 0xC0) {
-                    rt.top = 20.0f * RenderState.m_fHeight + y;
-
-                    float u1 = (character & 0xF) / 16.0f;
-                    float v1 = (character >> 4) / 12.8f + 0.0021f;
-                    float u2 = u1 + 0.0615f;
-                    float v2 = v1;
-                    float u3 = u1;
-                    float v3 = v2 - 0.0021f;
-                    float u4 = u2;
-                    float v4 = v2 - 0.0021f;
-
-                    CSprite2d::AddToBuffer(rt, RenderState.m_color, u1, v1, u2, v2, u3, v3, u4, v4);
-                }
-                else {
-                    rt.top = 16.0f * RenderState.m_fHeight + y;
-
-                    float u1 = (character & 0xF) / 16.0f;
-                    float v1 = (character >> 4) / 12.8f + 0.0021f;
-                    float u2 = u1 + 0.0615f;
-                    float v2 = v1;
-                    float u3 = u1;
-                    float v3 = v2 - 0.016f;
-                    float u4 = u2;
-                    float v4 = v2 - 0.015f;
-
-                    CSprite2d::AddToBuffer(rt, RenderState.m_color, u1, v1, u2, v2, u3, v3, u4, v4);
-                }
+                const auto u2 = (u + 0.0625f) - 0.001f;
+                CSprite2d::AddToBuffer(rect, RenderState.m_color, u, v + 0.0021f, u2, v + 0.0021f, u, (v + 0.078125f) - 0.016f, u2, (v + 0.078125f) - 0.015f);
             }
-            else {
-                rt.bottom = y + 0.015f;
-                rt.right = 32.0f * RenderState.m_fWidth + x;
-                rt.top = 20.0f * RenderState.m_fHeight + y + 0.015f;
+        } else { // Slanted
+            rect.bottom = y + 0.015f;
+            rect.right  = RenderState.m_fWidth * 32.0f + x;
+            rect.top    = RenderState.m_fHeight * 40.0f * 0.5f + y + 0.015f;
 
-                float u1 = (character & 0xF) / 16.0f;
-                float v1 = (character >> 4) / 12.8f + 0.00055f;
-                float u2 = u1 + 0.0615f;
-                float v2 = (character >> 4) / 12.8f + 0.078125f;
-                float u3 = u1;
-                float v3 = v2 - 0.016f;
-                float u4 = u2;
-                float v4 = v2 - 0.015f;
-
-                CSprite2d::AddToBuffer(rt, RenderState.m_color, u1, v1, u2, v2, u3, v3, u4, v4);
-            }
+            const auto u2 = (u + 0.0625f) - 0.001f;
+            CSprite2d::AddToBuffer(rect, RenderState.m_color, u, v + 0.00055f, u2, v + 0.0121f, u, (v + 0.078125f) - 0.009f, u2, ((v + 0.078125f) - 0.0021f) + 0.01f);
         }
+    } else {
+        if (isBlank) {
+            return;
+        }
+
+        const auto v     = (float)(code >> 4) * 0.0625f;
+        const auto scale = propValue * 0.03125f;
+        CRect      rect;
+        rect.left   = x;
+        rect.bottom = y;
+        rect.right  = RenderState.m_fWidth * 32.0f * scale + x;
+        rect.top    = RenderState.m_fHeight * 32.0f * 0.5f + y;
+
+        const auto u2 = scale * 0.0625f + u;
+        CSprite2d::AddToBuffer(rect, RenderState.m_color, u, v, u2, v, u, v + 0.0625f, u2 - 0.0001f, (v + 0.0625f) - 0.0001f);
     }
 }
 
