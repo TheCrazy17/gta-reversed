@@ -73,7 +73,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(DoFootLanded, 0x5E5380);
     RH_ScopedInstall(ClearAll, 0x5E5320);
     RH_ScopedInstall(CalculateNewOrientation, 0x5E52E0);
-    RH_ScopedInstall(CalculateNewVelocity, 0x5E4C50, { .Reversed = false });
+    RH_ScopedInstall(CalculateNewVelocity, 0x5E4C50);
     RH_ScopedInstall(SetCharCreatedBy, 0x5E47E0);
     RH_ScopedInstall(SetPedState, 0x5E4500);
     RH_ScopedInstall(GiveObjectToPedToHold, 0x5E4390);
@@ -2349,7 +2349,125 @@ void CPed::SetCharCreatedBy(ePedCreatedBy createdBy) {
  * @addr 0x5E4C50
  */
 void CPed::CalculateNewVelocity() {
-    ((void(__thiscall*)(CPed*))0x5E4C50)(this);
+    static_assert(offsetof(CPed, m_vecAnimMovingShiftLocal) == 0x4D8 && offsetof(CPed, m_pedIK) + offsetof(CPedIK, m_fSlopePitch) == 0x518 && offsetof(CPed, m_pedIK) + offsetof(CPedIK, m_nFlags) == 0x528);
+
+    const auto timeStep = CTimer::GetTimeStep();
+
+    // Turn towards the aiming rotation
+    if (!bIsInTheAir && !bIsLanding && m_nPedState != PEDSTATE_DIE && m_nPedState != PEDSTATE_DEAD && m_nPedState != PEDSTATE_ARRESTED) {
+        const auto maxTurn = m_fHeadingChangeRate * 0.017453292f * timeStep;
+
+        m_fCurrentRotation = CGeneral::LimitRadianAngle(m_fCurrentRotation);
+        auto aim           = CGeneral::LimitRadianAngle(m_fAimingRotation);
+        if (aim > m_fCurrentRotation + PI) {
+            aim -= TWO_PI;
+        } else if (aim < m_fCurrentRotation - PI) {
+            aim += TWO_PI;
+        }
+        const auto diff = aim - m_fCurrentRotation;
+
+        // Turning speed, the player always goes at full speed
+        const auto player = IsPlayer();
+        if (player) {
+            m_fMoveAnim = 1.0f;
+        } else if (diff < 0.0f || 0.0f <= m_fMoveAnim) {
+            if (diff < 0.0f && 0.0f < m_fMoveAnim) {
+                m_fMoveAnim = -0.1f;
+            }
+        } else {
+            m_fMoveAnim = 0.1f;
+        }
+
+        auto       turning = false;
+        const auto limit   = std::abs(m_fMoveAnim) * maxTurn;
+        if (diff <= limit) {
+            if (-limit <= diff) {
+                if (player || std::abs(diff) <= maxTurn * 0.1f) {
+                    m_fCurrentRotation += diff;
+                    m_fMoveAnim         = std::max(std::abs(diff) / maxTurn, 0.1f);
+                } else {
+                    m_fCurrentRotation += diff * 0.5f;
+                    m_fMoveAnim         = m_fMoveAnim * 0.5f;
+                }
+            } else {
+                m_fCurrentRotation -= limit;
+                m_fMoveAnim        -= timeStep * 0.1f;
+                if (m_fMoveAnim < -1.0f) {
+                    m_fMoveAnim = -1.0f;
+                }
+                turning = true;
+            }
+        } else {
+            m_fCurrentRotation += limit;
+            m_fMoveAnim        += timeStep * 0.1f;
+            if (m_fMoveAnim > 1.0f) {
+                m_fMoveAnim = 1.0f;
+            }
+            turning = true;
+        }
+
+        if (player || (m_nMoveState != PEDMOVE_STILL && m_nMoveState != PEDMOVE_NONE) || !turning || m_pIntelligence->GetTaskUseGun() || m_pIntelligence->GetTaskFighting()) {
+            if (m_nMoveState == PEDMOVE_TURN_L || m_nMoveState == PEDMOVE_TURN_R) {
+                m_nMoveState = PEDMOVE_STILL;
+            }
+        } else {
+            m_nMoveState = diff <= 0.0f ? PEDMOVE_TURN_R : PEDMOVE_TURN_L;
+        }
+        m_pedIK.m_fBodyRoll = 0.0f;
+    }
+
+    // The slope of the ground tilts the ped
+    const auto& slope      = field_578;
+    auto&       ik         = m_pedIK;
+    const auto  forwardDot = DotProduct(slope, m_matrix->GetForward());
+    const auto  rightDot   = DotProduct(slope, m_matrix->GetRight());
+
+    const auto ToAngle = [](float sine) { return std::asin(std::clamp(sine, -1.0f, 1.0f)); };
+    if (!ik.bSlopePitch) {
+        if (m_nMoveState >= PEDMOVE_WALK && !IsPlayer()) {
+            ik.m_fSlopeRoll = 0.0f;
+        }
+    } else {
+        auto settle = false; // Goes back to flat instead of following the ground
+        auto follow = false; // The roll follows the ground and the pitch is smoothed
+        if (m_nPedState == PEDSTATE_DIE) {
+            follow = true;
+        } else if (!bFallenDown && (m_nMoveState < PEDMOVE_WALK || g_surfaceInfos.IsStairs(m_nContactSurface) || bPedHitWallLastFrame)) {
+            settle = true;
+        } else if (bFallenDown) {
+            follow = true;
+        } else {
+            ik.m_fSlopeRoll = 0.0f;
+        }
+
+        if (settle) {
+            float decay = 0.0f;
+            if (ik.m_fSlopePitch != 0.0f || ik.m_fSlopeRoll != 0.0f) {
+                decay = std::pow(0.9f, timeStep);
+            }
+            ik.m_fSlopePitch = std::abs(ik.m_fSlopePitch) <= 0.01f ? 0.0f : decay * ik.m_fSlopePitch;
+            ik.m_fSlopeRoll  = std::abs(ik.m_fSlopeRoll) > 0.02f ? decay * ik.m_fSlopeRoll : 0.0f;
+        } else {
+            if (follow) {
+                ik.m_fSlopeRoll = ToAngle(rightDot);
+            }
+            ik.m_fSlopePitch = (1.0f - 0.75f) * ToAngle(forwardDot) + 0.75f * ik.m_fSlopePitch;
+        }
+    }
+
+    // Speed the animation moves the ped at, along and across where it looks
+    const auto forwardScale = std::sqrt(std::max(1.0f - forwardDot * forwardDot, 0.0f));
+    const auto rightScale   = std::sqrt(std::max(1.0f - rightDot * rightDot, 0.0f));
+
+    m_vecAnimMovingShift = CVector2D{};
+    m_vecAnimMovingShift += CVector2D{ m_matrix->GetForward() } * (forwardScale * m_vecAnimMovingShiftLocal.y);
+    m_vecAnimMovingShift += CVector2D{ m_matrix->GetRight() } * (rightScale * m_vecAnimMovingShiftLocal.x);
+
+    if (timeStep < 0.01f && !StaticRef<bool>(0xB7CB88)) {
+        m_vecAnimMovingShift *= 0.01f;
+    } else {
+        m_vecAnimMovingShift *= 1.0f / timeStep;
+    }
 }
 
 /*!
