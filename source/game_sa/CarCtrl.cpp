@@ -107,7 +107,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
-    RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0, { .Reversed = false });
+    RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0);
     RH_ScopedInstall(GenerateOneRandomCar, 0x430050, { .Reversed = false });
     RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0);
     RH_ScopedInstall(GetAIHeliToFlyInDirection, 0x42A730);
@@ -862,7 +862,98 @@ void CCarCtrl::GenerateEmergencyServicesCar() {
 
 // 0x42B7D0
 CAutomobile* CCarCtrl::GenerateOneEmergencyServicesCar(uint32 modelId, CVector posn) {
-    return plugin::CallAndReturn<CAutomobile*, 0x42B7D0, uint32, CVector>(modelId, posn);
+    CNodeAddress node1{}, node2{};
+    CVector      origin{};
+    float        nodeLerp{};
+
+    const auto& centre = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
+
+    // Find a spot on the road that is on land and not blocked by anything
+    auto numTries = 0;
+    auto found    = false;
+    do {
+        if (numTries > 4) {
+            return nullptr;
+        }
+        if (GenerateCarCreationCoors2(centre, 0.70710677f, 0.70710677f, -1.0f, true, 160.0f, 160.0f, &origin, &node1, &node2, &nodeLerp, false, false)
+            && !ThePaths.GetPathNode(node1)->m_bWaterNode
+        ) {
+            int16 numColliding{};
+            CWorld::FindObjectsKindaColliding(origin, 10.0f, true, &numColliding, 2, nullptr, false, true, true, false, false);
+            found = numColliding == 0;
+        }
+        numTries++;
+    } while (!found);
+    if (numTries > 4) { // Also discards a spot found on the very last try
+        return nullptr;
+    }
+
+    const auto veh = new CAutomobile{ (int32)modelId, RANDOM_VEHICLE, true };
+    veh->SetPosn(origin);
+
+    // Face the vehicle towards the target
+    const auto toTarget = posn - origin;
+    const auto len2D    = std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y);
+    float      dirX, dirY;
+    if (len2D == 0.0f) {
+        dirX = 1.0f;
+        dirY = toTarget.y;
+    } else {
+        dirX = toTarget.x / len2D;
+        dirY = toTarget.y / len2D;
+    }
+    auto& mat = veh->GetMatrix();
+    mat.GetForward() = CVector{ dirX, dirY, 0.0f };
+    mat.GetRight()   = CVector{ dirY, -dirX, 0.0f };
+    mat.GetUp()      = CVector{ 0.0f, 0.0f, 1.0f };
+
+    // The ground must be close to where the path nodes are, pick the closest of the one above and below the spot
+    const auto expectedZ = (float)ThePaths.GetPathNode(node2)->m_vPos.z * nodeLerp + (1.0f - nodeLerp) * (float)ThePaths.GetPathNode(node1)->m_vPos.z;
+    auto       groundZ   = 1e9f;
+    CColPoint  colPoint;
+    CEntity*   hitEntity{};
+    if (CWorld::ProcessVerticalLine(origin, 1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+        groundZ = colPoint.m_vecPoint.z;
+    }
+    if (CWorld::ProcessVerticalLine(origin, -1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+        if (std::abs(colPoint.m_vecPoint.z - expectedZ) < std::abs(groundZ - expectedZ)) {
+            groundZ = colPoint.m_vecPoint.z;
+        }
+    }
+    if (groundZ == 1e9f) { // No ground found
+        delete veh;
+        return nullptr;
+    }
+
+    veh->SetPosn(origin.x, origin.y, veh->GetDistanceFromCentreOfMassToBaseOfModel() + groundZ);
+    veh->m_vecMoveSpeed = CVector{};
+    veh->PlaceOnRoadProperly();
+    CWorld::Add(veh);
+
+    switch (modelId) {
+    case MODEL_FIRETRUK:
+        veh->vehicleFlags.bIsFireTruckOnDuty = true;
+        NumFireTrucksOnDuty++;
+        CCarAI::AddFiretruckOccupants(veh);
+        break;
+    case MODEL_AMBULAN:
+        veh->vehicleFlags.bIsAmbulanceOnDuty = true;
+        NumAmbulancesOnDuty++;
+        CCarAI::AddAmbulanceOccupants(veh);
+        break;
+    case MODEL_ENFORCER:
+    case MODEL_COPBIKE:
+    case MODEL_COPCARLA:
+    case MODEL_COPCARSF:
+    case MODEL_COPCARVG:
+    case MODEL_COPCARRU:
+        CCarAI::AddPoliceCarOccupants(veh, false);
+        break;
+    default:
+        return veh;
+    }
+    veh->vehicleFlags.bSirenOrAlarm = true;
+    return veh;
 }
 
 // 0x430050
