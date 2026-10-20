@@ -73,7 +73,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(GiveObjectToPedToHold, 0x5E4390);
     RH_ScopedInstall(ClearLookFlag, 0x5E1950);
     RH_ScopedInstall(WorkOutHeadingForMovingFirstPerson, 0x5E1A00);
-    RH_ScopedInstall(UpdatePosition, 0x5E1B10, { .Reversed = false });
+    RH_ScopedInstall(UpdatePosition, 0x5E1B10);
     RH_ScopedInstall(MakeTyresMuddySectorList<CPtrListSingleLink<CPhysical*>>, 0x6AE0D0, { .Reversed = false });
     RH_ScopedInstall(IsPedInControl, 0x5E3960);
     RH_ScopedInstall(RemoveWeaponModel, 0x5E3990);
@@ -1748,7 +1748,113 @@ float CPed::WorkOutHeadingForMovingFirstPerson(float heading) {
 */
 void CPed::UpdatePosition()
 {
-    ((void(__thiscall *)(CPed*))0x5E1B10)(this);
+    if (CReplay::Mode == MODE_PLAYBACK) {
+        return;
+    }
+
+    const auto ApplyHeading = [this] {
+        if (m_matrix) {
+            m_matrix->SetRotateZOnly(m_fCurrentRotation);
+        } else {
+            m_placement.m_fHeading = m_fCurrentRotation;
+        }
+    };
+
+    if (!bIsStanding) {
+        // Only some tasks drive the heading while the ped is not standing on anything
+        if (!m_pIntelligence->GetTaskSwim() && !m_pIntelligence->GetTaskJetPack()) {
+            const auto* const task = m_pIntelligence->GetTaskManager().GetPrimaryTasks()[TASK_PRIMARY_PRIMARY];
+            if (!task || task->GetTaskType() != TASK_COMPLEX_USE_SWAT_ROPE) {
+                return;
+            }
+        }
+        ApplyHeading();
+        return;
+    }
+
+    if (m_pAttachedTo) {
+        return;
+    }
+    ApplyHeading();
+
+    auto* const on = m_standingOnEntity ? m_standingOnEntity->AsPhysical() : nullptr;
+
+    // How much the ped has to move to follow what it stands on
+    CVector2D move;
+    if (on) {
+        CVector speed;
+        if (!IsPlayer() && on->GetIsTypeVehicle() && on->AsVehicle()->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+            // The boat can turn, so the speed depends on where the ped is on it
+            auto relPos = GetPosition();
+            relPos.z -= 1.0f;
+            relPos -= on->GetPosition();
+
+            speed = CrossProduct(on->m_vecTurnSpeed, relPos) + on->m_vecMoveSpeed;
+            speed += (relPos * (on->m_vecTurnSpeed.SquaredMagnitude() * -1.0f)) * CTimer::GetTimeStep();
+            m_vecMoveSpeed.z = speed.z;
+        } else {
+            speed = on->GetSpeed(field_56C);
+        }
+
+        move.x = (speed.x + m_vecAnimMovingShift.x) - m_vecMoveSpeed.x;
+        move.y = (speed.y + m_vecAnimMovingShift.y) - m_vecMoveSpeed.y;
+
+        const auto turn = CTimer::GetTimeStep() * on->m_vecTurnSpeed.z;
+        m_fCurrentRotation += turn;
+        m_fAimingRotation  += turn;
+    } else if (g_surfaceInfos.IsSteepSlope(m_nContactSurface) && (field_578.x != 0.0f || field_578.y != 0.0f)) {
+        // Slides down the slope
+        CVector2D slope{ field_578.x, field_578.y };
+        slope.Normalise();
+
+        m_vecMoveSpeed = CVector{ 0.0f, 0.0f, -0.001f };
+
+        move = slope * 0.02f + m_vecAnimMovingShift;
+        const auto along = slope.y * move.y + slope.x * move.x;
+        if (along < 0.0f) {
+            move.x -= slope.x * along;
+            move.y -= along * slope.y;
+        }
+    } else {
+        move = m_vecAnimMovingShift - CVector2D{ m_vecMoveSpeed };
+    }
+
+    // Moving shorter than a limit that depends on what the ped stands on
+    const auto ClampMove = [&](float maxLength) {
+        const auto length = move.Magnitude();
+        if (length > maxLength) {
+            move *= maxLength / length;
+        }
+    };
+    if (on && !on->m_pAttachedTo && !(on->physicalFlags.bDisableCollisionForce && !on->physicalFlags.bCollidable)) {
+        const auto length = move.Magnitude();
+        float      maxLength;
+        if (on->GetIsTypeVehicle()) {
+            if (m_nPedState == PEDSTATE_DIE) {
+                maxLength = CTimer::GetTimeStep() * 0.002f;
+            } else {
+                switch (on->AsVehicle()->m_nVehicleType) {
+                case VEHICLE_TYPE_BIKE:
+                    maxLength = on->m_vecMoveSpeed.SquaredMagnitude() <= 0.04f ? length : CTimer::GetTimeStep() * 0.0002f;
+                    break;
+                case VEHICLE_TYPE_AUTOMOBILE:
+                    maxLength = CTimer::GetTimeStep() * 0.01f;
+                    break;
+                default:
+                    maxLength = length;
+                    break;
+                }
+            }
+        } else {
+            maxLength = CTimer::GetTimeStep() * 0.01f;
+        }
+        ClampMove(maxLength);
+    } else if (bFallenDown && !on) {
+        ClampMove(CTimer::GetTimeStep() * 0.01f);
+    }
+
+    m_vecMoveSpeed.x += move.x;
+    m_vecMoveSpeed.y += move.y;
 }
 
 /*!
