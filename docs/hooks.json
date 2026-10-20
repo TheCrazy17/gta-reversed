@@ -6622,7 +6622,7 @@
   {
     "Category": "CPedGroupIntelligence",
     "Name": "ComputeScriptCommandTasks",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCollision",
@@ -14247,7 +14247,7 @@
   {
     "Category": "CPathFind",
     "Name": "FindNodeOrientationForCarPlacement",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathFind",
@@ -14307,7 +14307,7 @@
   {
     "Category": "CPathFind",
     "Name": "FindParkingNodeInArea",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathFind",
@@ -16982,7 +16982,7 @@
   {
     "Category": "CShadows",
     "Name": "CastRealTimeShadowSectorList<CPtrListSingleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",
@@ -19907,7 +19907,7 @@
   {
     "Category": "CPhysical",
     "Name": "RemoveAndAdd",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPhysical",
@@ -19957,7 +19957,7 @@
   {
     "Category": "CPhysical",
     "Name": "Add",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPhysical",
@@ -20562,7 +20562,7 @@
   {
     "Category": "CGroupEventHandler",
     "Name": "ComputeResponsLeaderQuitEnteringCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CGroupEventHandler",
@@ -24877,7 +24877,7 @@
   {
     "Category": "CTaskComplexGangFollower",
     "Name": "CreateNextSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexGangFollower",
@@ -40787,12 +40787,12 @@
   {
     "Category": "Interior_c",
     "Name": "PlaceFurnitureOnWall",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "Interior_c",
     "Name": "PlaceFurnitureInCorner",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "Interior_c",

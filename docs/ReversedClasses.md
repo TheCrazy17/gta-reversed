@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 98%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 11:08:32 UTC
-(Triggered by commit [59a9b090](https://github.com/TheCrazy17/gta-reversed/commit/59a9b090ac14a8bc88765a5773f09a346e7c984a))
+Last update was at Oct 20, 2026 at 11:41:40 UTC
+(Triggered by commit [6bc296fa](https://github.com/TheCrazy17/gta-reversed/commit/6bc296fa0d9ea79c7264bdac1660de5ae12b2f24))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8178 out of 8342 functions done in 720 categories)
+## Stats (8188 out of 8342 functions done in 720 categories)
 
-#### Completely reversed categories (668/720) [93%]
+#### Completely reversed categories (670/720) [93%]
 
 <details>
 <summary>See list of categories</summary>
@@ -90,6 +90,7 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 - CCompressedMatrixNotAligned (2)<br />
 - CVisibilityPlugins (84)<br />
 - CPedIntelligence (52)<br />
+- CPedGroupIntelligence (27)<br />
 - CCollision (61)<br />
 - CTrafficLights (12)<br />
 - CMotionBlurStreaks (4)<br />
@@ -229,6 +230,7 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 - CCivilianPed (3)<br />
 - CPlaceable (16)<br />
 - CEntity (70)<br />
+- CPhysical (56)<br />
 - CDummy (1)<br />
 - CDummyObject (2)<br />
 - CObject (48)<br />
@@ -686,7 +688,7 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 
 </details>
 
-#### Partially reversed categories (50/720) [7%]
+#### Partially reversed categories (48/720) [7%]
 
 <details>
 <summary>See list of categories</summary>
@@ -696,7 +698,6 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 - CFileLoader (47/48) [98%]<br />
 - CClothesBuilder (16/23) [70%]<br />
 - CPopulation (65/66) [98%]<br />
-- CPedGroupIntelligence (26/27) [96%]<br />
 - CWeapon (36/41) [88%]<br />
 - CStats (49/51) [96%]<br />
 - CCarCtrl (69/111) [62%]<br />
@@ -708,18 +709,17 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 - CClouds (20/21) [95%]<br />
 - CPlayerInfo (27/28) [96%]<br />
 - CCarEnterExit (28/32) [88%]<br />
-- CPathFind (57/62) [92%]<br />
+- CPathFind (59/62) [95%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CRadar (64/65) [98%]<br />
 - CPickups (36/37) [97%]<br />
 - CProjectileInfo (11/12) [92%]<br />
-- CShadows (22/31) [71%]<br />
+- CShadows (23/31) [74%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
 - CPed (137/145) [94%]<br />
-- CPhysical (54/56) [96%]<br />
-- CGroupEventHandler (30/32) [94%]<br />
+- CGroupEventHandler (31/32) [97%]<br />
 - CEventHandler (69/72) [96%]<br />
-- CTaskComplexGangFollower (5/7) [71%]<br />
+- CTaskComplexGangFollower (6/7) [86%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
 - CTaskComplexKillPedOnFootArmed (10/11) [91%]<br />
 - CTaskSimpleCarDrive (12/13) [92%]<br />
@@ -737,7 +737,7 @@ Last update was at Oct 20, 2026 at 11:08:32 UTC
 - CAEStaticChannel (7/8) [88%]<br />
 - CAEStreamingChannel (22/24) [92%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
-- Interior_c (48/52) [92%]<br />
+- Interior_c (50/52) [96%]<br />
 - InteriorGroup_c (22/24) [92%]<br />
 - CRunningScript (37/39) [95%]<br />
 
