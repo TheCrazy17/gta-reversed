@@ -24,7 +24,7 @@ void CAEPedAudioEntity::InjectHooks() {
     RH_ScopedInstall(HandleSkateEvent, 0x4E17E0);
     RH_ScopedInstall(HandleLandingEvent, 0x4E18E0);
     RH_ScopedInstall(HandlePedSwing, 0x4E1A40);
-    RH_ScopedInstall(HandlePedHit, 0x4E1CC0, { .Reversed = false });
+    RH_ScopedInstall(HandlePedHit, 0x4E1CC0);
     RH_ScopedInstall(HandlePedJacked, 0x4E2350);
     RH_ScopedInstall(HandleSwimSplash, 0x4E26A0);
     RH_ScopedInstall(HandleSwimWake, 0x4E2790);
@@ -605,9 +605,236 @@ void CAEPedAudioEntity::HandlePedSwing(eAudioEvents event, int32 a3, uint32 volu
     AESoundManager.RequestNewSound(&m_tempSound);
 }
 
+namespace {
+constexpr auto HIT_SPEED_VARIANCE = 0.0588f;
+
+struct WeaponHitSfx {
+    int32 sfx;      // -1 when the weapon has no hit sound
+    float variance; // random speed variance of the sound
+};
+
+// Sound that is played by the weapon of the attacker when it hits something
+WeaponHitSfx GetWeaponHitSfx(eWeaponType type) {
+    if ((uint32)type > WEAPON_INFRARED) {
+        return { -1, HIT_SPEED_VARIANCE };
+    }
+    switch (type) {
+    case WEAPON_UNARMED:
+    case WEAPON_NIGHTVISION:
+    case WEAPON_INFRARED:    return { 0x3A, HIT_SPEED_VARIANCE };
+    case WEAPON_GOLFCLUB:    return { 0x30, HIT_SPEED_VARIANCE };
+    case WEAPON_NIGHTSTICK:  return { 0x23, HIT_SPEED_VARIANCE };
+    case WEAPON_KNIFE:       return { 0x39, 0.03f };
+    case WEAPON_BASEBALLBAT: return { 0x22, HIT_SPEED_VARIANCE };
+    case WEAPON_SHOVEL:      return { 0x4B, HIT_SPEED_VARIANCE };
+    case WEAPON_POOL_CUE:    return { 0x43, HIT_SPEED_VARIANCE };
+    case WEAPON_KATANA:      return { 0x38, HIT_SPEED_VARIANCE };
+    case WEAPON_DILDO1:
+    case WEAPON_DILDO2:
+    case WEAPON_VIBE1:
+    case WEAPON_VIBE2:       return { 0x32, HIT_SPEED_VARIANCE };
+    case WEAPON_FLOWERS:     return { 0x36, 0.07f };
+    case WEAPON_CANE:        return { 0x2E, HIT_SPEED_VARIANCE };
+    case WEAPON_CHAINSAW:
+    case WEAPON_ROCKET:
+    case WEAPON_ROCKET_HS:
+    case WEAPON_FREEFALL_BOMB:
+    case WEAPON_RLAUNCHER:
+    case WEAPON_RLAUNCHER_HS: return { -1, HIT_SPEED_VARIANCE };
+    default:                 return { 0x2C, HIT_SPEED_VARIANCE }; // Brass knuckles, thrown and fired weapons
+    }
+}
+
+// Volume (in dB) of a hit on the surface, 0x4DA510 computes it from a table of percentages
+float GetSurfaceHitVolume(uint8 surfaceId) {
+    struct SurfaceHitInfo {
+        int32 unk0;
+        int32 volumePercent;
+        int32 unk8;
+        int32 unkC;
+    };
+    const auto& info = StaticRef<SurfaceHitInfo[256]>(0x8AD910)[surfaceId];
+    return std::log10((float)info.volumePercent * 0.01f) * 20.0f;
+}
+} // namespace
+
 // 0x4E1CC0
 void CAEPedAudioEntity::HandlePedHit(eAudioEvents event, CPhysical* physical, uint8 surfaceId, float volume, uint32 maxVol) {
-    plugin::CallMethod<0x4E1CC0, CAEPedAudioEntity*, int32, CPhysical*, uint8, float, uint32>(this, event, physical, surfaceId, volume, maxVol);
+    if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN)) {
+        if (!AudioEngine.IsLoadingTuneActive()) {
+            AEAudioHardware.LoadSoundBank(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN);
+        }
+        return;
+    }
+
+    const auto baseVolume = GetDefaultVolume(event) + volume;
+    const auto weaponType = m_pPed->GetActiveWeapon().m_Type;
+
+    // The first sound comes from the weapon, the second one is the impact itself
+    const auto weaponSfx     = GetWeaponHitSfx(weaponType);
+    auto       sfxA          = weaponSfx.sfx;
+    auto       volumeOffsetA = 0.0f;
+    auto       sfxB          = -1;
+    auto       slotB         = SND_BANK_SLOT_WEAPON_GEN;
+    auto       volumeOffsetB = -3.0f;
+
+    // The chainsaw only plays a sound from the bullet hits bank, that has to be loaded
+    const auto UseChainsawHit = [&] {
+        if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_BULLET_HITS, SND_BANK_SLOT_BULLET_HITS)) {
+            return false;
+        }
+        sfxA  = -1;
+        slotB = SND_BANK_SLOT_BULLET_HITS;
+        sfxB  = CAEAudioUtility::GetRandomNumberInRange(7, 9);
+        return true;
+    };
+    // Blades only play the cutting sound
+    const auto UseBladeHit = [&] {
+        sfxA          = -1;
+        sfxB          = 0x51;
+        volumeOffsetB = -9.0f;
+    };
+
+    if (physical && physical->GetIsTypePed()) {
+        switch (event) {
+        case AE_PED_HIT_HIGH:
+        case AE_PED_HIT_LOW: {
+            const auto high = event == AE_PED_HIT_HIGH;
+            const auto Hit  = [&](float offset) {
+                volumeOffsetA = offset;
+                sfxB          = high
+                    ? CAEAudioUtility::GetRandomNumberInRange(0x28, 0x2B)
+                    : CAEAudioUtility::GetRandomNumberInRange(0x24, 0x27);
+            };
+            switch (weaponType) {
+            case WEAPON_BRASSKNUCKLE: Hit(1.0f); break;
+            case WEAPON_BASEBALLBAT:  Hit(-10.0f); break;
+            case WEAPON_KNIFE:
+            case WEAPON_KATANA:       UseBladeHit(); break;
+            case WEAPON_CHAINSAW:
+                if (!UseChainsawHit()) {
+                    return;
+                }
+                break;
+            case WEAPON_FLOWERS:      break;
+            default:                  Hit(-15.0f); break;
+            }
+            break;
+        }
+        case AE_PED_HIT_GROUND:
+            switch (weaponType) {
+            case WEAPON_KNIFE:
+            case WEAPON_KATANA:
+                UseBladeHit();
+                break;
+            case WEAPON_BASEBALLBAT:
+                volumeOffsetA = -10.0f;
+                sfxB          = 0x52;
+                volumeOffsetB = -6.0f;
+                break;
+            case WEAPON_CHAINSAW:
+                if (!UseChainsawHit()) {
+                    return;
+                }
+                break;
+            case WEAPON_FLOWERS:
+                break;
+            default:
+                volumeOffsetA = -15.0f;
+                sfxB          = 0x52;
+                volumeOffsetB = -6.0f;
+                break;
+            }
+            break;
+        case AE_PED_HIT_GROUND_KICK:
+            sfxA          = -1;
+            sfxB          = 0x52;
+            volumeOffsetB = -6.0f;
+            break;
+        case AE_PED_HIT_HIGH_UNARMED:
+        case AE_PED_HIT_MARTIAL_PUNCH:
+            sfxA = 0x3A;
+            sfxB = CAEAudioUtility::GetRandomNumberInRange(0x28, 0x2B);
+            break;
+        case AE_PED_HIT_LOW_UNARMED:
+            sfxA = 0x3A;
+            sfxB = CAEAudioUtility::GetRandomNumberInRange(0x24, 0x27);
+            break;
+        case AE_PED_HIT_MARTIAL_KICK:
+            sfxA = -1;
+            sfxB = CAEAudioUtility::GetRandomNumberInRange(0x3B, 0x3E);
+            break;
+        default:
+            break;
+        }
+    } else {
+        // Hit on something that is not a ped, the collision audio plays the impact
+        const auto ReportCollision = [&] {
+            AudioEngine.ReportCollision(m_pPed, physical, SURFACE_PED, (eSurfaceType)surfaceId, m_pPed->GetPosition(), nullptr, 1.0f, 1.0f, true, false);
+        };
+        switch (event) {
+        case AE_PED_HIT_HIGH:
+        case AE_PED_HIT_LOW:
+        case AE_PED_HIT_GROUND:
+            volumeOffsetA = GetSurfaceHitVolume(surfaceId);
+            ReportCollision();
+            break;
+        case AE_PED_HIT_HIGH_UNARMED:
+        case AE_PED_HIT_LOW_UNARMED:
+        case AE_PED_HIT_MARTIAL_PUNCH:
+            sfxA          = 0x3A;
+            volumeOffsetA = GetSurfaceHitVolume(surfaceId);
+            ReportCollision();
+            break;
+        case AE_PED_HIT_GROUND_KICK:
+        case AE_PED_HIT_MARTIAL_KICK:
+            ReportCollision();
+            return;
+        default:
+            break;
+        }
+    }
+
+    const auto PlayHit = [&](eSoundBankSlot slot, int32 sfx, float volumeOffset, float variance) {
+        m_tempSound.Initialise(
+            slot,
+            (eSoundID)sfx,
+            this,
+            m_pPed->GetPosition(),
+            baseVolume + volumeOffset,
+            1.0f, // rollOff
+            1.0f, // speed
+            1.0f, // doppler
+            0,    // frameDelay
+            SOUND_LIFESPAN_TIED_TO_PHYSICAL_ENTITY,
+            variance,
+            0     // playTime
+        );
+        m_tempSound.RegisterWithPhysicalEntity(m_pPed);
+
+        if (maxVol > 0) {
+            // Schedule playback: store the target time (with uint wrap-around correction) in `m_ClientVariable`
+            m_tempSound.m_Speed         = 0.0f;
+            m_tempSound.m_SpeedVariance = 0.0f;
+            const auto targetTime       = (int32)CTimer::GetTimeInMS() + (int32)maxVol;
+            auto       clientVar        = (float)targetTime;
+            if (targetTime < 0) {
+                clientVar += 4294967296.0f;
+            }
+            m_tempSound.m_ClientVariable = clientVar;
+            m_tempSound.m_Event          = event;
+            m_tempSound.SetFlags(SOUND_REQUEST_UPDATES, 1);
+        }
+
+        AESoundManager.RequestNewSound(&m_tempSound);
+    };
+
+    if ((int16)sfxA >= 0) {
+        PlayHit(SND_BANK_SLOT_WEAPON_GEN, sfxA, volumeOffsetA, weaponSfx.variance);
+    }
+    if ((int16)sfxB >= 0) {
+        PlayHit(slotB, sfxB, volumeOffsetB, HIT_SPEED_VARIANCE);
+    }
 }
 
 // 0x4E2350
