@@ -327,7 +327,7 @@ void CAEPoliceScannerAudioEntity::AddAudioEvent(eAudioEvents event, eCrimeType c
 
     if (ped) {
         if (ped->bInVehicle) {
-            if (const auto* const veh = ped->m_pVehicle) {
+            if (auto* const veh = ped->m_pVehicle) {
                 const auto type = (int32)veh->m_vehicleAudio.m_AuSettings.VehicleAudioType;
                 if (type >= 0 && type < (int32)std::size(VEHICLE_SOUNDS) && VEHICLE_SOUNDS[type] >= 0) {
                     second[0] = { SND_BANK_SCRIPT_SCANNER_INSTRUCTIONS, 7 };

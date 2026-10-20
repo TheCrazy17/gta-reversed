@@ -270,7 +270,7 @@ void CAEStreamingChannel::PrepareStream(CAEStreamingDecoder* newDecoder, int8 so
     m_pDirectSoundBuffer->SetCurrentPosition(0);
 }
 
-/ 0x4F1DE0
+// 0x4F1DE0
 void CAEStreamingChannel::SetNextStream(CAEStreamingDecoder* decoder) {
     if (m_pNextStreamingDecoder) {
         delete m_pNextStreamingDecoder;

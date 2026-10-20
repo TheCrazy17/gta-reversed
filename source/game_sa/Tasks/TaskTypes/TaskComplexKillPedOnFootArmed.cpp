@@ -315,7 +315,7 @@ CTask* CTaskComplexKillPedOnFootArmed::CreateNextSubTask(CPed* ped) {
         return nullptr;
     }
 
-    const auto& weapon    = ped->GetActiveWeapon();
+    auto&       weapon    = ped->GetActiveWeapon();
     const auto  hasRanged = !weapon.IsTypeMelee();
     const auto& wi        = weapon.GetWeaponInfo(ped);
     const auto  range     = wi.m_fTargetRange;
@@ -550,7 +550,7 @@ CTask* CTaskComplexKillPedOnFootArmed::CreateNextSubTask(CPed* ped) {
     return Finish();
 }
 
-/ 0x62BF00
+// 0x62BF00
 CTask* CTaskComplexKillPedOnFootArmed::CreateFirstSubTask(CPed* ped) {
     if (!m_target) {
         return nullptr;

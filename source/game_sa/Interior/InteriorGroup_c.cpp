@@ -9,6 +9,7 @@
 #include "Streaming.h"
 #include "Models/ModelInfo.h"
 #include "Clock.h"
+#include "Tasks/TaskTypes/Interior/TaskInteriorBeInHouse.h"
 #include "Tasks/TaskTypes/Interior/TaskInteriorBeInOffice.h"
 #include "Tasks/TaskTypes/Interior/TaskInteriorBeInShop.h"
 #include "Tasks/TaskTypes/Interior/TaskInteriorShopKeeper.h"
