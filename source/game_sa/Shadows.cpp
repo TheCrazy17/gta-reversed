@@ -17,8 +17,8 @@ void CShadows::InjectHooks() {
     RH_ScopedInstall(Init, 0x706CD0);
     RH_ScopedInstall(Shutdown, 0x706ED0);
     RH_ScopedInstall(TidyUpShadows, 0x707770);
-    RH_ScopedInstall(AddPermanentShadow, 0x706F60, { .Reversed = false });
-    RH_ScopedInstall(UpdatePermanentShadows, 0x70C950, { .Reversed = false });
+    RH_ScopedInstall(AddPermanentShadow, 0x706F60);
+    RH_ScopedInstall(UpdatePermanentShadows, 0x70C950);
     RH_ScopedOverloadedInstall(StoreShadowToBeRendered, "Texture", 0x707390, void(*)(uint8, RwTexture*, const CVector&, float, float, float, float, int16, uint8, uint8, uint8, float, bool, float, CRealTimeShadow*, bool));
     RH_ScopedOverloadedInstall(StoreShadowToBeRendered, "Type", 0x707930, void(*)(uint8, const CVector&, float, float, float, float, int16, uint8, uint8, uint8));
     RH_ScopedInstall(SetRenderModeForShadowType, 0x707460);
@@ -133,14 +133,136 @@ void CShadows::TidyUpShadows() {
 
 // 0x706F60
 void CShadows::AddPermanentShadow(uint8 type, RwTexture* texture, CVector* posn, float topX, float topY, float rightX, float rightY, int16 intensity, uint8 red, uint8 greeb, uint8 blue, float drawDistance, uint32 time, float upDistance) {
-    ((void(__cdecl*)(uint8, RwTexture*, CVector*, float, float, float, float, int16, uint8, uint8, uint8, float, uint32, float))0x706F60)(type, texture, posn, topX, topY, rightX, rightY, intensity, red, greeb, blue, drawDistance, time, upDistance);
+    auto slot = MAX_PERMANENT_SHADOWS;
+    for (auto i = 0u; i < MAX_PERMANENT_SHADOWS; i++) {
+        if (aPermanentShadows[i].m_nType == SHADOW_NONE) {
+            slot = i;
+            break;
+        }
+    }
+
+    // Everything is in use, replace the oldest of the small ones
+    if (slot == MAX_PERMANENT_SHADOWS) {
+        uint32 oldest = 0xFFC00000;
+        for (auto i = 0u; i < MAX_PERMANENT_SHADOWS; i++) {
+            const auto& s = aPermanentShadows[i];
+            if (sq(s.m_fFrontX) + sq(s.m_fFrontY) < 0.25f && sq(s.m_fSideX) + sq(s.m_fSideY) < 0.25f && s.m_nTimeCreated < oldest) {
+                slot   = i;
+                oldest = s.m_nTimeCreated;
+            }
+        }
+        if (slot == MAX_PERMANENT_SHADOWS) {
+            return;
+        }
+    }
+
+    auto& s          = aPermanentShadows[slot];
+    s.m_nType        = (eShadowType)type;
+    s.m_pTexture     = texture;
+    s.m_vecPosn      = *posn;
+    s.m_fFrontX      = topX;
+    s.m_fFrontY      = topY;
+    s.m_fSideX       = rightX;
+    s.m_fSideY       = rightY;
+    s.m_nIntensity   = intensity;
+    s.m_nRed         = red;
+    s.m_nGreen       = greeb;
+    s.m_nBlue        = blue;
+    s.m_fZDistance   = drawDistance;
+    s.m_nTimeDuration = time;
+    s.m_fScale       = upDistance;
+    s.m_nTimeCreated = CTimer::GetTimeInMS();
 }
 
 // 0x70C950
 void CShadows::UpdatePermanentShadows() {
     ZoneScoped;
 
-    ((void(__cdecl*)())0x70C950)();
+    for (auto& s : aPermanentShadows) {
+        if (s.m_nType == SHADOW_NONE) {
+            continue;
+        }
+
+        const auto elapsed = CTimer::GetTimeInMS() - s.m_nTimeCreated;
+        if (elapsed < s.m_nTimeDuration) {
+            auto intensity = s.m_nIntensity;
+            auto red       = s.m_nRed;
+            auto green     = s.m_nGreen;
+            auto blue      = s.m_nBlue;
+
+            // Fade out during the last quarter
+            const auto fadeStart = s.m_nTimeDuration * 3 / 4;
+            if (elapsed >= fadeStart) {
+                const auto fade = 1.0f - (float)(elapsed - fadeStart) / (float)(s.m_nTimeDuration / 4);
+                blue            = (uint8)(int32)((float)blue * fade);
+                green           = (uint8)(int32)((float)green * fade);
+                red             = (uint8)(int32)((float)red * fade);
+                intensity       = (uint16)(int32)((float)intensity * fade);
+            }
+
+            // The address of the shadow is used as its ID
+            if (StoreStaticShadow((uint32)(uintptr_t)&s, s.m_nType, s.m_pTexture, s.m_vecPosn, s.m_fFrontX, s.m_fFrontY, s.m_fSideX, s.m_fSideY, intensity, red, green, blue, s.m_fZDistance, 1.0f, 40.0f, false, 0.0f)
+                || s.m_nType == SHADOW_OIL_5
+            ) {
+                continue;
+            }
+        }
+        s.m_nType = SHADOW_NONE;
+    }
+
+    if ((CTimer::GetFrameCounter() & 3) != 0) {
+        return;
+    }
+
+    // Burning oil sets the closest puddles on fire
+    const auto IsPuddle = [](const CPermanentShadow& s) { return s.m_nType == SHADOW_OIL_1 || s.m_nType == SHADOW_OIL_5; };
+    for (auto& s : aPermanentShadows) {
+        if (s.m_nType != SHADOW_OIL_2) {
+            continue;
+        }
+
+        s.m_nType         = SHADOW_OIL_3;
+        s.m_nTimeCreated  = CTimer::GetTimeInMS();
+        s.m_nTimeDuration = 2000;
+
+        const auto FindClosestPuddle = [&](const CPermanentShadow* notBehind) -> CPermanentShadow* {
+            CPermanentShadow* closest{};
+            auto              closestDist = 3.0f;
+            for (auto& o : aPermanentShadows) {
+                if (!IsPuddle(o)) {
+                    continue;
+                }
+                const auto dist = (s.m_vecPosn - o.m_vecPosn).Magnitude();
+                if (dist >= closestDist) {
+                    continue;
+                }
+                // Looks the other way than the puddle that was picked first
+                if (notBehind && (o.m_vecPosn.x - s.m_vecPosn.x) * (notBehind->m_vecPosn.x - s.m_vecPosn.x) + (o.m_vecPosn.y - s.m_vecPosn.y) * (notBehind->m_vecPosn.y - s.m_vecPosn.y) >= 0.0f) {
+                    continue;
+                }
+                closest     = &o;
+                closestDist = dist;
+            }
+            return closest;
+        };
+
+        const auto Ignite = [](CPermanentShadow& puddle) {
+            puddle.m_nType = SHADOW_OIL_4;
+            gFireManager.StartFire(puddle.m_vecPosn, 1.8f, 0, nullptr, 2000, 0, 1);
+        };
+
+        if (const auto first = FindClosestPuddle(nullptr)) {
+            Ignite(*first);
+            if (const auto second = FindClosestPuddle(first)) {
+                Ignite(*second);
+            }
+        }
+    }
+    for (auto& s : aPermanentShadows) { // The puddles that were just ignited keep burning
+        if (s.m_nType == SHADOW_OIL_4) {
+            s.m_nType = SHADOW_OIL_2;
+        }
+    }
 }
 
 // 0x707930
