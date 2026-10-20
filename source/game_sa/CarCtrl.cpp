@@ -115,7 +115,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890);
     RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370);
     RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
-    RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0, { .Reversed = false });
+    RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0);
     RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
     RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10);
     RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80, { .Reversed = false });
@@ -1007,7 +1007,62 @@ void CCarCtrl::JoinCarWithRoadAccordingToMission(CVehicle* vehicle) {
 
 // 0x42F5A0
 void CCarCtrl::JoinCarWithRoadSystem(CVehicle* vehicle) {
-    plugin::Call<0x42F5A0, CVehicle*>(vehicle);
+    static_assert(offsetof(CAutoPilot, m_nPathFindNodesCount) == 0x88);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    // Forget where the vehicle was heading
+    autoPilot.m_endingRouteNode.ResetAreaId();
+    autoPilot.m_currentAddress.ResetAreaId();
+    autoPilot.m_startingRouteNode.ResetAreaId();
+    autoPilot.m_nCurrentPathNodeInfo  = CCarPathLinkAddress{};
+    autoPilot.m_nPreviousPathNodeInfo = CCarPathLinkAddress{};
+    autoPilot.m_nNextPathNodeInfo     = CCarPathLinkAddress{};
+    autoPilot.m_nPathFindNodesCount   = 0;
+
+    // The node closest to the vehicle, in the direction it is facing
+    const auto closest = ThePaths.FindNodeClosestToCoorsFavourDirection(vehicle->GetPosition(), PATH_TYPE_VEH, CVector2D{ vehicle->GetForward() });
+    if (closest.m_wAreaId == UINT16_MAX || !ThePaths.IsAreaLoaded(closest.m_wAreaId)) {
+        return;
+    }
+    const auto& closestNode = *ThePaths.GetPathNode(closest);
+
+    // From there the node it connects to that is the closest
+    auto best = 999999.9f;
+    CNodeAddress bestAddr{};
+    for (auto i = 0u; i < closestNode.m_nNumLinks; i++) {
+        const auto link = ThePaths.m_pNodeLinks[closest.m_wAreaId][closestNode.m_wBaseLinkId + i];
+        if (!ThePaths.IsAreaLoaded(link.m_wAreaId)) {
+            continue;
+        }
+        const auto dist = (CVector2D{ ThePaths.GetPathNode(link)->GetPosition() } - CVector2D{ closestNode.GetPosition() }).Magnitude();
+        if (dist < best) {
+            best     = dist;
+            bestAddr = link;
+        }
+    }
+    if (bestAddr.m_wAreaId == UINT16_MAX) {
+        return;
+    }
+
+    // The vehicle goes from the first of the two to the second, whichever way it is facing
+    auto forward = CVector2D{ vehicle->GetForward() };
+    if (forward.x == 0.0f && forward.y == 0.0f) {
+        forward.x = 1.0f;
+    }
+    const auto& bestNode = *ThePaths.GetPathNode(bestAddr);
+    auto        from     = bestAddr;
+    auto        to       = closest;
+    if ((closestNode.GetPosition().y - bestNode.GetPosition().y) * forward.y + (closestNode.GetPosition().x - bestNode.GetPosition().x) * forward.x < 0.0f) {
+        std::swap(from, to);
+    }
+
+    autoPilot.m_endingRouteNode.ResetAreaId();
+    autoPilot.m_currentAddress    = from;
+    autoPilot.m_startingRouteNode = to;
+    FindLinksToGoWithTheseNodes(vehicle);
+    autoPilot.m_nCurrentLane = 0;
+    autoPilot.m_nNextLane    = 0;
 }
 
 // 0x42F870
