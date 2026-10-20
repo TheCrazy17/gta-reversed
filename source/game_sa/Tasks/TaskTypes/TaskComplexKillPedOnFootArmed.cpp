@@ -26,7 +26,7 @@ void CTaskComplexKillPedOnFootArmed::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x6234C0);
     RH_ScopedVMTInstall(GetTaskType, 0x621240);
     RH_ScopedVMTInstall(MakeAbortable, 0x6212B0);
-    RH_ScopedVMTInstall(CreateNextSubTask, 0x62C190, {.Reversed = false});
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x62C190);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x62BF00);
     RH_ScopedVMTInstall(ControlSubTask, 0x62CCE0);
 }
@@ -311,10 +311,246 @@ bool CTaskComplexKillPedOnFootArmed::MakeAbortable(CPed* ped, eAbortPriority pri
 
 // 0x62C190
 CTask* CTaskComplexKillPedOnFootArmed::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x62C190, CTaskComplexKillPedOnFootArmed*, CPed*>(this, ped);
+    if (!m_target) {
+        return nullptr;
+    }
+
+    const auto& weapon    = ped->GetActiveWeapon();
+    const auto  hasRanged = !weapon.IsTypeMelee();
+    const auto& wi        = weapon.GetWeaponInfo(ped);
+    const auto  range     = wi.m_fTargetRange;
+    const auto& ourPos    = ped->GetPosition();
+    const auto& targetPos = m_target->GetPosition();
+    const auto  dist      = (targetPos - ourPos).Magnitude();
+
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_SIMPLE_DUCK: {
+        const auto task = CreateSubTask(LineOfSightClearForAttack(ped) ? TASK_SIMPLE_GUN_CTRL : TASK_SIMPLE_PAUSE, ped);
+        ped->bIsDucking = false;
+        m_needToMoveInCloserTime = 0;
+        return task;
+    }
+    case TASK_SIMPLE_PAUSE:
+    case TASK_SIMPLE_STAND_STILL: {
+        if (!ped->bStayInSamePlace && !ped->bKindaStayInSamePlace) {
+            ped->Say(CTX_GLOBAL_MOVE_IN);
+            const auto task = CreateSubTask(TASK_COMPLEX_SEEK_ENTITY, ped);
+            if (!m_needToMoveInCloserTime) {
+                m_needToMoveInCloserTime = CTimer::GetTimeInMS();
+            }
+            return task;
+        }
+        const auto task = CreateSubTask(
+            sq(range) > (targetPos - ourPos).SquaredMagnitude() && LineOfSightClearForAttack(ped)
+                ? TASK_SIMPLE_GUN_CTRL
+                : TASK_SIMPLE_PAUSE,
+            ped
+        );
+        m_needToMoveInCloserTime = 0;
+        return task;
+    }
+    case TASK_SIMPLE_GO_TO_POINT: {
+        const auto task = CreateSubTask(LineOfSightClearForAttack(ped) ? TASK_SIMPLE_GUN_CTRL : TASK_SIMPLE_PAUSE, ped);
+        m_needToMoveInCloserTime = 0;
+        return task;
+    }
+    case TASK_COMPLEX_GO_TO_POINT_AND_STAND_STILL:
+    case TASK_COMPLEX_SEEK_ENTITY: {
+        if (LineOfSightClearForAttack(ped)) {
+            const auto task = CreateSubTask(TASK_SIMPLE_GUN_CTRL, ped);
+            m_needToMoveInCloserTime = 0;
+            return task;
+        }
+        const auto task = CreateSubTask(TASK_SIMPLE_PAUSE, ped);
+        if (!m_needToMoveInCloserTime) {
+            m_needToMoveInCloserTime = CTimer::GetTimeInMS();
+        }
+        return task;
+    }
+    case TASK_COMPLEX_GO_TO_POINT_SHOOTING:
+    case TASK_SIMPLE_GUN_CTRL:
+    case TASK_SIMPLE_THROW_CTRL:
+        break;
+    default: // Includes `TASK_FINISHED`
+        m_needToMoveInCloserTime = 0;
+        return nullptr;
+    }
+
+    CTask* task{};
+
+    // 0x62CC6C
+    const auto Finish = [&]() -> CTask* {
+        if ((CGeneral::GetRandomNumber() & 1) && m_competence > 0 && !ped->bNotAllowedToDuck) {
+            const auto cp = ped->m_pCoverPoint;
+            if (!cp || (cp->GetUsage() != CCoverPoint::eUsage::WALLTOLEFT && cp->GetUsage() != CCoverPoint::eUsage::WALLTORIGHT)) {
+                ped->GetIntelligence()->SetTaskDuckSecondary(6000);
+            }
+        }
+        m_needToMoveInCloserTime = 0;
+        return task;
+    };
+
+    // 0x62CC55
+    const auto Pause = [&] {
+        task             = CreateSubTask(TASK_SIMPLE_PAUSE, ped);
+        m_lastAttackTime = CTimer::GetTimeInMS();
+    };
+
+    // 0x62CC42
+    const auto GunControlOrPause = [&]() -> CTask* {
+        task = CreateSubTask(TASK_SIMPLE_GUN_CTRL, ped);
+        if (!task) {
+            Pause();
+        }
+        return Finish();
+    };
+
+    const auto SeekTarget = [&](float radius) {
+        return new CTaskComplexSeekEntityStandard{ m_target, 50'000, 1000, radius, 2.0f, 2.0f, true, true };
+    };
+
+    if (ped->bStayInSamePlace) {
+        Pause();
+        return Finish();
+    }
+    if (dist < 3.0f) {
+        return GunControlOrPause();
+    }
+
+    if (dist > std::min(range * 0.8f, 23.0f)) { // Too far to shoot, move in closer
+        if (ped->bKindaStayInSamePlace) {
+            Pause();
+            return Finish();
+        }
+        task = SeekTarget(std::min(range * 0.6f, 20.0f));
+        if (!task) {
+            Pause();
+        }
+        return Finish();
+    }
+
+    //> 0x62C551
+    const auto gunCtrl = notsa::dyn_cast_if_present<CTaskSimpleGunControl>(m_pSubTask);
+    if (gunCtrl && gunCtrl->m_isLOSBlocked && !ped->bStayInSamePlace && !ped->bKindaStayInSamePlace) {
+        ped->Say(CTX_GLOBAL_MOVE_IN);
+        task = SeekTarget(2.0f);
+        if (task) {
+            return Finish();
+        }
+    } else if (const auto cp = hasRanged ? ped->m_pCoverPoint : nullptr) { //> 0x62C5F8
+        CVector coverPos;
+        if (CCover::DoesCoverPointStillProvideCover(cp, targetPos) && CCover::FindCoordinatesCoverPoint(*cp, ped, targetPos, coverPos)) {
+            if ((ourPos - coverPos).Magnitude2D() < 0.75f) { // Already at the cover point
+                if (cp->GetUsage() == CCoverPoint::eUsage::LOWCOVER) {
+                    if (dist < 12.0f
+                        && !ped->bNotAllowedToDuck
+                        && (CGeneral::GetRandomNumber() & 3) == 0
+                        && !ped->GetIntelligence()->m_TaskMgr.GetTaskSecondary(TASK_SECONDARY_DUCK)
+                    ) {
+                        ped->Say(CTX_GLOBAL_DUCK);
+                        task = new CTaskSimpleDuck{ DUCK_STANDALONE, 2500, -1 };
+                    }
+                } else if ((CGeneral::GetRandomNumber() & 1) == 0 && !wi.flags.bThrow) {
+                    const auto gunTask = new CTaskSimpleGunControl{ m_target, {}, {}, eGunCommand::FIREBURST, 5, -1 };
+                    gunTask->m_aimImmidiately = m_aimImmediate;
+                    m_aimImmediate            = false;
+                    m_shootTimer              = CTimer::GetTimeInMS() + 5000;
+                    m_lastAttackTime          = CTimer::GetTimeInMS();
+                    m_lastStrafeTime          = CTimer::GetTimeInMS() + 2500;
+                    m_strafeDir               = eStrafeDir::RIGHT;
+                    m_bStrafeBack             = true;
+                    if (ped->m_pCoverPoint->GetUsage() == CCoverPoint::eUsage::WALLTOLEFT) {
+                        m_strafeDir = eStrafeDir::LEFT;
+                    }
+                    ped->GetIntelligence()->ClearTaskDuckSecondary();
+                    task = gunTask;
+                }
+                if (task) {
+                    return Finish();
+                }
+            }
+            ped->ReleaseCoverPoint();
+        }
+    }
+
+    //> 0x62C849
+    if (m_competence > 0 && dist > 6.0f && hasRanged && (CGeneral::GetRandomNumber() & 1)) { // Try to find a better cover point
+        ped->ReleaseCoverPoint();
+        ped->m_pCoverPoint = CCover::FindAndReserveCoverPoint(ped, targetPos, m_competence == 2);
+        if (const auto cp = ped->m_pCoverPoint) {
+            CVector coverPos;
+            CCover::FindCoordinatesCoverPoint(*cp, ped, targetPos, coverPos);
+            coverPos.z += 1.0f;
+            if ((coverPos - targetPos).Magnitude2D() < range * 0.75f
+                && CWorld::GetIsLineOfSightClear(coverPos, ourPos, true, true, false, false, false, false, false)
+            ) {
+                if (CPedGroups::GetPedsGroup(ped)) {
+                    ped->Say(CTX_GLOBAL_COVER_ME);
+                }
+                ped->GetIntelligence()->SetTaskDuckSecondary(6000);
+                task = new CTaskSimpleGoToPoint{ PEDMOVE_RUN, coverPos, 0.5f, true };
+                if (task) {
+                    return Finish();
+                }
+            } else {
+                ped->ReleaseCoverPoint();
+            }
+        }
+    }
+
+    //> 0x62C9E5
+    if (dist > 10.0f) {
+        switch (CGeneral::GetRandomNumber() & 3) {
+        case 0:
+            if (!ped->bKindaStayInSamePlace) {
+                ped->Say(CTX_GLOBAL_MOVE_IN);
+                task = SeekTarget(dist - 4.0f);
+            }
+            break;
+        case 1:
+            if (!ped->bKindaStayInSamePlace) {
+                m_strafeDir      = eStrafeDir::FORWARD;
+                m_lastStrafeTime = CTimer::GetTimeInMS() + 2000;
+                m_bStrafeBack    = false;
+            }
+            break;
+        }
+    }
+
+    //> 0x62CACA
+    if (dist > 5.0f && (CGeneral::GetRandomNumber() & 3) == 0) { // Strafe, away from whatever is blocking the way
+        m_strafeDir = (CGeneral::GetRandomNumber() & 1) ? eStrafeDir::RIGHT : eStrafeDir::LEFT;
+
+        const CVector pos    = ourPos;
+        const auto    offset = ped->GetRight() * 2.5f;
+        if (m_strafeDir == eStrafeDir::RIGHT) {
+            if (!CWorld::GetIsLineOfSightClear(pos, pos + offset, true, true, false, true, false, false, false)) {
+                m_strafeDir = eStrafeDir::LEFT;
+            }
+        } else if (!CWorld::GetIsLineOfSightClear(pos, pos - offset, true, true, false, true, false, false, false)) {
+            m_strafeDir = eStrafeDir::RIGHT;
+        }
+        m_lastStrafeTime = CTimer::GetTimeInMS() + 2000;
+        m_bStrafeBack    = false;
+    }
+
+    //> 0x62CC04
+    if (task) {
+        return Finish();
+    }
+    if (LineOfSightClearForAttack(ped)) {
+        return GunControlOrPause();
+    }
+    if ((CGeneral::GetRandomNumber() & 3) == 0) {
+        m_strafeDir      = CGeneral::GetRandomNumber() < 0x3FFF ? eStrafeDir::RIGHT : eStrafeDir::LEFT;
+        m_lastStrafeTime = CTimer::GetTimeInMS() + 2000;
+        m_bStrafeBack    = false;
+    }
+    Pause();
+    return Finish();
 }
 
-// 0x62BF00
+/ 0x62BF00
 CTask* CTaskComplexKillPedOnFootArmed::CreateFirstSubTask(CPed* ped) {
     if (!m_target) {
         return nullptr;
