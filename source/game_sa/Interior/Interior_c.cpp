@@ -85,7 +85,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(CalcExitPts, 0x5924A0, { .Reversed = false });
     RH_ScopedInstall(IsVisible, 0x5929F0);
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .Reversed = false });
-    RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .Reversed = false });
+    RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120);
     RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340);
     RH_ScopedInstall(FindEmptyTiles, 0x591C50);
     RH_ScopedInstall(FurnishShop, 0x59A790);
@@ -2039,10 +2039,64 @@ CObject* Interior_c::PlaceFurniture(Furniture_c* a1, int32 a2, int32 a3, float a
 // NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows callers
 // TEST/JZ on EAX and feed the result straight into AddInteriorInfo/Lounge_Add*Info's CEntity* params, same
 // fix as PlaceFurniture).
-CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 a7, int32 a8, int32 a9, int32* a10,
-                                      int32* a11, int32* a12, int32* a13, int32* a14, int32* a15) {
-    return plugin::CallMethodAndReturn<CObject*, 0x593120, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32, int32*, int32*, int32*, int32*, int32*, int32*>(
-        this, furnitureGroupId, furnitureSubgroupId, furnitureId, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
+CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 furnitureId, float a5, int32 a6, int32 side, int32 posAlongWall, int32 offset, int32* outSide,
+                                      int32* outPos, int32* outX, int32* outY, int32* outA, int32* outB) {
+    auto* const furniture = g_furnitureMan.GetFurniture(furnitureGroupId, furnitureSubgroupId, (int16)furnitureId, m_box->m_status);
+    if (!furniture) {
+        return nullptr;
+    }
+
+    // Anything left to random is retried a lot of times until it fits
+    const auto randomSide = side == -1;
+    const auto randomPos  = posAlongWall == -1;
+    const auto attempts   = randomSide || randomPos ? 100 : 1;
+    const auto Random01   = [] { return (float)(CGeneral::GetRandomNumber() & 0xFFFF) * 0.000030517578125f; };
+    for (auto attempt = 0; attempt < attempts; attempt++) {
+        if (randomSide) {
+            side = (int32)(Random01() * 4.0f);
+        }
+
+        int32 x{}, y{};
+        if (side == 1 || side == 3) {
+            // Walls along the depth of the room
+            if (randomPos) {
+                posAlongWall = (int32)(Random01() * (float)(m_box->m_depth - furniture->m_nWidthX));
+            }
+            x = side == 1 ? offset : m_box->m_width - furniture->m_nWidthY - offset;
+            y = posAlongWall;
+        } else {
+            // Walls along the width of the room
+            if (randomPos) {
+                posAlongWall = (int32)(Random01() * (float)(m_box->m_width - furniture->m_nWidthX));
+            }
+            x = posAlongWall;
+            y = side == 2 ? offset : m_box->m_depth - furniture->m_nWidthY - offset;
+        }
+
+        int32 placedA{}, placedB{};
+        if (auto* const obj = PlaceFurniture(furniture, x, y, a5, a6, side, &placedA, &placedB, 0)) {
+            if (outSide) {
+                *outSide = side;
+            }
+            if (outPos) {
+                *outPos = posAlongWall;
+            }
+            if (outX) {
+                *outX = x;
+            }
+            if (outY) {
+                *outY = y;
+            }
+            if (outA) {
+                *outA = placedA;
+            }
+            if (outB) {
+                *outB = placedB;
+            }
+            return obj;
+        }
+    }
+    return nullptr;
 }
 
 // 0x593340
