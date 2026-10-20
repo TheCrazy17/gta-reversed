@@ -28,7 +28,7 @@ void CProjectileInfo::InjectHooks() {
     RH_ScopedInstall(Shutdown, 0x737BC0);
     RH_ScopedInstall(GetProjectileInfo, 0x737BF0);
     RH_ScopedInstall(RemoveNotAdd, 0x737C00);
-    RH_ScopedInstall(AddProjectile, 0x737C80, { .Reversed = false });
+    RH_ScopedInstall(AddProjectile, 0x737C80);
     RH_ScopedInstall(RemoveDetonatorProjectiles, 0x738860);
     RH_ScopedInstall(RemoveProjectile, 0x7388F0);
     RH_ScopedInstall(Update, 0x738B20);
@@ -89,7 +89,213 @@ void CProjectileInfo::RemoveNotAdd(CEntity* creator, eWeaponType weaponType, CVe
 
 // 0x737C80
 bool CProjectileInfo::AddProjectile(CEntity* creator, eWeaponType projectileType, CVector origin, float force, const CVector* dir, CEntity* target) {
-    return plugin::CallAndReturn<bool, 0x737C80>(creator, projectileType, origin, force, dir, target);
+    static_assert(WEAPON_FLARE == 58 && WEAPON_REMOTE_SATCHEL_CHARGE == 39 && WEAPON_FREEFALL_BOMB == 21);
+
+    int32   destroyTime{};
+    float   elasticity{ 0.75f };
+    bool    applyGravity{ true };
+    bool    isThrown{};
+    CVector velocity{};
+    CMatrix mat;
+
+    // Direction the creator is looking at, the thrown things go that way
+    const auto SetupThrownMatrix = [&](bool turnIfVehicle) {
+        auto heading = creator->GetHeading();
+        if (turnIfVehicle && creator->GetIsTypeVehicle()) {
+            heading = CGeneral::LimitRadianAngle(heading + PI);
+        }
+        mat.SetTranslate({});
+        mat.RotateZ(heading);
+        mat.GetPosition() += origin;
+        return heading;
+    };
+
+    switch (projectileType) {
+    case WEAPON_GRENADE:
+    case WEAPON_REMOTE_SATCHEL_CHARGE: {
+        destroyTime = CTimer::GetTimeInMS() + 2000;
+
+        auto speed = force == 0.0f ? 0.0f : force * 0.22f + 0.15f;
+        if (projectileType == WEAPON_REMOTE_SATCHEL_CHARGE) {
+            speed *= 0.5f;
+        }
+        const auto heading = SetupThrownMatrix(true);
+        velocity           = CVector{ -std::sin(heading) * speed, std::cos(heading) * speed, (force + 1.0f) * 0.4f * speed };
+        if (creator->m_nModelIndex == MODEL_SENTINEL) {
+            velocity += creator->AsPhysical()->GetMoveSpeed();
+        }
+        isThrown   = true;
+        elasticity = projectileType == WEAPON_REMOTE_SATCHEL_CHARGE ? 0.03f : 0.5f;
+        break;
+    }
+    case WEAPON_TEARGAS: {
+        destroyTime = CTimer::GetTimeInMS() + 20000;
+
+        const auto speed   = force == 0.0f ? 0.0f : force * 0.22f + 0.15f;
+        const auto heading = SetupThrownMatrix(false);
+        velocity           = CVector{ -std::sin(heading) * speed, std::cos(heading) * speed, (force + 1.0f) * 0.4f * speed };
+        isThrown   = true;
+        elasticity = 0.5f;
+        break;
+    }
+    case WEAPON_MOLOTOV: {
+        destroyTime = CTimer::GetTimeInMS() + 2000;
+
+        const auto speed   = std::max(force * 0.22f + 0.15f, 0.2f);
+        const auto heading = SetupThrownMatrix(false);
+        velocity           = CVector{ -std::sin(heading) * speed, std::cos(heading) * speed, (force * 0.2f + 0.4f) * speed };
+        break;
+    }
+    case WEAPON_ROCKET:
+    case WEAPON_ROCKET_HS: {
+        auto speed = 0.4f;
+        if (projectileType == WEAPON_ROCKET) {
+            destroyTime = CTimer::GetTimeInMS() + 3000;
+        } else {
+            destroyTime = CTimer::GetTimeInMS() + 10000;
+            speed       = 0.2f;
+        }
+
+        if (creator->GetIsTypeVehicle()) {
+            mat                 = creator->GetMatrix();
+            mat.GetPosition()   = origin;
+            speed              += creator->AsPhysical()->GetMoveSpeed().Magnitude();
+        } else if (creator->GetIsTypePed() && creator->AsPed()->IsPlayer()) {
+            // Shot from the player, goes where the camera looks
+            const auto& cam = TheCamera.GetActiveCam();
+            mat.GetForward() = cam.m_vecFront;
+            mat.GetUp()      = cam.m_vecUp;
+            mat.GetRight()   = CrossProduct(cam.m_vecUp, cam.m_vecFront);
+            mat.GetPosition() = origin;
+        } else if (!dir) {
+            mat = creator->GetMatrix();
+        } else {
+            mat.GetForward()  = *dir;
+            mat.GetRight()    = creator->GetMatrix().GetRight();
+            mat.GetUp()       = CrossProduct(mat.GetRight(), mat.GetForward());
+            mat.GetPosition() = origin;
+        }
+        velocity     = mat.TransformVector({ 0.0f, speed, 0.0f });
+        applyGravity = false;
+        break;
+    }
+    case WEAPON_FREEFALL_BOMB:
+    case WEAPON_FLARE: {
+        if (projectileType == WEAPON_FREEFALL_BOMB) {
+            destroyTime = CTimer::GetTimeInMS() + 2000000;
+        } else {
+            CStreaming::RequestModel(ModelIndices::MI_FLARE, 0);
+            destroyTime = CTimer::GetTimeInMS() + 10000;
+        }
+
+        // Falls with the speed of what dropped it
+        if (const auto type = creator->GetType(); type == ENTITY_TYPE_VEHICLE || type == ENTITY_TYPE_PED || type == ENTITY_TYPE_OBJECT) {
+            velocity = creator->AsPhysical()->GetMoveSpeed();
+        }
+        mat               = creator->GetMatrix();
+        mat.GetPosition() = origin;
+        break;
+    }
+    default:
+        break;
+    }
+
+    // Free slot for the projectile
+    auto slot = 0u;
+    while (slot < gaProjectileInfo.size() && gaProjectileInfo[slot].m_bActive) {
+        slot++;
+    }
+    if (slot == gaProjectileInfo.size()) {
+        return false;
+    }
+
+    CProjectile* proj{};
+    switch (projectileType) {
+    case WEAPON_GRENADE:
+    case WEAPON_TEARGAS:
+    case WEAPON_MOLOTOV:
+    case WEAPON_REMOTE_SATCHEL_CHARGE: {
+        proj = new CProjectile(CWeaponInfo::GetWeaponInfo(projectileType, eWeaponSkill::STD)->m_nModelId1);
+
+        // The projectile needs a sphere to collide with
+        auto* const colModel = CModelInfo::GetModelInfo(proj->m_nModelIndex)->GetColModel();
+        if (!colModel->m_pColData) {
+            colModel->AllocateData(1, 0, 0, 0, 0, false);
+            colModel->m_pColData->m_pSpheres[0].Set(colModel->GetBoundRadius() * 0.75f, colModel->GetBoundCenter(), (eSurfaceType)0x38, 0, tColLighting{ 0xFF });
+        } else if (colModel->m_pColData->m_nNumSpheres == 0 && !colModel->m_pColData->m_pSpheres) {
+            colModel->m_pColData->m_nNumSpheres = 1;
+            colModel->m_pColData->m_pSpheres    = (CColSphere*)CMemoryMgr::Malloc(sizeof(CColSphere), 0);
+            colModel->m_pColData->m_pSpheres[0].Set(colModel->GetBoundRadius() * 0.75f, colModel->GetBoundCenter(), (eSurfaceType)0x38, 0, tColLighting{ 0xFF });
+        }
+        break;
+    }
+    case WEAPON_ROCKET:
+    case WEAPON_ROCKET_HS:
+    case WEAPON_FREEFALL_BOMB:
+        proj = new CProjectile(CWeaponInfo::GetWeaponInfo(projectileType, eWeaponSkill::STD)->m_nModelId1);
+        break;
+    case WEAPON_FLARE:
+        proj = new CProjectile(ModelIndices::MI_FLARE);
+        proj->m_fAirResistance = 0.9f;
+        break;
+    default:
+        break;
+    }
+    ms_apProjectile[slot] = proj;
+    if (!proj) {
+        return false;
+    }
+
+    auto& info         = gaProjectileInfo[slot];
+    info.m_nWeaponType = projectileType;
+    info.m_pCreator    = creator;
+    creator->RegisterReference(&info.m_pCreator);
+
+    proj->SetMatrix(mat);
+    proj->m_vecMoveSpeed                = velocity;
+    proj->physicalFlags.bApplyGravity   = applyGravity;
+    info.m_nDestroyTime                 = destroyTime;
+    proj->m_fElasticity                 = elasticity;
+    if (isThrown) {
+        proj->m_pObjectInfo = &CObjectData::GetAtIndex(4);
+    }
+
+    info.m_pVictim = target;
+    if (target) {
+        target->RegisterReference(&info.m_pVictim);
+    }
+    info.m_bActive = true;
+
+    CWorld::Add(proj);
+    proj->RegisterReference(reinterpret_cast<CEntity**>(&ms_apProjectile[slot]));
+    info.m_vecLastPosn = proj->GetPosition();
+
+    if (projectileType == WEAPON_TEARGAS) {
+        if (const auto matrix = proj->GetModellingMatrix()) {
+            info.m_pFxSystem = g_fxMan.CreateFxSystem("teargasAD", CVector{}, matrix, false);
+            if (info.m_pFxSystem) {
+                info.m_pFxSystem->Play();
+            }
+        }
+    }
+
+    proj->m_pEntityIgnoredCollision          = creator;
+    proj->physicalFlags.bCanBeCollidedWith   = true;
+    if (const auto type = creator->GetType(); type == ENTITY_TYPE_VEHICLE || type == ENTITY_TYPE_PED || type == ENTITY_TYPE_OBJECT) {
+        if (!creator->AsPhysical()->m_pEntityIgnoredCollision) {
+            creator->AsPhysical()->m_pEntityIgnoredCollision = creator;
+        }
+    }
+
+    // The heat seeking rockets can be seen on the radar
+    if (projectileType == WEAPON_ROCKET_HS) {
+        const auto blip = CRadar::SetEntityBlip(BLIP_OBJECT, GetObjectPool()->GetRef(proj), 0xFF0000FF, BLIP_DISPLAY_BLIPONLY);
+        CRadar::ChangeBlipScale(blip, 1);
+        CRadar::ChangeBlipColour(blip, (creator == FindPlayerPed(-1) || creator == FindPlayerVehicle(-1, false)) ? (eBlipColour)0xFFFFFFFF : (eBlipColour)0xFF0000FF);
+    }
+
+    AudioEngine.ReportWeaponEvent(0x94, projectileType, proj);
+    return true;
 }
 
 // 0x738860
