@@ -42,7 +42,7 @@ void CClothesBuilder::InjectHooks() {
     RH_ScopedOverloadedInstall(BlendTextures, "Dst-Src1-Src2", 0x5A59C0, void (*)(RwTexture*, RwTexture*, RwTexture*, float, float, float, int32));
     RH_ScopedOverloadedInstall(BlendTextures, "Dst-Src1-Src2-Tat", 0x5A5BC0, void (*)(RwTexture*, RwTexture*, RwTexture*, float, float, float, int32, RwTexture*));
     RH_ScopedGlobalInstall(GetTextureFromTxdAndLoadNextTxd, 0x5A5F70);
-    RH_ScopedInstall(ConstructTextures, 0x5A6040, { .Reversed = false });
+    RH_ScopedInstall(ConstructTextures, 0x5A6040);
     RH_ScopedInstall(ConstructGeometryAndSkinArrays, 0x5A6530);
     RH_ScopedInstall(CreateSkinnedClump, 0x5A69D0);
 }
@@ -640,8 +640,124 @@ RwTexture* GetTextureFromTxdAndLoadNextTxd(RwTexture* dstTex, int32 txdId_withTe
 }
 
 // 0x5A6040
-void CClothesBuilder::ConstructTextures(RwTexDictionary* dict, uint32* hashes, float factorA, float factorB, float factorC) {
-    plugin::Call<0x5A6040, RwTexDictionary*, uint32*, float, float, float>(dict, hashes, factorA, factorB, factorC);
+void CClothesBuilder::ConstructTextures(RwTexDictionary* dict, uint32* keys, float normalRatio, float fatRatio, float muscleRatio) {
+    constexpr auto NUM_TATTOOS = 9;
+
+    // Each texture is requested one step before it is needed, so loading overlaps with the processing
+    int32 curTxd  = RequestTexture(keys[CLOTHES_TEXTURE_LOWER_LEFT_ARM]);
+    int32 nextTxd = -1;
+    CStreaming::LoadRequestedModels();
+
+    // Tattoos are all drawn onto the same texture
+    RwTexture* tattoos{};
+    for (auto i = 0; i < NUM_TATTOOS; i++) {
+        const auto isLast = i == NUM_TATTOOS - 1; // The one after the last tattoo is the torso base texture
+        tattoos = GetTextureFromTxdAndLoadNextTxd(
+            tattoos,
+            curTxd,
+            isLast ? CKeyGen::GetUppercaseKey("player_torso") : keys[CLOTHES_TEXTURE_LOWER_LEFT_ARM + 1 + i],
+            &nextTxd
+        );
+        curTxd = nextTxd;
+    }
+    const auto torsoBaseTxd = nextTxd;
+
+    if (fatRatio < 0.0f) {
+        normalRatio += fatRatio;
+        fatRatio = 0.0f;
+    }
+
+    // Torso
+    CStreaming::LoadAllRequestedModels(true);
+    auto clothesTxd = RequestTexture(keys[CLOTHES_TEXTURE_TORSO]);
+    CStreaming::LoadRequestedModels();
+
+    auto* baseDict    = CTxdStore::GetTxd(torsoBaseTxd);
+    const auto torso  = CopyTexture(RwTexDictionaryFindNamedTexture(baseDict, "torso"));
+    const auto torsoF = RwTexDictionaryFindNamedTexture(baseDict, "torso_fat");
+    const auto torsoR = RwTexDictionaryFindNamedTexture(baseDict, "torso_ripped");
+    if (!tattoos) {
+        BlendTextures(torso, torsoF, torsoR, normalRatio, fatRatio, muscleRatio, 0x6C);
+    } else {
+        BlendTextures(torso, torsoF, torsoR, normalRatio, fatRatio, muscleRatio, 0x6C, tattoos);
+        RwTextureDestroy(tattoos);
+    }
+    CStreaming::RemoveModel(TXDToModelId(torsoBaseTxd));
+
+    int32 legsBaseTxd{};
+    GetTextureFromTxdAndLoadNextTxd(torso, clothesTxd, CKeyGen::GetUppercaseKey("player_legs"), &legsBaseTxd);
+    RwTextureSetName(torso, "torso");
+    RwTexDictionaryAddTexture(dict, torso);
+
+    // Legs
+    CStreaming::LoadAllRequestedModels(true);
+    clothesTxd = RequestTexture(keys[CLOTHES_TEXTURE_LEGS]);
+    CStreaming::LoadRequestedModels();
+
+    baseDict          = CTxdStore::GetTxd(legsBaseTxd);
+    const auto legs   = CopyTexture(RwTexDictionaryFindNamedTexture(baseDict, "legs"));
+    const auto legsF  = RwTexDictionaryFindNamedTexture(baseDict, "legs_fat");
+    const auto legsR  = RwTexDictionaryFindNamedTexture(baseDict, "legs_ripped");
+    BlendTextures(legs, legsF, legsR, normalRatio, fatRatio, muscleRatio, 0x6C);
+    CStreaming::RemoveModel(TXDToModelId(legsBaseTxd));
+
+    int32 faceBaseTxd{};
+    GetTextureFromTxdAndLoadNextTxd(
+        legs,
+        clothesTxd,
+        keys[CLOTHES_TEXTURE_HEAD] ? keys[CLOTHES_TEXTURE_HEAD] : CKeyGen::GetUppercaseKey("player_face"),
+        &faceBaseTxd
+    );
+    RwTextureSetName(legs, "legs");
+    RwTexDictionaryAddTexture(dict, legs);
+
+    // Face (Also streams in the shoes)
+    CStreaming::LoadAllRequestedModels(true);
+    int32 shoesTxd = RequestTexture(keys[CLOTHES_TEXTURE_SHOES] ? keys[CLOTHES_TEXTURE_SHOES] : CKeyGen::GetUppercaseKey("player_feet"));
+    CStreaming::LoadRequestedModels();
+
+    baseDict        = CTxdStore::GetTxd(faceBaseTxd);
+    const auto face  = RwTexDictionaryFindNamedTexture(baseDict, "face");
+    const auto faceF = RwTexDictionaryFindNamedTexture(baseDict, "face_fat");
+    RwTexture* head;
+    if (!face) {
+        head = CopyTexture(GetFirstTexture(baseDict));
+    } else {
+        head = CopyTexture(face);
+        if (faceF) {
+            const auto sum = normalRatio + fatRatio + muscleRatio;
+            BlendTextures(head, faceF, (normalRatio + muscleRatio) / sum, fatRatio / sum, 0x6C);
+        }
+    }
+    CStreaming::RemoveModel(TXDToModelId(faceBaseTxd));
+    RwTextureSetName(head, "head");
+    RwTexDictionaryAddTexture(dict, head);
+
+    // The accessories are optional, each one is a copy of the first texture of its TXD
+    const auto shoes = GetTextureFromTxdAndLoadNextTxd(nullptr, shoesTxd, keys[CLOTHES_TEXTURE_NECKLACE], &curTxd);
+    RwTextureSetName(shoes, "feet");
+    RwTexDictionaryAddTexture(dict, shoes);
+
+    const auto AddAccessory = [&](int32& txd, int32& otherTxd, eClothesTexturePart nextPart, const char* name) {
+        if (const auto tex = GetTextureFromTxdAndLoadNextTxd(nullptr, txd, keys[nextPart], &otherTxd)) {
+            RwTextureSetName(tex, name);
+            RwTexDictionaryAddTexture(dict, tex);
+        }
+    };
+    AddAccessory(curTxd, nextTxd, CLOTHES_TEXTURE_BRACELET, "necklace");
+    AddAccessory(nextTxd, curTxd, CLOTHES_TEXTURE_GLASSES, "watch");
+    AddAccessory(curTxd, nextTxd, CLOTHES_TEXTURE_HATS, "glasses");
+    AddAccessory(nextTxd, curTxd, CLOTHES_TEXTURE_SPECIAL, "hat");
+
+    if (curTxd != -1) { // Special
+        CStreaming::LoadAllRequestedModels(true);
+        const auto tex = CopyTexture(GetFirstTexture(CTxdStore::GetTxd(curTxd)));
+        CStreaming::RemoveModel(TXDToModelId(curTxd));
+        if (tex) {
+            RwTextureSetName(tex, "extra1");
+            RwTexDictionaryAddTexture(dict, tex);
+        }
+    }
 }
 
 // 0x5A6530
