@@ -32,7 +32,7 @@ void CClothesBuilder::InjectHooks() {
     RH_ScopedInstall(StoreBoneArray, 0x5A48B0);
     RH_ScopedOverloadedInstall(BlendGeometry, "3", 0x5A4940, RpGeometry * (*)(RpClump*, const char*, const char*, const char*, float, float, float));
     RH_ScopedOverloadedInstall(BlendGeometry, "2", 0x5A4F10, RpGeometry* (*)(RpClump*, const char*, const char*, float, float));
-    RH_ScopedInstall(CopyGeometry, 0x5A5340, { .Reversed = false });
+    RH_ScopedInstall(CopyGeometry, 0x5A5340);
     RH_ScopedInstall(ConstructGeometryArray, 0x5A55A0);
     RH_ScopedInstall(DestroySkinArrays, 0x5A56C0);
     RH_ScopedInstall(BuildBoneIndexConversionTable, 0x5A56E0);
@@ -260,8 +260,43 @@ RpGeometry* CClothesBuilder::BlendGeometry(RpClump* clump, const char* frameName
 }
 
 // 0x5A5340
-RpGeometry* CClothesBuilder::CopyGeometry(RpClump* clump, const char* a2, const char* a3) {
-    return plugin::CallAndReturn<RpGeometry*, 0x5A5340, RpClump*, const char*, const char*>(clump, a2, a3);
+RpGeometry* CClothesBuilder::CopyGeometry(RpClump* clump, const char* dstFrameName, const char* srcFrameName) {
+    struct GeoData {
+        RpGeometry*      g;
+        RwUInt32*        boneIdxs;
+        RwMatrixWeights* boneWeights;
+        RwTexCoords*     uvs;
+        CVector*         verts;
+        CVector*         nrmls;
+    };
+    const auto GetGeoData = [&](const char* frameName) {
+        const auto g  = RpAtomicGetGeometry(GetAtomicWithName(clump, frameName));
+        const auto s  = RpSkinGeometryGetSkin(g);
+        const auto mt = RpGeometryGetMorphTarget(g, 0);
+        return GeoData{
+            g,
+            const_cast<RwUInt32*>(RpSkinGetVertexBoneIndices(s)),
+            const_cast<RwMatrixWeights*>(RpSkinGetVertexBoneWeights(s)),
+            RpGeometryGetVertexTexCoords(g, 1),
+            (CVector*)RpMorphTargetGetVertices(mt),
+            (CVector*)RpMorphTargetGetVertexNormals(mt),
+        };
+    };
+    const auto dst = GetGeoData(dstFrameName);
+    const auto src = GetGeoData(srcFrameName);
+
+    RpGeometryLock(dst.g, rpGEOMETRYLOCKALL);
+    for (auto i = 0; i < RpGeometryGetNumVertices(dst.g); i++) {
+        dst.verts[i]       = src.verts[i];
+        dst.nrmls[i]       = src.nrmls[i];
+        dst.uvs[i]         = src.uvs[i];
+        dst.boneIdxs[i]    = src.boneIdxs[i];
+        dst.boneWeights[i] = src.boneWeights[i];
+    }
+    RpGeometryUnlock(dst.g);
+
+    dst.g->refCount++; // RpGeometryAddRef
+    return dst.g;
 }
 
 // 0x5A55A0
