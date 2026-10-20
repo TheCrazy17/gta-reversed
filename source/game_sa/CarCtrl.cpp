@@ -168,7 +168,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
     RH_ScopedInstall(WeaveForObject, 0x426BC0);
     RH_ScopedInstall(WeaveForPed, 0x426970);
-    RH_ScopedInstall(WeaveForOtherCar, 0x426350, { .Reversed = false });
+    RH_ScopedInstall(WeaveForOtherCar, 0x426350);
     RH_ScopedInstall(WeaveThroughCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D680);
     RH_ScopedInstall(WeaveThroughObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D950);
     RH_ScopedInstall(WeaveThroughPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D7E0);
@@ -3132,7 +3132,90 @@ void CCarCtrl::WeaveForObject(CEntity* entity, CVehicle* vehicle, float* arg3, f
 
 // 0x426350
 void CCarCtrl::WeaveForOtherCar(CEntity* entity, CVehicle* vehicle, float* arg3, float* arg4) {
-    plugin::Call<0x426350, CEntity*, CVehicle*, float*, float*>(entity, vehicle, arg3, arg4);
+    // Tests if the vehicle would hit the other one when it goes in the direction of the angle (0x421A50). Each one is described by two corners and the edge that goes from each
+    const auto IsAngleBlocked = [](float angle, CVector* corner1, CVector* edge1, CVector* corner2, CVector* edge2, CVector* corner3, CVector* edge3, CVector* corner4, CVector* edge4, float speedX, float speedY, float speed, bool narrower) {
+        return plugin::CallAndReturn<char, 0x421A50, float, CVector*, CVector*, CVector*, CVector*, CVector*, CVector*, CVector*, CVector*, float, float, float, bool>(angle, corner1, edge1, corner2, edge2, corner3, edge3, corner4, edge4, speedX, speedY, speed, narrower) != 0;
+    };
+
+    // Vehicles that are meant to be hit, or are chasing this one, are not avoided
+    const auto  mission = vehicle->m_autoPilot.m_nCarMission;
+    const auto* target  = vehicle->m_autoPilot.m_TargetEntity;
+    const auto* otherVeh = static_cast<CVehicle*>(entity);
+    if ((mission == MISSION_RAMPLAYER_CLOSE && entity == FindPlayerVehicle(-1, false))
+        || (mission == MISSION_RAMCAR_CLOSE && entity == target)
+        || (mission == MISSION_FOLLOWCAR_CLOSE && (entity == target || (entity->GetIsTypeVehicle() && otherVeh->vehicleFlags.bPartOfConvoy)))
+        || (mission == MISSION_KILLPED_CLOSE && entity->GetIsTypePed() && static_cast<CPed*>(entity)->bInVehicle && static_cast<CPed*>(entity)->m_pVehicle == target)
+    ) {
+        return;
+    }
+    switch (otherVeh->m_autoPilot.m_nCarMission) {
+    case MISSION_PROTECTION_REAR:
+    case MISSION_PROTECTION_FRONT:
+    case MISSION_ESCORT_LEFT:
+    case MISSION_ESCORT_RIGHT:
+    case MISSION_ESCORT_REAR:
+    case MISSION_ESCORT_FRONT:
+        if (otherVeh->m_autoPilot.m_TargetEntity == vehicle) {
+            return;
+        }
+        break;
+    }
+
+    const auto& entityMat = entity->GetMatrix();
+    const auto& vehMat    = vehicle->GetMatrix();
+
+    const auto toEntity = entity->GetPosition() - vehicle->GetPosition();
+
+    // Only when the other one is in front of the vehicle
+    const auto vehForwardDot = toEntity.x * vehMat.GetForward().x + toEntity.y * vehMat.GetForward().y;
+    if (vehForwardDot < 0.0f) {
+        return;
+    }
+    const auto vehRightDot = toEntity.x * vehMat.GetRight().x + toEntity.y * vehMat.GetRight().y;
+
+    const auto& vehBox    = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox();
+    const auto& entityBox = CModelInfo::GetModelInfo(entity->m_nModelIndex)->GetColModel()->GetBoundingBox();
+    constexpr auto MARGIN = 0.2f;
+
+    // This vehicle
+    auto vehCorner1 = vehMat.TransformPoint({ vehBox.m_vecMin.x - MARGIN, vehForwardDot <= 0.0f ? vehBox.m_vecMin.y - MARGIN : vehBox.m_vecMax.y + MARGIN, 0.0f });
+    auto vehEdge1   = vehMat.TransformVector({ ((vehBox.m_vecMax.x + MARGIN) - vehBox.m_vecMin.x) - MARGIN, 0.0f, 0.0f });
+    auto vehCorner2 = vehMat.TransformPoint({ vehRightDot <= 0.0f ? vehBox.m_vecMin.x - MARGIN : vehBox.m_vecMax.x + MARGIN, vehBox.m_vecMin.y - MARGIN, 0.0f });
+    auto vehEdge2   = vehMat.TransformVector({ 0.0f, ((vehBox.m_vecMax.y + MARGIN) - vehBox.m_vecMin.y) - MARGIN, 0.0f });
+
+    // The other one
+    const auto entityRightDot   = toEntity.x * entityMat.GetRight().x + toEntity.y * entityMat.GetRight().y;
+    const auto entityForwardDot = toEntity.x * entityMat.GetForward().x + toEntity.y * entityMat.GetForward().y;
+    auto entityCorner1 = entityMat.TransformPoint({ entityBox.m_vecMin.x - MARGIN, entityForwardDot >= 0.0f ? entityBox.m_vecMin.y - MARGIN : entityBox.m_vecMax.y + MARGIN, 0.0f });
+    auto entityEdge1   = entityMat.TransformVector({ ((entityBox.m_vecMax.x + MARGIN) - entityBox.m_vecMin.x) - MARGIN, 0.0f, 0.0f });
+    auto entityCorner2 = entityMat.TransformPoint({ entityRightDot >= 0.0f ? entityBox.m_vecMin.x - MARGIN : entityBox.m_vecMax.x + MARGIN, entityBox.m_vecMin.y - MARGIN, 0.0f });
+    auto entityEdge2   = entityMat.TransformVector({ 0.0f, ((entityBox.m_vecMax.y + MARGIN) - entityBox.m_vecMin.y) - MARGIN, 0.0f });
+
+    const auto narrower = vehBox.m_vecMax.x < entityBox.m_vecMax.x;
+    const auto speed    = std::sqrt(vehicle->m_vecMoveSpeed.y * vehicle->m_vecMoveSpeed.y + vehicle->m_vecMoveSpeed.x * vehicle->m_vecMoveSpeed.x);
+    const auto& entitySpeed = entity->AsPhysical()->m_vecMoveSpeed;
+
+    const auto Blocked = [&](float angle) {
+        return IsAngleBlocked(angle, &vehCorner1, &vehEdge1, &vehCorner2, &vehEdge2, &entityCorner1, &entityEdge1, &entityCorner2, &entityEdge2, entitySpeed.x, entitySpeed.y, speed, narrower);
+    };
+
+    // Turn the limits away from the other vehicle in steps of 6 degrees
+    constexpr auto STEP = 0.10471976f;
+    for (auto i = 0; i < 8 && Blocked(*arg3); i++) {
+        *arg3 -= STEP;
+        if (*arg3 < 0.0f) {
+            *arg3 += TWO_PI;
+        }
+    }
+    for (auto i = 0; Blocked(*arg4);) {
+        *arg4 += STEP;
+        if (*arg4 > TWO_PI) {
+            *arg4 -= TWO_PI;
+        }
+        if (++i > 7) {
+            return;
+        }
+    }
 }
 
 // How far above or below the vehicle (in Z) an entity is
