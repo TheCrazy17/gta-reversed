@@ -2,6 +2,9 @@
 #include "Collision/Box.h"
 #include <extensions/Shapes/AngledRect.hpp>
 #include "Tasks/TaskTypes/TaskSimpleFinishBrain.h"
+#include "Tasks/TaskSequences.h"
+#include "Tasks/TaskTypes/TaskSimpleAffectSecondaryBehaviour.h"
+#include "Tasks/TaskTypes/TaskSimpleRunNamedAnim.h"
 
 #include "RunningScript.h"
 #include "TheScripts.h"
@@ -50,7 +53,7 @@ void CRunningScript::InjectHooks() {
     RH_ScopedInstall(Init, 0x4648E0);
     RH_ScopedInstall(GetCorrectPedModelIndexForEmergencyServiceType, 0x464F50);
 
-    RH_ScopedInstall(PlayAnimScriptCommand, 0x470150, { .Reversed = false });
+    RH_ScopedInstall(PlayAnimScriptCommand, 0x470150);
     RH_ScopedInstall(LocateCarCommand, 0x487A20);
     RH_ScopedInstall(LocateCharCommand, 0x486D80);
     RH_ScopedInstall(LocateObjectCommand, 0x487D10);
@@ -292,7 +295,72 @@ void CRunningScript::GivePedScriptedTask(CPed* ped, CTask* task, int32 opcode) {
 
 // 0x470150
 void CRunningScript::PlayAnimScriptCommand(int32 commandId) {
-    plugin::CallMethod<0x470150, CRunningScript*, int32>(this, commandId);
+    constexpr auto OPCODE_PLAY_ANIM_AS_SECONDARY = 0xA1A; // The animation is played as a secondary task
+
+    bool canBeInterrupted = true;
+    bool holdLastFrame    = false;
+
+    CollectParameters(1);
+    const auto pedHandle = ScriptParams[0].iParam;
+
+    char animName[24];
+    char animGroup[16];
+    ReadTextLabelFromScript(animName, sizeof(animName));
+    ReadTextLabelFromScript(animGroup, sizeof(animGroup));
+
+    // Different commands pass a different number of parameters after the names
+    switch (commandId) {
+    case 0x88A:
+        CollectParameters(8);
+        canBeInterrupted = ScriptParams[6].iParam != 0;
+        holdLastFrame = ScriptParams[7].iParam != 0;
+        break;
+    case 0x812:
+        canBeInterrupted = false;
+        CollectParameters(6);
+        break;
+    case 0x605:
+    case OPCODE_PLAY_ANIM_AS_SECONDARY:
+        CollectParameters(6);
+        break;
+    }
+
+    // ScriptParams: [0] blend delta, [1] looped, [2] lock x, [3] lock y, [4] can be interrupted, [5] time
+    const auto time = ScriptParams[5].iParam;
+
+    uint32 flags = ANIMATION_IS_PARTIAL;
+    if (ScriptParams[1].iParam != 0 || (time > 0 && ScriptParams[4].iParam == 0)) {
+        flags |= ANIMATION_IS_LOOPED;
+    }
+    if (ScriptParams[2].iParam != 0) {
+        flags |= ANIMATION_CAN_EXTRACT_VELOCITY;
+    }
+    if (ScriptParams[3].iParam != 0) {
+        flags |= ANIMATION_CAN_EXTRACT_X_VELOCITY;
+    }
+    if (ScriptParams[4].iParam == 0) {
+        flags |= ANIMATION_IS_FINISH_AUTO_REMOVE;
+    }
+    if (commandId == OPCODE_PLAY_ANIM_AS_SECONDARY) {
+        flags |= ANIMATION_DONT_ADD_TO_PARTIAL_BLEND;
+    }
+
+    static_assert(TASK_SECONDARY_PARTIAL_ANIM == 4);
+    CTask* task = new CTaskSimpleRunNamedAnim{
+        animName,
+        animGroup,
+        flags,
+        ScriptParams[0].fParam,
+        (uint32)(time > 0 ? time : -1),
+        !canBeInterrupted,
+        CTaskSequences::ms_iActiveSequence >= 0,
+        holdLastFrame,
+        false
+    };
+    if (commandId == OPCODE_PLAY_ANIM_AS_SECONDARY) {
+        task = new CTaskSimpleAffectSecondaryBehaviour{ true, TASK_SECONDARY_PARTIAL_ANIM, task };
+    }
+    GivePedScriptedTask(pedHandle, task, commandId);
 }
 
 // 0x487A20
