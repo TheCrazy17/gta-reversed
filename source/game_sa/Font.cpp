@@ -45,7 +45,7 @@ void CFont::InjectHooks() {
     RH_ScopedInstall(SetOrientation, 0x719610);
 
     RH_ScopedInstall(InitPerFrame, 0x719800);
-    RH_ScopedInstall(RenderFontBuffer, 0x719840, { .Reversed = false });
+    RH_ScopedInstall(RenderFontBuffer, 0x719840);
     RH_ScopedInstall(GetStringWidth, 0x71A0E0);
     RH_ScopedInstall(DrawFonts, 0x71A210);
     RH_ScopedInstall(ProcessCurrentString, 0x71A220, { .Reversed = false });
@@ -550,7 +550,89 @@ void CFont::InitPerFrame() {
 // Draw text we have in buffer
 // 0x719840
 void CFont::RenderFontBuffer() {
-    plugin::Call<0x719840>();
+    if (pEmptyChar == &FontRenderStateBuf[0]) {
+        return;
+    }
+
+    Sprite[(int16)RenderState.m_wFontTexture].SetRenderState();
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(TRUE));
+
+    // The buffer is made of a render state followed by its text, then the next render state aligned to 4 bytes and so on
+    RenderState.Set(FontRenderStateBuf[0]);
+
+    auto color = RenderState.m_color;
+    auto x     = RenderState.m_vPosn.x;
+    auto y     = RenderState.m_vPosn.y;
+
+    auto*       text = reinterpret_cast<char*>(&FontRenderStateBuf[1]);
+    const auto* end  = reinterpret_cast<char*>(pEmptyChar);
+    if (text < end) {
+        do {
+            if (*text == '\0') {
+                // Next block of text with its own render state
+                do {
+                    text++;
+                } while ((uintptr_t)text & 3);
+                if (text >= end) {
+                    break;
+                }
+
+                RenderState.Set(*reinterpret_cast<CFontChar*>(text));
+                x     = RenderState.m_vPosn.x;
+                y     = RenderState.m_vPosn.y;
+                color = RenderState.m_color;
+                text += sizeof(CFontChar);
+            }
+
+            PS2Symbol = EXSYMBOL_NONE;
+            while (*text == '~' && PS2Symbol == EXSYMBOL_NONE) {
+                text = ParseToken(text, color, RenderState.m_bContainImages, nullptr);
+                if (!RenderState.m_bContainImages) {
+                    RenderState.m_color = color;
+                }
+            }
+
+            auto letter = (uint8)(*text - 0x20);
+            if (RenderState.m_nFontStyle) {
+                letter = FindSubFontCharacter(letter, RenderState.m_nFontStyle);
+            } else if (letter == 0x91) {
+                letter = '@';
+            } else if (letter > 0x9B) {
+                letter = 0;
+            }
+
+            if (RenderState.m_fSlant != 0.0f) {
+                y = (RenderState.m_vSlanRefPoint.x - x) * RenderState.m_fSlant + RenderState.m_vSlanRefPoint.y;
+            }
+
+            if (PS2Symbol == EXSYMBOL_NONE || !RenderState.m_bContainImages) {
+                PrintChar(x, y, (char)letter);
+            }
+
+            if (PS2Symbol != EXSYMBOL_NONE) {
+                x += RenderState.m_fHeight * 17.0f + (float)(int8)RenderState.m_nOutline;
+            } else {
+                const auto  index = letter == '?' ? 0 : letter;
+                const auto& font  = gFontData[(int16)RenderState.m_wFontTexture];
+                const auto  width = RenderState.m_bPropOn == 1 ? font.m_propValues[index] : font.m_unpropValue;
+                x += ((float)(int8)RenderState.m_nOutline + (float)width) * RenderState.m_fWidth;
+            }
+            if (letter == 0) {
+                x += RenderState.m_fWrap;
+            }
+
+            if (PS2Symbol != EXSYMBOL_NONE) {
+                PS2Symbol = EXSYMBOL_NONE;
+                Sprite[(int16)RenderState.m_wFontTexture].SetRenderState();
+            } else if (*text != '\0') {
+                text++;
+            }
+        } while (text < reinterpret_cast<char*>(pEmptyChar));
+    }
+
+    CSprite::FlushSpriteBuffer();
+    CSprite2d::RenderVertexBuffer();
+    pEmptyChar = &FontRenderStateBuf[0];
 }
 
 // 0x71A0E0
