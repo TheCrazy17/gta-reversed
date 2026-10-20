@@ -128,7 +128,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0, { .Reversed = false });
     RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420, { .Reversed = false });
-    RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0, { .Reversed = false });
+    RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0);
     RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0);
@@ -1534,7 +1534,37 @@ void CCarCtrl::SlowCarDownForObject(CEntity* entity, CVehicle* vehicle, float* a
 // 0x42D4F0
 template<typename PtrListType>
 void CCarCtrl::SlowCarDownForObjectsSectorList(PtrListType& ptrList, CVehicle* vehicle, float arg3, float arg4, float arg5, float arg6, float* arg7, float arg8) {
-    plugin::Call<0x42D4F0, PtrListType&, CVehicle*, float, float, float, float, float*, float>(ptrList, vehicle, arg3, arg4, arg5, arg6, arg7, arg8);
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        auto* const object = static_cast<CObject*>(node->Item);
+        if (object->IsScanCodeCurrent()) {
+            continue;
+        }
+        object->SetCurrentScanCode();
+
+        // Only the road blocks and works are looked at
+        const auto modelId = object->m_nModelIndex;
+        if (modelId != ModelIndices::MI_ROADWORKBARRIER1 && modelId != ModelIndices::MI_ROADBLOCKFUCKEDCAR1 && modelId != ModelIndices::MI_ROADBLOCKFUCKEDCAR2) {
+            continue;
+        }
+
+        const auto center = object->GetBoundCentre();
+        if (!(arg3 < center.x && center.x < arg5 && arg4 < center.y && center.y < arg6)) {
+            continue;
+        }
+        if (std::abs(center.z - vehicle->GetPosition().z) >= 10.0f) {
+            continue;
+        }
+
+        // Is it on the way the vehicle is going, also in height
+        const auto  forward = vehicle->GetForward();
+        const auto& vehPos  = vehicle->GetPosition();
+        const auto  dist    = CCollision::DistAlongLine2D(vehPos.x, vehPos.y, forward.x, forward.y, center.x, center.y);
+        if (std::abs(center.z - (dist * forward.z + vehPos.z)) < 3.0f) {
+            SlowCarDownForObject(object, vehicle, arg7, arg8);
+        }
+    }
 }
 
 // 0x42D0E0
