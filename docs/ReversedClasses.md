@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 18:58:15 UTC
-(Triggered by commit [6c1afe3a](https://github.com/TheCrazy17/gta-reversed/commit/6c1afe3aed86cae25a46b3eaf841e2d2b9861a1c))
+Last update was at Oct 20, 2026 at 19:54:23 UTC
+(Triggered by commit [a42a28ce](https://github.com/TheCrazy17/gta-reversed/commit/a42a28ceafb618439cd691d99450badabc0856c2))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8248 out of 8344 functions done in 720 categories)
+## Stats (8251 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (689/720) [96%]
+#### Completely reversed categories (691/720) [96%]
 
 <details>
 <summary>See list of categories</summary>
@@ -157,6 +157,7 @@ Last update was at Oct 20, 2026 at 18:58:15 UTC
 - CInformGroupEvent (3)<br />
 - CInformGroupEventQueue (4)<br />
 - CGangs (8)<br />
+- CPlayerInfo (28)<br />
 - CReplay (47)<br />
 - CDarkel (19)<br />
 - CGeneral (9)<br />
@@ -196,6 +197,7 @@ Last update was at Oct 20, 2026 at 18:58:15 UTC
 - CPedIK (9)<br />
 - CCustomBuildingPipeline (7)<br />
 - CCustomBuildingRenderer (7)<br />
+- CProjectileInfo (12)<br />
 - CPools (19)<br />
 - Securom (2)<br />
 - Rs (27)<br />
@@ -707,7 +709,7 @@ Last update was at Oct 20, 2026 at 18:58:15 UTC
 
 </details>
 
-#### Partially reversed categories (30/720) [4%]
+#### Partially reversed categories (28/720) [4%]
 
 <details>
 <summary>See list of categories</summary>
@@ -723,12 +725,10 @@ Last update was at Oct 20, 2026 at 18:58:15 UTC
 - CStencilShadows (9/13) [69%]<br />
 - CFont (34/36) [94%]<br />
 - CGangWars (33/35) [94%]<br />
-- CPlayerInfo (27/28) [96%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
-- CProjectileInfo (11/12) [92%]<br />
 - CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
-- CPed (137/145) [94%]<br />
+- CPed (138/145) [95%]<br />
 - CEventHandler (69/72) [96%]<br />
 - CTaskComplexGangFollower (6/7) [86%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />

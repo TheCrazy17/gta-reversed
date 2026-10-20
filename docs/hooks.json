@@ -13132,7 +13132,7 @@
   {
     "Category": "CPlayerInfo",
     "Name": "Process",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerInfo",
@@ -16277,7 +16277,7 @@
   {
     "Category": "CProjectileInfo",
     "Name": "AddProjectile",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CProjectileInfo",
@@ -19047,7 +19047,7 @@
   {
     "Category": "CPed",
     "Name": "PositionAttachedPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
