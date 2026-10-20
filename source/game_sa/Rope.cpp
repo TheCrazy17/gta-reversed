@@ -9,7 +9,7 @@ void CRope::InjectHooks() {
 
     RH_ScopedInstall(ReleasePickedUpObject, 0x556030);
     RH_ScopedInstall(CreateHookObjectForRope, 0x556070);
-    RH_ScopedInstall(UpdateWeightInRope, 0x5561B0, { .Reversed = false });
+    RH_ScopedInstall(UpdateWeightInRope, 0x5561B0);
     RH_ScopedInstall(Remove, 0x556780);
     RH_ScopedInstall(Render, 0x556800);
     RH_ScopedInstall(PickUpObject, 0x5569C0);
@@ -86,8 +86,74 @@ void CRope::CreateHookObjectForRope() {
 }
 
 // 0x5561B0
-int8 CRope::UpdateWeightInRope(float a2, float a3, float a4, int32 a5, float* a6) {
-    return plugin::CallMethodAndReturn<int8, 0x5561B0, CRope*, float, float, float, int32, float*>(this, a2, a3, a4, a5, a6);
+int8 CRope::UpdateWeightInRope(float x, float y, float z, int32 unused, float* outPos) {
+    const auto timeStep = CTimer::GetTimeStep();
+    const auto holder   = m_aSegments[m_nSegments];
+    const CVector target{ x, y, z };
+
+    // The last segment is where the weight is
+    m_aSegments.back() = target;
+
+    const auto maxLength = (float)(NUM_ROPE_SEGMENTS - 1 - m_nSegments) * m_fSegmentLength;
+    auto       toTarget  = target - holder;
+    const auto distance  = toTarget.Magnitude();
+
+    if (maxLength <= distance) {
+        // The rope is as long as it can be, a straight line up to the weight
+        const auto pos = toTarget * (maxLength / distance) + holder;
+        outPos[0] = pos.x;
+        outPos[1] = pos.y;
+        outPos[2] = pos.z;
+
+        for (auto i = m_nSegments + 1u; i < NUM_ROPE_SEGMENTS; i++) {
+            toTarget.Normalise();
+            toTarget *= m_fSegmentLength;
+            m_aSegments[i] = toTarget * (float)(i - m_nSegments) + holder;
+        }
+        return 1;
+    }
+
+    // Slack rope, every segment is kept within its length of the next one, a few times over
+    for (auto pass = 0; pass < 6; pass++) {
+        // From the weight to the holder, it stops at the first segment that is already close enough
+        for (auto i = (int32)NUM_ROPE_SEGMENTS - 1; m_nSegments + 1 < i; i--) {
+            const auto& segment  = m_aSegments[i];
+            auto&       previous = m_aSegments[i - 1];
+            const auto  before   = previous;
+
+            const auto length = (segment - previous).Magnitude();
+            if (length <= m_fSegmentLength) {
+                break;
+            }
+
+            previous        = (previous - segment) * (m_fSegmentLength / length) + segment;
+            m_aSpeed[i - 1] = (previous - before) * (1.0f / timeStep);
+        }
+
+        // From the holder to the weight
+        for (auto i = m_nSegments + 1u; i < NUM_ROPE_SEGMENTS - 1; i++) {
+            auto&       segment  = m_aSegments[i];
+            const auto& previous = m_aSegments[i - 1];
+            const auto  delta    = segment - previous;
+            const auto  length   = delta.Magnitude();
+            if (length > m_fSegmentLength) {
+                segment = delta * (m_fSegmentLength / length) + previous;
+            }
+        }
+    }
+
+    // One last time from the weight, without changing the speeds
+    for (auto i = (int32)NUM_ROPE_SEGMENTS - 1; m_nSegments + 1 < i; i--) {
+        const auto& segment  = m_aSegments[i];
+        auto&       previous = m_aSegments[i - 1];
+
+        const auto length = (segment - previous).Magnitude();
+        if (length <= m_fSegmentLength) {
+            break;
+        }
+        previous = (previous - segment) * (m_fSegmentLength / length) + segment;
+    }
+    return 0;
 }
 
 // 0x556780
