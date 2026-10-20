@@ -20,7 +20,7 @@ void CClouds::InjectHooks() {
     RH_ScopedInstall(SetUpOneSkyPoly, 0x713060);
     RH_ScopedInstall(Render, 0x713950);
     RH_ScopedInstall(RenderSkyPolys, 0x714650);
-    RH_ScopedInstall(RenderBottomFromHeight, 0x7154B0, { .Reversed = false });
+    RH_ScopedInstall(RenderBottomFromHeight, 0x7154B0);
 
     // Moving fog
     RH_ScopedInstall(MovingFogInit, 0x713660);
@@ -859,41 +859,179 @@ void CClouds::RenderSkyPolys() {
 
 // 0x7154B0
 void CClouds::RenderBottomFromHeight() {
-    /****
-    * Code below should be good
-    * but it isn't complete...
-    *****\
-   
-    const auto camPos = TheCamera.GetPosition();
-    if (camPos.z < -90.f) { // 0x71557D [Moved up here]
+    // Pre generated numbers between 0 and 1, the clouds are placed using them
+    static auto& randomTable = StaticRef<float[80]>(0x8D5658);
+    static auto& offsetsY    = StaticRef<float[30]>(0x8D57A0);
+    static auto& offsetsX    = StaticRef<float[30]>(0x8D5818);
+
+    const auto& cc          = CTimeCycle::m_CurrentColours;
+    const auto  bottomRed   = (int32)cc.m_nFluffyCloudsBottomRed;
+    const auto  bottomGreen = (int32)cc.m_nFluffyCloudsBottomGreen;
+    const auto  bottomBlue  = (int32)cc.m_nFluffyCloudsBottomBlue;
+
+    // The colour of the first vertex of the clouds is brighter
+    const auto brightRed   = (int32)std::min((float)bottomRed * 2.0f + 20.0f, 255.0f);
+    const auto brightGreen = (int32)std::min((float)bottomGreen * 1.5f, 255.0f);
+    const auto brightBlue  = (int32)std::min((float)bottomBlue * 1.5f, 255.0f);
+
+    const auto& camPos = TheCamera.GetPosition();
+    if (camPos.z < -90.0f) {
         return;
     }
 
-    const auto& cc = CTimeCycle::m_CurrentColours; // cc = color component
-    const auto ClampClr = [](float clr) {
-        return std::min(clr, 255.f);
-    };
-    const auto fcClr = CRGBA{ // fc = fluffy clouds
-        (uint8)ClampClr(cc.m_nFluffyCloudsBottomRed * 2.f + 20.f),
-        (uint8)ClampClr(cc.m_nFluffyCloudsBottomGreen * 1.5f),
-        (uint8)ClampClr(cc.m_nFluffyCloudsBottomBlue * 1.5f),
-        (uint8)255
-    };
-
-    auto lowZ = 160.f, highZ = 190.f;
+    // Height of the clouds, they follow the camera when it is high enough
+    auto lowZ  = 160.0f;
+    auto highZ = 190.0f;
+    if (const auto shift = ((camPos.z - 190.0f) - 10.0f) * 0.3f; shift > 0.0f) {
+        lowZ  = 160.0f + shift;
+        highZ = shift + 190.0f;
+    }
 
     auto& windShift = StaticRef<float>(0xC6E954);
+    windShift += CTimer::GetTimeStep() * CWeather::Wind * 0.25f;
 
-    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(FALSE));
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       RWRSTATE(TRUE));
     RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(TRUE));
-    RwRenderStateSet(rwRENDERSTATEFOGENABLE,         RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEFOGENABLE,         RWRSTATE(FALSE));
     RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(rwBLENDSRCALPHA));
     RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(rwBLENDINVSRCALPHA));
     RwRenderStateSet(rwRENDERSTATETEXTURERASTER,     RWRSTATE(RwTextureGetRaster(gpCloudMaskTex)));
 
-    // TODO....
-    */
+    const auto cloudAlpha = (int32)cc.m_fCloudAlpha;
+
+    // Moves the coordinate into the cell around the camera, so the clouds repeat endlessly
+    const auto WrapToCell = [](float value, int32 cellMask, int32 cellHalf) {
+        return value - (float)(((int32)value & cellMask) + cellHalf);
+    };
+    const auto ChebyshevDistToCamera = [&](const CVector& pos) {
+        return std::max(std::abs(camPos.x - pos.x), std::abs(camPos.y - pos.y));
+    };
+
+    // Big clouds made of quads, they are rendered all together
+    if (cloudAlpha != 0) {
+        uiTempBufferVerticesStored = 0;
+        uiTempBufferIndicesStored  = 0;
+
+        for (auto i = 1; i <= 28; i++) {
+            const auto    shift = (randomTable[(i + 5) % 80] * 0.5f + 1.0f) * windShift;
+            const auto    relX  = WrapToCell(randomTable[(i - 1) % 80] * 512.0f + shift - camPos.x, ~0x1FF, 0x100);
+            const auto    relY  = WrapToCell(randomTable[i % 80] * 512.0f + shift - camPos.y, ~0x1FF, 0x100);
+            const CVector pos{ relX + camPos.x, relY + camPos.y, randomTable[(i + 1) % 80] * (highZ - lowZ) + lowZ };
+
+            // Fades out the ones that are below the camera and the ones that are far away
+            auto alpha = cloudAlpha;
+            if (const auto heightAboveCam = pos.z - camPos.z; heightAboveCam > 0.0f) {
+                alpha = (int32)((1.0f - heightAboveCam * 0.004f) * (float)cloudAlpha);
+            }
+            if (alpha <= 0) {
+                continue;
+            }
+            if (const auto distFactor = ChebyshevDistToCamera(pos) * (1.0f / 256.0f); distFactor > 0.75f) {
+                alpha = (int32)((1.0f - (distFactor - 0.75f) * 4.0f) * (float)alpha);
+            }
+            if (alpha <= 0) {
+                continue;
+            }
+
+            const auto halfWidth  = randomTable[(i + 2) % 80] * 100.0f + 60.0f;
+            const auto halfHeight = randomTable[(i + 3) % 80] * 100.0f + 60.0f;
+
+            const auto Colour = [&](int32 red, int32 green, int32 blue) {
+                return (uint32)((((alpha << 8 | red) << 8 | green) << 8) | blue);
+            };
+            const struct {
+                float  x, y, u, v;
+                uint32 colour;
+            } corners[]{
+                { pos.x - halfWidth, pos.y + halfHeight, 0.0f, 0.0f, Colour(brightRed, brightGreen, brightBlue) },
+                { pos.x + halfWidth, pos.y + halfHeight, 0.0f, 1.0f, Colour(bottomRed, bottomGreen, bottomBlue) },
+                { pos.x - halfWidth, pos.y - halfHeight, 1.0f, 0.0f, Colour(bottomRed, bottomGreen, bottomBlue) },
+                { pos.x + halfWidth, pos.y - halfHeight, 1.0f, 1.0f, Colour(bottomRed, bottomGreen, bottomBlue) },
+            };
+
+            const auto firstVert = (uint16)uiTempBufferVerticesStored;
+            for (auto c = 0u; c < std::size(corners); c++) {
+                auto& vert     = TempBufferVertices.m_3d[firstVert + c];
+                vert.objVertex = { corners[c].x, corners[c].y, pos.z };
+                vert.color     = corners[c].colour;
+                vert.u         = corners[c].u;
+                vert.v         = corners[c].v;
+            }
+
+            auto* const indices = &aTempBufferIndices[uiTempBufferIndicesStored];
+            indices[0]          = firstVert + 2;
+            indices[1]          = firstVert + 1;
+            indices[2]          = firstVert + 0;
+            indices[3]          = firstVert + 2;
+            indices[4]          = firstVert + 3;
+            indices[5]          = firstVert + 1;
+
+            uiTempBufferIndicesStored += 6;
+            uiTempBufferVerticesStored += 4;
+        }
+
+        if (uiTempBufferIndicesStored != 0
+            && RwIm3DTransform(TempBufferVertices.m_3d, uiTempBufferVerticesStored, nullptr, 0x19)
+        ) {
+            RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, aTempBufferIndices, uiTempBufferIndicesStored);
+            RwIm3DEnd();
+        }
+        uiTempBufferIndicesStored  = 0;
+        uiTempBufferVerticesStored = 0;
+    }
+
+    // Smaller ones made of sprites
+    CSprite::InitSpriteBuffer();
+    if (cloudAlpha > 0) {
+        for (auto i = 0; i < 30; i++) {
+            const auto    shift = windShift * 0.5f;
+            const auto    relX  = WrapToCell(shift + offsetsX[i] - camPos.x, ~0xFF, 0x80);
+            const auto    relY  = WrapToCell(shift + offsetsY[i] - camPos.y, ~0xFF, 0x80);
+            const CVector pos{ relX + camPos.x, relY + camPos.y, randomTable[i % 80] * (highZ - lowZ) + lowZ };
+
+            // Fades out with the difference of the height to the camera
+            auto alpha = (int32)((1.0f - std::abs(camPos.z - pos.z) * 0.004f) * (float)cloudAlpha);
+            if (alpha <= 0) {
+                continue;
+            }
+
+            const auto sizeMult   = (randomTable[(i + 1) % 80] + 1.0f) * 12.0f;
+            auto       distFactor = std::min(ChebyshevDistToCamera(pos) * 0.0078125f, 1.0f);
+            if (distFactor > 0.75f) {
+                alpha = (int32)((1.0f - (distFactor - 0.75f) * 4.0f) * (float)alpha);
+            }
+
+            // Fades in when it is close to the camera
+            if (!(distFactor > 0.05f)) {
+                continue;
+            }
+            if (distFactor < 0.1f) {
+                alpha = (int32)((distFactor - 0.05f) * (float)alpha * 20.0f);
+            }
+
+            CVector screenPos;
+            float   width, height;
+            if (CSprite::CalcScreenCoors(pos, &screenPos, &width, &height, false, true)) {
+                CSprite::RenderBufferedOneXLUSprite(
+                    screenPos,
+                    { width * sizeMult, height * sizeMult },
+                    (uint8)bottomRed,
+                    (uint8)bottomGreen,
+                    (uint8)bottomBlue,
+                    256,
+                    1.0f / screenPos.z,
+                    (uint8)alpha
+                );
+            }
+        }
+    }
+    CSprite::FlushSpriteBuffer();
+
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER,     RWRSTATE(NULL));
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       RWRSTATE(TRUE));
 }
 
 //
