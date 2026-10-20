@@ -8,6 +8,13 @@
 #include "StdInc.h"
 
 #include "CarCtrl.h"
+#include "Entity/Vehicle/Plane.h"
+#include "Entity/Vehicle/Train.h"
+#include "Wanted.h"
+#include "TheZones.h"
+#include "Streaming.h"
+#include "FireManager.h"
+#include "AccidentManager.h"
 #include "Tasks/TaskTypes/TaskComplexWander.h"
 #include "BMX.h"
 #include "CarAI.h"
@@ -80,7 +87,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940, { .Reversed = false });
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
-    RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0, { .Reversed = false });
+    RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
     RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0, { .Reversed = false });
     RH_ScopedInstall(GenerateOneRandomCar, 0x430050, { .Reversed = false });
     RH_ScopedInstall(GetAIHeliToAttackPlayer, 0x42F3C0);
@@ -568,7 +575,54 @@ bool CCarCtrl::GenerateCarCreationCoors2(CVector posn, float radius, float arg3,
 
 // 0x42F9C0
 void CCarCtrl::GenerateEmergencyServicesCar() {
-    plugin::Call<0x42F9C0>();
+    static_assert(offsetof(CWanted, m_WantedLevel) == 0x2C);
+
+    if (!bAllowEmergencyServicesToBeCreated || CGangWars::GangWarFightingGoingOn()) {
+        return;
+    }
+
+    // Not while the police is after the player, or inside of an interior
+    const auto* const wanted = FindPlayerWanted();
+    if (!wanted || (int32)wanted->GetWantedLevel() > 3 || CGame::currArea != AREA_CODE_NORMAL_WORLD || !CTheZones::m_CurrLevel) {
+        return;
+    }
+
+    // There's a limit to how many cars can be around
+    const auto carsInUse = (int32)NumAmbulancesOnDuty + (int32)NumFireTrucksOnDuty + (int32)NumParkedCars + NumMissionCars + (int32)NumLawEnforcerCars + NumRandomCars;
+    if (carsInUse > (int32)MaxNumberOfCarsInUse) {
+        return;
+    }
+
+    if (!NumAmbulancesOnDuty) {
+        auto* const accidents = CAccidentManager::GetInstance();
+        if (accidents->GetNumberOfFreeAccidents() < 2) {
+            CStreaming::StreamAmbulanceAndMedic(false);
+        } else {
+            auto playerPos = FindPlayerCoors();
+            if (auto* const accident = accidents->GetNearestFreeAccident(playerPos, false)) {
+                if (CStreaming::StreamAmbulanceAndMedic(true) && CTimer::GetTimeInMS() > (uint32)LastTimeAmbulanceCreated + 30'000) {
+                    const auto posn = accident->m_pPed->GetPosition();
+                    if (GenerateOneEmergencyServicesCar(CStreaming::ms_aDefaultAmbulanceModel[CTheZones::m_CurrLevel], posn)) {
+                        LastTimeAmbulanceCreated = CTimer::GetTimeInMS();
+                    }
+                }
+            }
+        }
+    }
+
+    if (!NumFireTrucksOnDuty) {
+        if (gFireManager.GetNumOfNonScriptFires() < 3) {
+            CStreaming::StreamFireEngineAndFireman(false);
+            return;
+        }
+        if (auto* const fire = gFireManager.FindNearestFire(FindPlayerCoors(), true, true)) {
+            if (CStreaming::StreamFireEngineAndFireman(true) && CTimer::GetTimeInMS() > (uint32)LastTimeFireTruckCreated + 35'000) {
+                if (GenerateOneEmergencyServicesCar(CStreaming::ms_aDefaultFireEngineModel[CTheZones::m_CurrLevel], fire->GetPosition())) {
+                    LastTimeFireTruckCreated = CTimer::GetTimeInMS();
+                }
+            }
+        }
+    }
 }
 
 // 0x42B7D0
@@ -609,6 +663,13 @@ void CCarCtrl::GenerateRandomCars() {
         }
     }
 
+    CTrain::DoTrainGenerationAndRemoval();
+    CPlane::DoPlaneGenerationAndRemoval();
+
+    // Only looked at when the time moves into a different 4096 ms block
+    if ((CTimer::GetPreviousTimeInMS() ^ CTimer::GetTimeInMS()) & 0xFFFFF000) {
+        GenerateEmergencyServicesCar();
+    }
 }
 
 // 0x42F3C0
