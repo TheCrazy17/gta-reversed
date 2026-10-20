@@ -85,7 +85,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GenerateRandomCars, 0x4341C0);
     RH_ScopedInstall(ChooseModel, 0x424CE0);
     RH_ScopedInstall(ClearInterestingVehicleList, 0x423F00);
-    RH_ScopedInstall(ClitargetOrientationToLink, 0x422760, { .Reversed = false });
+    RH_ScopedInstall(ClitargetOrientationToLink, 0x422760);
     RH_ScopedInstall(CreateConvoy, 0x42C740, { .Reversed = false });
     RH_ScopedInstall(CreatePoliceChase, 0x42C2B0, { .Reversed = false });
     RH_ScopedInstall(DealWithBend_Racing, 0x428040, { .Reversed = false });
@@ -364,8 +364,61 @@ void CCarCtrl::ClearInterestingVehicleList() {
 }
 
 // 0x422760
-void CCarCtrl::ClitargetOrientationToLink(CVehicle* vehicle, CCarPathLinkAddress arg2, int8 arg3, float* arg4, float arg5, float arg6) {
-    plugin::Call<0x422760, CVehicle*, CCarPathLinkAddress, int8, float*, float, float>(vehicle, arg2, arg3, arg4, arg5, arg6);
+void CCarCtrl::ClitargetOrientationToLink(CVehicle* vehicle, CCarPathLinkAddress linkAddress, int8 direction, float* orientation, float targetX, float targetY) {
+    if (!ThePaths.m_pPathNodes[linkAddress.m_wAreaId]) {
+        return;
+    }
+    const auto& link = ThePaths.GetCarPathLink(linkAddress);
+
+    // Direction of the link, and its perpendicular. Both lane edges are offset along the latter
+    const auto dirX = (float)link.m_dir.x * (float)direction;
+    const auto dirY = (float)link.m_dir.y * (float)direction;
+
+    float edgeA, edgeB; // Distances (in lanes) from the center of the link to its two edges
+    if (link.m_numOppositeDirLanes == 0) {
+        edgeA = edgeB = (float)link.m_numSameDirLanes * 0.5f;
+    } else if (link.m_numSameDirLanes == 0) {
+        edgeA = edgeB = (float)link.m_numOppositeDirLanes * 0.5f;
+    } else {
+        edgeA = (float)(direction ? link.m_numSameDirLanes : link.m_numOppositeDirLanes);
+        edgeB = (float)(direction ? link.m_numOppositeDirLanes : link.m_numSameDirLanes);
+        edgeA += (float)std::bit_cast<uint8>(link.m_nPathNodeWidth) * 0.011574074f;
+    }
+
+    const auto& vehPos = vehicle->GetPosition();
+    const auto  AngleTo = [&](float x, float y) {
+        return CGeneral::GetATanOfXY(x - vehPos.x, y - vehPos.y);
+    };
+    const auto angleA = AngleTo(dirY * (edgeA - 0.3f) * 5.4f + targetX, targetY - (edgeA - 0.3f) * dirX * 5.4f);
+    const auto angleB = AngleTo(targetX - (edgeB - 0.3f) * dirY * 5.4f, (edgeB - 0.3f) * dirX * 5.4f + targetY);
+
+    const auto Normalize = [](float angle) {
+        while (angle > 3.1415927f) {
+            angle -= 6.2831855f;
+        }
+        while (angle < -3.1415927f) {
+            angle += 6.2831855f;
+        }
+        return angle;
+    };
+    const auto diffA = Normalize(angleA - *orientation);
+    const auto diffB = Normalize(angleB - *orientation);
+
+    // Turn only as far as needed for the heading to fall between the two lane edges
+    if (diffA >= 0.0f || diffB >= 0.0f) {
+        if (diffA > 0.0f && diffB > 0.0f) {
+            *orientation += std::min(diffA, diffB);
+        }
+    } else {
+        *orientation += diffB < diffA ? diffA : diffB;
+    }
+
+    while (*orientation < 0.0f) {
+        *orientation += 6.2831855f;
+    }
+    while (*orientation > 6.2831855f) {
+        *orientation -= 6.2831855f;
+    }
 }
 
 // 0x431F80
