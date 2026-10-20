@@ -127,7 +127,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ScanForPedDanger, 0x42CE40);
     RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0);
     RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
-    RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420, { .Reversed = false });
+    RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420);
     RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0);
     RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
@@ -1940,7 +1940,31 @@ void CCarCtrl::SetUpDriverAndPassengersForVehicle(CVehicle* vehicle, int32 arg2,
 // 0x432420
 template<typename PtrListType>
 void CCarCtrl::SlowCarDownForCarsSectorList(PtrListType& ptrList, CVehicle* vehicle, float arg3, float arg4, float arg5, float arg6, float* arg7, float arg8) {
-    plugin::Call<0x432420, PtrListType&, CVehicle*, float, float, float, float, float*, float>(ptrList, vehicle, arg3, arg4, arg5, arg6, arg7, arg8);
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        auto* const car = static_cast<CVehicle*>(node->Item);
+        if (car == vehicle || car->IsScanCodeCurrent() || !car->GetUsesCollision()) {
+            continue;
+        }
+        car->SetCurrentScanCode();
+
+        const auto center = car->GetBoundCentre();
+        if (!(arg3 < center.x && center.x < arg5 && arg4 < center.y && center.y < arg6)) {
+            continue;
+        }
+        if (std::abs(center.z - vehicle->GetPosition().z) >= 10.0f) {
+            continue;
+        }
+
+        // Is it on the way the vehicle is going, also in height
+        const auto  forward = vehicle->GetForward();
+        const auto& vehPos  = vehicle->GetPosition();
+        const auto  dist    = CCollision::DistAlongLine2D(vehPos.x, vehPos.y, forward.x, forward.y, center.x, center.y);
+        if (std::abs(center.z - (dist * forward.z + vehPos.z)) < 3.0f) {
+            SlowCarDownForOtherCar(car, vehicle, arg7, arg8);
+        }
+    }
 }
 
 // 0x426220
