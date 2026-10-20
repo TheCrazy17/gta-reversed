@@ -23,7 +23,7 @@ void CCarEnterExit::InjectHooks() {
     RH_ScopedInstall(ComputeTargetDoorToEnterAsPassenger, 0x64F190);
     RH_ScopedInstall(ComputeTargetDoorToExit, 0x64F110);
     RH_ScopedInstall(GetNearestCarDoor, 0x6528F0);
-    RH_ScopedInstall(GetNearestCarPassengerDoor, 0x650BB0, { .Reversed = false });
+    RH_ScopedInstall(GetNearestCarPassengerDoor, 0x650BB0);
     RH_ScopedInstall(GetPositionToOpenCarDoor, 0x64E740, { .Reversed = false });
     RH_ScopedInstall(IsCarDoorInUse, 0x64EC90);
     RH_ScopedInstall(IsCarDoorReady, 0x64ED90);
@@ -380,7 +380,80 @@ bool CCarEnterExit::GetNearestCarDoor(const CPed* ped, const CVehicle* vehicle, 
 
 // 0x650BB0
 bool CCarEnterExit::GetNearestCarPassengerDoor(const CPed* ped, const CVehicle* vehicle, CVector* outVec, int32* doorId, bool CheckIfOccupiedTandemSeat, bool CheckIfDoorIsEnterable, bool CheckIfRoomToGetIn) {
-    return plugin::CallAndReturn<bool, 0x650BB0, const CPed*, const CVehicle*, CVector*, int32*, bool, bool, bool>(ped, vehicle, outVec, doorId, CheckIfOccupiedTandemSeat, CheckIfDoorIsEnterable, CheckIfRoomToGetIn);
+    const auto* const handling = vehicle->m_pHandlingData;
+
+    // Lowriders and trucks only have the front passenger door
+    if (const auto animGroup = handling->GetAnimGroupId(); animGroup == ANIM_GROUP_LOWCARAMIMS || animGroup == ANIM_GROUP_TRKCARANIMS) {
+        if (CheckIfDoorIsEnterable && (vehicle->m_nGettingInFlags & 4)) {
+            return false;
+        }
+        if (CheckIfRoomToGetIn && !IsRoomForPedToLeaveCar(vehicle, CAR_DOOR_RF)) {
+            return false;
+        }
+        *outVec = GetPositionToOpenCarDoor(vehicle, CAR_DOOR_RF);
+        *doorId = CAR_DOOR_RF;
+        return true;
+    }
+
+    struct DoorCandidate {
+        CVector   pos{};
+        CVector2D deltaToPed{ 999.0f, 999.0f };
+    };
+    DoorCandidate frontRight, rearLeft, rearRight;
+    bool          foundDoor{};
+
+    // The flag is the bit of the door in the getting in flags of the vehicle
+    const auto TryDoor = [&](DoorCandidate& candidate, eCarNodes door, uint8 gettingInFlag) {
+        if (CheckIfDoorIsEnterable && (vehicle->m_nGettingInFlags & gettingInFlag)) {
+            return;
+        }
+        if (CheckIfRoomToGetIn && !IsRoomForPedToLeaveCar(vehicle, door)) {
+            return;
+        }
+        candidate.pos        = GetPositionToOpenCarDoor(vehicle, door);
+        candidate.deltaToPed = CVector2D{ candidate.pos } - CVector2D{ ped->GetPosition() };
+        foundDoor            = true;
+    };
+
+    // The seat in front of the ones that are checked has to be free in tandem seats
+    const auto isFrontPassengerBlocking = CheckIfOccupiedTandemSeat && vehicle->HasPassengerAtSeat(0);
+    if (vehicle->IsBike() || handling->m_bTandemSeats) {
+        if (!isFrontPassengerBlocking) {
+            TryDoor(rearLeft, CAR_DOOR_LR, 2);
+            TryDoor(rearRight, CAR_DOOR_RR, 8);
+        }
+    } else if (!isFrontPassengerBlocking) {
+        TryDoor(frontRight, CAR_DOOR_RF, 4);
+    }
+
+    // Vehicles with four doors also have the rear ones
+    if (vehicle->GetVehicleModelInfo()->m_nNumDoors > 2) {
+        const auto automobile = vehicle->IsAutomobile() ? static_cast<const CAutomobile*>(vehicle) : nullptr;
+        const auto HasDoor    = [&](eCarNodes node) {
+            return !handling->m_bForceDoorCheck || (automobile && automobile->m_aCarNodes[node]);
+        };
+        if (HasDoor(CAR_DOOR_LR) && !(CheckIfOccupiedTandemSeat && vehicle->HasPassengerAtSeat(1))) {
+            TryDoor(rearLeft, CAR_DOOR_LR, 2);
+        }
+        if (HasDoor(CAR_DOOR_RR) && !(CheckIfOccupiedTandemSeat && vehicle->HasPassengerAtSeat(2))) {
+            TryDoor(rearRight, CAR_DOOR_RR, 8);
+        }
+    }
+
+    // The closest one wins, the front door is the default
+    *outVec = frontRight.pos;
+    *doorId = CAR_DOOR_RF;
+    auto closestDistSq = frontRight.deltaToPed.SquaredMagnitude();
+    if (rearLeft.deltaToPed.SquaredMagnitude() < closestDistSq) {
+        *doorId       = CAR_DOOR_LR;
+        *outVec       = rearLeft.pos;
+        closestDistSq = rearLeft.deltaToPed.SquaredMagnitude();
+    }
+    if (rearRight.deltaToPed.SquaredMagnitude() < closestDistSq) {
+        *doorId = CAR_DOOR_RR;
+        *outVec = rearRight.pos;
+    }
+    return foundDoor;
 }
 
 // 0x64E740
