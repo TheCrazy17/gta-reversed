@@ -16,7 +16,7 @@ void CAEStaticChannel::InjectHooks() {
     RH_ScopedVMTInstall(SynchPlayback, 0x4F1040);
     RH_ScopedVMTInstall(Stop, 0x4F0FB0);
 
-    RH_ScopedInstall(SetAudioBuffer, 0x4F0C40, {.Reversed = false});
+    RH_ScopedInstall(SetAudioBuffer, 0x4F0C40);
 }
 
 CAEStaticChannel::CAEStaticChannel(IDirectSound* pDirectSound, uint16 channelId, bool hardwareMixAvailable, uint32 samplesPerSec, uint16 bitsPerSample) :
@@ -51,7 +51,7 @@ void CAEStaticChannel::Service() {
         for (auto i = 0u; i < m_nNumLoops; i++) {
             memcpy(
                 &ppvAudioPtr1[i * m_nNumLockBytes],
-                (uint8*)m_pBuffer + m_nCurrentBufferOffset,
+                m_pBuffer + m_nCurrentBufferOffset,
                 m_nNumLockBytes
             );
         }
@@ -149,6 +149,100 @@ void CAEStaticChannel::Stop() {
     }
 }
 
-bool CAEStaticChannel::SetAudioBuffer(IDirectSound3DBuffer* buffer, uint16 size, int16 f88, int16 f8c, int16 loopOffset, uint16 frequency) {
-    return false;
+// 0x4F0C40
+bool CAEStaticChannel::SetAudioBuffer(uint8* buffer, uint32 size, int16 f88, int16 f8c, int16 loopOffset, uint16 frequency) {
+    if (!size || !frequency) {
+        return false;
+    }
+
+    if (m_pDirectSoundBuffer) {
+        --g_numSoundChannelsUsed;
+        m_pDirectSoundBuffer->Release();
+        m_pDirectSoundBuffer = nullptr;
+    }
+    if (m_pDirectSound3DBuffer) {
+        m_pDirectSound3DBuffer->Release();
+        m_pDirectSound3DBuffer = nullptr;
+    }
+
+    m_pBuffer              = buffer;
+    m_nCurrentBufferOffset = 0;
+    field_68               = 0;
+    m_bLooped              = false;
+    m_bNeedData            = false;
+    m_bPaused              = false;
+    field_6C               = 0;
+    m_nLengthInBytes       = size;
+    field_88               = f88;
+    field_8C               = f8c;
+
+    if (loopOffset != -1) {
+        m_bLooped              = true;
+        m_nCurrentBufferOffset = loopOffset * 2;
+        field_68               = size;
+    }
+
+    if (m_bLooped && m_nCurrentBufferOffset != 0) {
+        m_nNumLockBytes = field_68 - m_nCurrentBufferOffset;
+        field_6C        = std::max<uint32>(field_68, 24'000u) / m_nNumLockBytes + 1;
+        m_nBufferBytes  = field_6C * m_nNumLockBytes;
+    } else {
+        m_nBufferBytes = size;
+    }
+
+    m_nFrequency                 = frequency;
+    m_nOriginalFrequency         = frequency;
+    m_WaveFormat.wFormatTag      = WAVE_FORMAT_PCM;
+    m_WaveFormat.nChannels       = 1;
+    m_WaveFormat.nSamplesPerSec  = frequency;
+    m_WaveFormat.nAvgBytesPerSec = frequency * 2u;
+    m_WaveFormat.nBlockAlign     = 2;
+    m_WaveFormat.wBitsPerSample  = 16;
+    m_WaveFormat.cbSize          = 0;
+
+    DSBUFFERDESC desc{};
+    desc.dwSize          = sizeof(desc);
+    desc.dwFlags         = DSBCAPS_GLOBALFOCUS | DSBCAPS_CTRLVOLUME | DSBCAPS_CTRLFREQUENCY | DSBCAPS_CTRL3D
+        | (m_IsHardwareMixAvailable ? DSBCAPS_LOCHARDWARE : DSBCAPS_LOCSOFTWARE);
+    desc.dwBufferBytes   = m_nBufferBytes;
+    desc.lpwfxFormat     = &m_WaveFormat;
+    desc.guid3DAlgorithm = DS3DALG_DEFAULT;
+
+    if (FAILED(m_pDirectSound->CreateSoundBuffer(&desc, &m_pDirectSoundBuffer, nullptr))) {
+        return false;
+    }
+    ++g_numSoundChannelsUsed;
+
+    uint8* lockPtr{};
+    DWORD  lockBytes{};
+    if (FAILED(m_pDirectSoundBuffer->Lock(0, m_nLengthInBytes, (LPVOID*)&lockPtr, &lockBytes, nullptr, nullptr, DSBLOCK_ENTIREBUFFER))) {
+        m_pDirectSoundBuffer->Release();
+        m_pDirectSoundBuffer = nullptr;
+        return false;
+    }
+
+    uint32 startPos{};
+    if (m_nCurrentBufferOffset == 0) {
+        memcpy(lockPtr, m_pBuffer, size);
+        m_bNeedData = false;
+    } else {
+        startPos = m_nBufferBytes - m_nCurrentBufferOffset;
+        memcpy(lockPtr + startPos, m_pBuffer, m_nCurrentBufferOffset);
+
+        m_nNumLoops     = uint16(m_nCurrentBufferOffset / m_nNumLockBytes + 1);
+        m_dwLockOffset  = m_nBufferBytes - m_nNumLoops * m_nNumLockBytes;
+        for (uint16 i = 0; i < field_6C - m_nNumLoops; i++) {
+            memcpy(lockPtr + i * m_nNumLockBytes, m_pBuffer + m_nCurrentBufferOffset, m_nNumLockBytes);
+        }
+
+        field_74    = (int16)ConvertFromBytesToMS(m_nCurrentBufferOffset);
+        m_bNeedData = true;
+    }
+
+    m_pDirectSoundBuffer->Unlock(lockPtr, lockBytes, nullptr, 0);
+    m_pDirectSoundBuffer->SetCurrentPosition(startPos);
+    m_pDirectSoundBuffer->QueryInterface(IID_IDirectSound3DBuffer, (LPVOID*)&m_pDirectSound3DBuffer);
+    m_Volume = -100.0f;
+    m_pDirectSoundBuffer->SetVolume(-10000);
+    return true;
 }

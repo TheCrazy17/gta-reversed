@@ -69,7 +69,7 @@ void CAEAudioHardware::InjectHooks() {
     RH_ScopedInstall(Terminate, 0x4D97A0);
     RH_ScopedInstall(Service, 0x4D9870);
     RH_ScopedInstall(Initialise, 0x4D9930);
-    RH_ScopedInstall(PlaySound, 0x4D86B0, { .Reversed = false });
+    RH_ScopedInstall(PlaySound, 0x4D86B0);
 }
 
 // 0x4D83E0
@@ -241,8 +241,48 @@ void CAEAudioHardware::Terminate() {
     SAFE_RELEASE(m_pDSDevice);
 }
 
+// 0x4D86B0
 void CAEAudioHardware::PlaySound(int16 channel, uint16 channelSlot, uint16 soundIdInSlot, uint16 bankSlot, int16 playPosition, int16 flags, float speed) {
-    plugin::CallMethod<0x4D86B0, CAEAudioHardware*, int16, uint16, uint16, uint16, int16, int16, float>(this, channel, channelSlot, soundIdInSlot, bankSlot, playPosition, flags, speed);
+    if (channel < 0 || channelSlot >= m_anNumChannelsInSlot[channel]) {
+        return;
+    }
+
+    uint32 size{};
+    uint16 frequency{};
+    auto* const buffer = m_pMP3BankLoader->GetSoundBuffer((eSoundID)soundIdInSlot, (eSoundBankSlot)bankSlot, size, frequency);
+    if (!buffer) {
+        return;
+    }
+    const auto loopOffset = m_pMP3BankLoader->GetLoopOffset((eSoundID)soundIdInSlot, (eSoundBankSlot)bankSlot);
+
+    const auto channelIdx = (uint16)(channelSlot + channel);
+    if (channelIdx >= MAX_NUM_AUDIO_CHANNELS) {
+        return;
+    }
+
+    auto* const ch = static_cast<CAEStaticChannel*>(m_aChannels[channelIdx]);
+    if (!ch->SetAudioBuffer(buffer, size, (int16)soundIdInSlot, (int16)bankSlot, (int16)loopOffset, frequency)) {
+        return;
+    }
+
+    if (playPosition < 0) {
+        playPosition = 0;
+    }
+    const auto length = (int32)ch->GetLength();
+    if ((flags & 8) && playPosition > 0) {
+        playPosition = (int16)(int32)((float)playPosition * 0.01f * (float)length);
+    }
+    if (playPosition > length) {
+        playPosition = (int16)length;
+    }
+
+    if (m_n3dEffectsQueryResult) {
+        ch->SetNotInRoom((flags & 0x200) == 0);
+    }
+    ch->Play(playPosition, (int8)flags, speed);
+
+    m_awChannelFlags[channel + channelSlot] = flags;
+    ch->m_nFlags                            = (int32)flags;
 }
 
 // 0x5B9340
