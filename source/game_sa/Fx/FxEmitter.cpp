@@ -16,7 +16,7 @@ void FxEmitter_c::InjectHooks() {
     // RH_ScopedInstall(Reset_Reversed, 0x4A2570);
     // RH_ScopedOverloadedInstall(AddParticle_Reversed, "matrix", 0x4A3EA0, void(FxEmitter_c::*)(RwMatrix*, CVector*, float, FxPrtMult_c*, float, float, bool));
     // RH_ScopedOverloadedInstall(AddParticle_Reversed, "", 0x4A4050, void(FxEmitter_c::*)(CVector*, CVector*, float, FxPrtMult_c*, float, float, bool));
-    RH_ScopedInstall(CreateParticles, 0x4A41E0, { .Reversed = false });
+    RH_ScopedInstall(CreateParticles, 0x4A41E0);
     // RH_ScopedInstall(CreateParticle, 0x4A2580);
 }
 
@@ -119,7 +119,8 @@ void FxEmitter_c::AddParticle(const RwMatrix& mat, const CVector& vel, float tim
 
 // 0x4A41E0
 void FxEmitter_c::CreateParticles(float currentTime, float deltaTime) {
-    return plugin::CallMethod<0x4A41E0, FxEmitter_c*, float, float>(this, currentTime, deltaTime);
+    static_assert(offsetof(FxSystem_c, m_UseConstTime) == 0x52 && offsetof(FxSystem_c, m_fCameraDistance) == 0x58 && offsetof(FxSystem_c, m_nRateMult) == 0x5E);
+    static_assert(offsetof(EmissionInfo_t, m_fMinWind) == 0x58 && offsetof(EmissionInfo_t, m_fMaxRain) == 0x64);
 
     EmissionInfo_t emission;
     m_PrimBP->m_FxInfoManager.ProcessEmissionInfo(currentTime, deltaTime, m_System->m_SystemBP->m_fLength, m_System->m_UseConstTime, &emission);
@@ -138,7 +139,7 @@ void FxEmitter_c::CreateParticles(float currentTime, float deltaTime) {
         visibility = 1.0f;
     }
 
-    m_fEmissionIntensity += emission.m_fCount * visibility * ((float)m_System->m_nRateMult * 1000.0f);
+    m_fEmissionIntensity += emission.m_fCount * visibility * ((float)m_System->m_nRateMult * 0.001f);
     if (   CWeather::Wind >= emission.m_fMinWind
         && CWeather::Wind <= emission.m_fMaxWind
         && CWeather::Rain >= emission.m_fMinRain
@@ -166,7 +167,7 @@ void FxEmitter_c::CreateParticles(float currentTime, float deltaTime) {
             CreateParticle(emission, *mat, nullptr, timeSince, prtMult, 1.2f, m_System->m_createLocal);
             counter++;
         }
-        m_fEmissionIntensity -= m_fEmissionIntensity; // OG shit
+        m_fEmissionIntensity -= (float)(int32)m_fEmissionIntensity; // Only the fraction is kept for later
 
         g_fxMan.FxRwMatrixDestroy(mat1);
         g_fxMan.FxRwMatrixDestroy(mat);
