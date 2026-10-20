@@ -20,7 +20,7 @@ void CPhysical::InjectHooks()
     RH_ScopedInstall(Constructor, 0x542260);
     RH_ScopedInstall(Destructor, 0x542450);
 
-    RH_ScopedInstall(RemoveAndAdd, 0x542560, { .Reversed = false });
+    RH_ScopedInstall(RemoveAndAdd, 0x542560);
     RH_ScopedInstall(ApplyTurnForce, 0x542A50);
     RH_ScopedInstall(ApplyForce, 0x542B50);
     RH_ScopedInstall(GetSpeed, 0x542CE0);
@@ -30,7 +30,7 @@ void CPhysical::InjectHooks()
     RH_ScopedInstall(SetDamagedPieceRecord, 0x5428C0);
     RH_ScopedInstall(RemoveFromMovingList, 0x542860);
     RH_ScopedInstall(AddToMovingList, 0x542800);
-    RH_ScopedVMTInstall(Add, 0x544A30, { .Reversed = false });
+    RH_ScopedVMTInstall(Add, 0x544A30);
     RH_ScopedVMTInstall(Remove, 0x5424C0);
     RH_ScopedVMTInstall(GetBoundRect, 0x5449B0);
     RH_ScopedVMTInstall(ProcessControl, 0x5485E0);
@@ -138,6 +138,19 @@ CPhysical::~CPhysical()
     m_pCollisionList.Flush();
 }
 
+// The range of sectors an entity with this bound rect touches, converted like the original does (in the precision of the FPU)
+namespace {
+struct SectorRange {
+    int32 startX, startY, endX, endY;
+};
+SectorRange ComputeSectorRange(const CRect& rect) {
+    const auto Sector = [](float coord) {
+        return (int32)std::floor((double)coord * (double)0.02f + (double)60.0f);
+    };
+    return { Sector(rect.left), Sector(rect.bottom), Sector(rect.right), Sector(rect.top) };
+}
+} // namespace
+
 // 0x544A30
 void CPhysical::Add()
 {
@@ -146,16 +159,7 @@ void CPhysical::Add()
         return;
     }
 
-    // Same conversion the original does, in the precision of the FPU
-    const auto Sector = [](float coord) {
-        return (int32)std::floor((double)coord * (double)0.02f + (double)60.0f);
-    };
-    const auto rect   = GetBoundRect();
-    const auto startX = Sector(rect.left);
-    const auto startY = Sector(rect.bottom);
-    const auto endX   = Sector(rect.right);
-    const auto endY   = Sector(rect.top);
-
+    const auto [startX, startY, endX, endY] = ComputeSectorRange(GetBoundRect());
     for (auto y = startY; y <= endY; y++) {
         for (auto x = startX; x <= endX; x++) {
             auto& repeatSector = CWorld::GetRepeatSector(x, y);
@@ -608,11 +612,7 @@ void CPhysical::RemoveAndAdd() {
     }
 
     CEntryInfoNode* entryInfoNode = m_pCollisionList.m_node;
-    CRect boundRect = GetBoundRect();
-    int32 startSectorX = CWorld::GetSectorX(boundRect.left);
-    int32 startSectorY = CWorld::GetSectorY(boundRect.bottom);
-    int32 endSectorX = CWorld::GetSectorX(boundRect.right);
-    int32 endSectorY = CWorld::GetSectorY(boundRect.top);
+    const auto [startSectorX, startSectorY, endSectorX, endSectorY] = ComputeSectorRange(GetBoundRect());
     for (int32 sectorY = startSectorY; sectorY <= endSectorY; ++sectorY) {
         for (int32 sectorX = startSectorX; sectorX <= endSectorX; ++sectorX) {
             CRepeatSector* const rs = &CWorld::GetRepeatSector(sectorX, sectorY);
