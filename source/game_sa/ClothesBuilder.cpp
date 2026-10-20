@@ -30,10 +30,10 @@ void CClothesBuilder::InjectHooks() {
     RH_ScopedGlobalInstall(GetAtomicWithName, 0x5A4810);
     RH_ScopedInstall(AddWeightToBoneVertex, 0x5A4840);
     RH_ScopedInstall(StoreBoneArray, 0x5A48B0);
-    RH_ScopedOverloadedInstall(BlendGeometry, "3", 0x5A4940, RpGeometry * (*)(RpClump*, const char*, const char*, const char*, float, float, float), { .Reversed = false });
-    RH_ScopedOverloadedInstall(BlendGeometry, "2", 0x5A4F10, RpGeometry* (*)(RpClump*, const char*, const char*, float, float), {.Reversed = false});
+    RH_ScopedOverloadedInstall(BlendGeometry, "3", 0x5A4940, RpGeometry * (*)(RpClump*, const char*, const char*, const char*, float, float, float));
+    RH_ScopedOverloadedInstall(BlendGeometry, "2", 0x5A4F10, RpGeometry* (*)(RpClump*, const char*, const char*, float, float));
     RH_ScopedInstall(CopyGeometry, 0x5A5340, { .Reversed = false });
-    RH_ScopedInstall(ConstructGeometryArray, 0x5A55A0, { .Reversed = false }); // Makes the game crash - Probably a register is changed or smth
+    RH_ScopedInstall(ConstructGeometryArray, 0x5A55A0);
     RH_ScopedInstall(DestroySkinArrays, 0x5A56C0);
     RH_ScopedInstall(BuildBoneIndexConversionTable, 0x5A56E0);
     RH_ScopedInstall(CopyTexture, 0x5A5730);
@@ -204,6 +204,7 @@ RpGeometry* BlendGeometry(RpClump* clump, std::pair<const char*, float> (&&frame
         };
         out.verts[i] = Blend(&GeoBlendData::verts);
         out.nrmls[i] = Blend(&GeoBlendData::nrmls);
+        RwV3dNormalize((RwV3d*)&out.nrmls[i], (RwV3d*)&out.nrmls[i]);
         out.uvs[i]   = Blend(&GeoBlendData::uvs);
 
         // Helper function to get the weight at a given weight index
@@ -217,33 +218,33 @@ RpGeometry* BlendGeometry(RpClump* clump, std::pair<const char*, float> (&&frame
             }
         };
 
-        // Calculate bone weights
+        // Calculate bone weights (Each vertex has 4 weights and 4 bone indices)
         float weights[8]{};
         uint8 boneVertexIdxs[8]{};
         for (auto& fd : fds) {
             for (auto wi = 0; wi < 4; wi++) {
-                const auto vtxIdx = i + wi;
                 CClothesBuilder::AddWeightToBoneVertex(
                     weights,
                     boneVertexIdxs,
-                    RwMatrixWeightsGetWeight(fd.boneWeights[vtxIdx], wi),
-                    fd.boneIdxs[vtxIdx]
+                    fd.r * RwMatrixWeightsGetWeight(fd.boneWeights[i], wi),
+                    fd.boneIdxs[i * 4 + wi]
                 );
             }
         }
         for (auto b = 0; b < 4; b++) {
-            const_cast<RwUInt8*>(out.boneIdxs)[i + b] = boneVertexIdxs[b];
+            const_cast<RwUInt8*>(out.boneIdxs)[i * 4 + b] = boneVertexIdxs[b];
         }
+        // More than 4 bones influenced this vertex, so the weights have to be renormalized
         const auto t = weights[4] != 0.f
-            ? 1.f / std::accumulate(weights, weights + 4, 0.f)
+            ? 1.f / (weights[0] + weights[1] + weights[2] + weights[3])
             : 1.f;
         for (auto wi = 0; wi < 4; wi++) {
-            RwMatrixWeightsGetWeight(out.boneWeights[i + wi], wi) = weights[wi] * t;
+            RwMatrixWeightsGetWeight(out.boneWeights[i], wi) = weights[wi] * t;
         }
     }
 
     RpGeometryUnlock(out.g);
-    out.g->refCount++; // TODO: Function missing
+    out.g->refCount++; // RpGeometryAddRef
 
     return out.g;
 }
