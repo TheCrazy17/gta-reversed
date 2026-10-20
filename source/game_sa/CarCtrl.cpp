@@ -159,8 +159,8 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(StopCarIfNodesAreInvalid, 0x422590);
     RH_ScopedInstall(SwitchBetweenPhysicsAndGhost, 0x4222A0);
     RH_ScopedInstall(SwitchVehicleToRealPhysics, 0x423FC0);
-    RH_ScopedInstall(TestCollisionBetween2MovingRects, 0x425B30, { .Reversed = false });
-    RH_ScopedInstall(TestCollisionBetween2MovingRects_OnlyFrontBumper, 0x425F70, { .Reversed = false });
+    RH_ScopedInstall(TestCollisionBetween2MovingRects, 0x425B30);
+    RH_ScopedInstall(TestCollisionBetween2MovingRects_OnlyFrontBumper, 0x425F70);
     RH_ScopedInstall(TestWhetherToFirePlaneGuns, 0x429520);
     RH_ScopedInstall(ThisVehicleShouldTryNotToTurn, 0x421FE0);
     RH_ScopedInstall(TriggerDogFightMoves, 0x429300);
@@ -2281,12 +2281,144 @@ void CCarCtrl::SwitchVehicleToRealPhysics(CVehicle* vehicle) {
 
 // 0x425B30
 float CCarCtrl::TestCollisionBetween2MovingRects(CVehicle* vehicle1, CVehicle* vehicle2, float arg3, float arg4, CVector* pos1, CVector* pos2) {
-    return plugin::CallAndReturn<float, 0x425B30, CVehicle*, CVehicle*, float, float, CVector*, CVector*>(vehicle1, vehicle2, arg3, arg4, pos1, pos2);
+    // arg3 and arg4 are how far vehicle1 moves relative to vehicle2, pos1 is the heading of vehicle2 and pos2 the one of vehicle1.
+    // The result is how far into that movement the two are first touching, from 0 to 1.
+    const auto& heading2 = *pos1;
+    const auto& heading1 = *pos2;
+
+    const auto& bb2 = vehicle2->GetColModel()->GetBoundingBox();
+    const auto& bb1 = vehicle1->GetColModel()->GetBoundingBox();
+    const auto  maxY2 = bb2.m_vecMax.y;
+    const auto  maxX2 = bb2.m_vecMax.x;
+    const auto  rear2 = -bb2.m_vecMin.y;
+    const auto  maxX1 = bb1.m_vecMax.x;
+    const auto  maxY1 = bb1.m_vecMax.y;
+
+    const auto offsetX = vehicle1->GetPosition().x - vehicle2->GetPosition().x;
+    const auto offsetY = vehicle1->GetPosition().y - vehicle2->GetPosition().y;
+
+    // How the movement splits up along the sides and the length of vehicle2
+    const auto moveSide = arg3 * heading2.y - arg4 * heading2.x;
+    const auto moveFwd  = arg4 * heading2.y + arg3 * heading2.x;
+
+    struct Span {
+        float enter, exit;
+    };
+    // When a point at `pos` moving by `vel` is inside of the range `lo`..`hi`
+    const auto Slab = [](float pos, float lo, float hi, float vel) -> Span {
+        if (pos <= hi) {
+            if (pos < lo) {
+                if (vel > 0.0f) {
+                    const auto enter = -((pos - lo) * (1.0f / vel));
+                    if (1.0f <= enter) {
+                        return { 1.0f, 1.0f };
+                    }
+                    const auto exit = (hi - lo) * (1.0f / vel) + enter;
+                    return { enter, exit < 1.0f ? exit : 1.0f };
+                }
+                return { 1.0f, 1.0f };
+            }
+            auto exit = 1.0f;
+            if (vel > 0.0f) {
+                exit = (hi - pos) / vel;
+            } else if (vel < 0.0f) {
+                exit = -((pos - lo) / vel);
+            }
+            return { 0.0f, exit };
+        }
+        if (vel >= 0.0f) {
+            return { 1.0f, 1.0f };
+        }
+        const auto enter = -((pos - hi) * (1.0f / vel));
+        if (1.0f <= enter) {
+            return { 1.0f, 1.0f };
+        }
+        const auto exit = enter - (hi - lo) * (1.0f / vel);
+        return { enter, exit < 1.0f ? exit : 1.0f };
+    };
+
+    auto result = 1.0f;
+    for (auto i = 0; i < 2; i++) {
+        // The front corners of vehicle1, relative to vehicle2
+        float cornerX, cornerY;
+        if (i == 0) {
+            cornerX = maxX1 * heading1.y + maxY1 * heading1.x + offsetX;
+            cornerY = (maxY1 * heading1.y + offsetY) - maxX1 * heading1.x;
+        } else {
+            cornerX = (maxY1 * heading1.x + offsetX) - maxX1 * heading1.y;
+            cornerY = maxY1 * heading1.y + maxX1 * heading1.x + offsetY;
+        }
+
+        const auto side = Slab(cornerX * heading2.y - cornerY * heading2.x, -maxX2, maxX2, moveSide);
+        const auto fwd  = Slab(cornerX * heading2.x + cornerY * heading2.y, -rear2, maxY2, moveFwd);
+
+        const auto enter = std::max(side.enter, fwd.enter);
+        if (enter < side.exit && enter < fwd.exit && enter <= result) {
+            result = enter;
+        }
+    }
+    return result;
 }
 
 // 0x425F70
 float CCarCtrl::TestCollisionBetween2MovingRects_OnlyFrontBumper(CVehicle* vehicle1, CVehicle* vehicle2, float arg3, float arg4, CVector* pos1, CVector* pos2) {
-    return plugin::CallAndReturn<float, 0x425F70, CVehicle*, CVehicle*, float, float, CVector*, CVector*>(vehicle1, vehicle2, arg3, arg4, pos1, pos2);
+    // Same inputs as above, but only the front edge of vehicle2 is tested against the corners of vehicle1
+    const auto& heading2 = *pos1;
+    const auto& heading1 = *pos2;
+    const auto& pos1v    = vehicle1->GetPosition();
+    const auto& pos2v    = vehicle2->GetPosition();
+
+    const auto& bb2   = vehicle2->GetColModel()->GetBoundingBox();
+    const auto& bb1   = vehicle1->GetColModel()->GetBoundingBox();
+    const auto  maxY2 = bb2.m_vecMax.y;
+    const auto  maxX2 = bb2.m_vecMax.x;
+    const auto  maxY1 = bb1.m_vecMax.y;
+    const auto  maxX1 = bb1.m_vecMax.x;
+    const auto  rear1 = -bb1.m_vecMin.y;
+
+    // The two ends of the front edge of vehicle2
+    const auto sideY2      = maxX2 * heading2.y;
+    const auto frontX2     = maxY2 * heading2.x;
+    const auto rightEdgeX  = frontX2 + sideY2 + pos2v.x;
+    const auto frontY2     = maxY2 * heading2.y;
+    const auto sideX2      = maxX2 * heading2.x;
+    const auto rightEdgeY  = (frontY2 + pos2v.y) - sideX2;
+    const auto leftEdgeX   = (frontX2 + pos2v.x) - sideY2;
+    const auto leftEdgeY   = sideX2 + frontY2 + pos2v.y;
+
+    auto result = 1.0f;
+    for (auto i = 0; i < 4; i++) {
+        float cornerX, cornerY;
+        switch (i) {
+        case 0:
+            cornerX = maxY1 * heading1.x + maxX1 * heading1.y + pos1v.x;
+            cornerY = (maxY1 * heading1.y + pos1v.y) - maxX1 * heading1.x;
+            break;
+        case 1:
+            cornerX = (maxY1 * heading1.x + pos1v.x) - maxX1 * heading1.y;
+            cornerY = maxX1 * heading1.x + maxY1 * heading1.y + pos1v.y;
+            break;
+        case 2:
+            cornerX = maxX1 * heading1.y + (pos1v.x - rear1 * heading1.x);
+            cornerY = (pos1v.y - rear1 * heading1.y) - maxX1 * heading1.x;
+            break;
+        default:
+            cornerX = (pos1v.x - rear1 * heading1.x) - maxX1 * heading1.y;
+            cornerY = maxX1 * heading1.x + (pos1v.y - rear1 * heading1.y);
+            break;
+        }
+
+        // How far in front of the edge the corner is, now and after moving
+        const auto before = (cornerX - rightEdgeX) * heading2.x + (cornerY - rightEdgeY) * heading2.y;
+        const auto after  = ((cornerX + arg3) - rightEdgeX) * heading2.x + ((cornerY + arg4) - rightEdgeY) * heading2.y;
+        if (before > 0.0f && after < 0.0f
+            && ((rightEdgeX - cornerX) * arg4 - (rightEdgeY - cornerY) * arg3) * ((leftEdgeX - cornerX) * arg4 - (leftEdgeY - cornerY) * arg3) < 0.0f) {
+            if (const auto t = before / (before - after); t <= result) {
+                result = t;
+            }
+        }
+    }
+    return result;
 }
 
 // 0x429520
