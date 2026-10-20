@@ -28,6 +28,12 @@
 #include "TaskComplexFacial.h"
 #include "WeaponInfo.h"
 #include "Shadows.h"
+#include "Fx.h"
+#include "CullZones.h"
+#include "Weather.h"
+#include "Localisation.h"
+#include "WaterLevel.h"
+#include "SurfaceInfos_c.h"
 #include "TaskComplexEnterCarAsDriver.h"
 #include "RealTimeShadowManager.h"
 #include "WindModifiers.h"
@@ -64,7 +70,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(TakeOffGoggles, 0x5E6010);
     RH_ScopedInstall(AddWeaponModel, 0x5E5ED0);
     RH_ScopedInstall(PlayFootSteps, 0x5E57F0, { .Reversed = false });
-    RH_ScopedInstall(DoFootLanded, 0x5E5380, { .Reversed = false });
+    RH_ScopedInstall(DoFootLanded, 0x5E5380);
     RH_ScopedInstall(ClearAll, 0x5E5320);
     RH_ScopedInstall(CalculateNewOrientation, 0x5E52E0);
     RH_ScopedInstall(CalculateNewVelocity, 0x5E4C50, { .Reversed = false });
@@ -2369,11 +2375,101 @@ void CPed::ClearAll() {
     }
 }
 
+// Both of these use registers for their arguments (ped in ebx or esi, position in edi or ebx, count in eax)
+// 0x5E3630
+static void PedFootEffectRain(CPed* ped, CVector* pos, int32 count, float strength) {
+    __asm {
+        push strength
+        mov  eax, count
+        mov  edi, pos
+        mov  ebx, ped
+        mov  ecx, 0x5E3630
+        call ecx
+        add  esp, 4
+    }
+}
+
+// 0x5E37C0
+static void PedFootEffectSurface(CPed* ped, CVector* pos, int32 count, float strength) {
+    __asm {
+        push strength
+        mov  eax, count
+        mov  ebx, pos
+        mov  esi, ped
+        mov  ecx, 0x5E37C0
+        call ecx
+        add  esp, 4
+    }
+}
+
 /*!
  * @addr 0x5E5380
  */
 void CPed::DoFootLanded(bool leftFoot, uint8 arg1) {
-    ((void(__thiscall*)(CPed*, bool, uint8))0x5E5380)(this, leftFoot, arg1);
+    if (!bCalledPreRender || m_bDontUpdateHierarchy) {
+        return;
+    }
+
+    CVector footPos;
+    GetBonePosition(&footPos, leftFoot ? BONE_L_FOOT : BONE_R_FOOT, false);
+
+    // The effects go a bit in front of the foot and just over the ground
+    const auto forward = m_matrix->GetForward();
+    const auto right   = m_matrix->GetRight();
+    footPos = footPos + forward * 0.2f - CVector{ 0.0f, 0.0f, 0.1f };
+
+    if (bDoBloodyFootprints && CLocalisation::Blood()) {
+        CShadows::AddPermanentShadow(1, gpBloodPoolTex, &footPos, forward.x * 0.26f, forward.y * 0.26f, right.x * 0.14f, right.y * 0.14f, 0xFF, 200, 0, 0, 4.0f, 3000, 1.0f);
+
+        // The count of footprints left to make
+        if (m_nDeathTimeMS > 0x14u) {
+            m_nDeathTimeMS -= 0x14;
+        } else {
+            m_nDeathTimeMS      = 0;
+            bDoBloodyFootprints = false;
+        }
+    }
+
+    if (g_surfaceInfos.LeavesFootsteps(m_nContactSurface)) {
+        if ((TheCamera.GetPosition() - GetPosition()).Magnitude2D() < 10.0f) {
+            // Footprints of the player stay longer
+            const auto time = (IsPlayer() ? 3000u : 0u) + 2000u;
+            CShadows::AddPermanentShadow(1, gpShadowPedTex, &footPos, forward.x * -0.26f, forward.y * -0.26f, right.x * -0.1f, right.y * -0.1f, 0x78, 250, 250, 50, 4.0f, time, 1.0f);
+        }
+    }
+
+    if (CWeather::Rain > 0.1f && !CCullZones::CamNoRain() && !CCullZones::PlayerNoRain() && CGame::currArea == AREA_CODE_NORMAL_WORLD) {
+        PedFootEffectRain(this, &footPos, 4, 0.15f);
+    }
+    PedFootEffectSurface(this, &footPos, 4, 0.0f);
+
+    if (arg1) {
+        m_Wobble      = TWO_PI;
+        m_WobbleSpeed = (m_vecAnimMovingShift.y * m_vecAnimMovingShift.y + m_vecAnimMovingShift.x * m_vecAnimMovingShift.x) * 20.0f + 0.4f;
+    }
+
+    CVector splashPos;
+    if (physicalFlags.bSubmergedInWater) {
+        const auto pos = GetPosition();
+        float      waterLevel;
+        CWaterLevel::GetWaterLevel(pos.x, pos.y, pos.z + 1.5f, waterLevel, true, nullptr);
+
+        const auto dx = CTimer::GetTimeStep() * m_vecMoveSpeed.x;
+        const auto dy = CTimer::GetTimeStep() * m_vecMoveSpeed.y;
+        splashPos     = CVector{ dx + dx + pos.x, dy + dy + pos.y, waterLevel };
+        if (pos.z - 0.4f <= waterLevel) {
+            return;
+        }
+    } else {
+        if (!g_surfaceInfos.IsShallowWater(m_nContactSurface)) {
+            return;
+        }
+        splashPos = footPos + CVector{ 0.0f, 0.0f, 0.3f } + GetForwardVector() * -0.2f;
+    }
+
+    static_assert(AE_PED_FOOTSTEP_LEFT == 0x36);
+    g_fx.TriggerFootSplash(splashPos);
+    m_pedAudio.AddAudioEvent(AE_PED_FOOTSTEP_LEFT, 0.0f, 1.0f, nullptr, (eSurfaceType)0x27, 0, 0);
 }
 
 /*!
