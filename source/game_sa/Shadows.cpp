@@ -38,8 +38,8 @@ void CShadows::InjectHooks() {
     RH_ScopedInstall(CastShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A630);
     RH_ScopedInstall(CastRealTimeShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A7E0);
     RH_ScopedInstall(RenderStoredShadows, 0x70A960);
-    RH_ScopedInstall(GeneratePolysForStaticShadow, 0x70B730, { .Reversed = false });
-    RH_ScopedInstall(StoreStaticShadow, 0x70BA00, { .Reversed = false });
+    RH_ScopedInstall(GeneratePolysForStaticShadow, 0x70B730);
+    RH_ScopedInstall(StoreStaticShadow, 0x70BA00);
     RH_ScopedInstall(StoreShadowForVehicle, 0x70BDA0, { .Reversed = false });
     RH_ScopedInstall(StoreCarLightShadow, 0x70C500);
     RH_ScopedInstall(StoreShadowForPole, 0x70C750);
@@ -1071,13 +1071,139 @@ void CShadows::RenderStoredShadows() {
 
 // 0x70B730
 void CShadows::GeneratePolysForStaticShadow(int16 staticShadowIndex) {
-    ((void(__cdecl*)(int16))0x70B730)(staticShadowIndex);
+    auto& shadow = aStaticShadows[staticShadowIndex];
+    auto  posn   = shadow.m_vecPosn;
+
+    // The area covered by the shadow
+    const auto extentX = std::abs(shadow.m_fFrontX) + std::abs(shadow.m_fSideX);
+    const auto extentY = std::abs(shadow.m_fFrontY) + std::abs(shadow.m_fSideY);
+    const auto minX    = posn.x - extentX;
+    const auto maxX    = posn.x + extentX;
+    const auto minY    = posn.y - extentY;
+    const auto maxY    = posn.y + extentY;
+
+    const auto SectorOf = [](float coord) { return (int32)std::floor(coord * 0.02f + 60.0f); };
+    const auto startX   = std::max(0, SectorOf(minX));
+    const auto startY   = std::max(0, SectorOf(minY));
+    const auto endX     = std::min(MAX_SECTORS_X - 1, SectorOf(maxX));
+    const auto endY     = std::min(MAX_SECTORS_Y - 1, SectorOf(maxY));
+
+    CWorld::AdvanceCurrentScanCode();
+
+    for (auto y = startY; y <= endY; y++) {
+        for (auto x = startX; x <= endX; x++) {
+            auto& sector = CWorld::GetSector(std::clamp(x, 0, MAX_SECTORS_X - 1), std::clamp(y, 0, MAX_SECTORS_Y - 1));
+            CastPlayerShadowSectorList(
+                sector.Buildings,
+                minX,
+                minY,
+                maxX,
+                maxY,
+                &posn,
+                shadow.m_fFrontX,
+                shadow.m_fFrontY,
+                shadow.m_fSideX,
+                shadow.m_fSideY,
+                0,
+                0,
+                0,
+                0,
+                shadow.m_fZDistance,
+                shadow.m_fScale,
+                &shadow.m_pPolyBunch,
+                &shadow.m_nDayNightIntensity,
+                0
+            );
+        }
+    }
 }
 
 // 0x70BA00
 bool CShadows::StoreStaticShadow(uint32 id, eShadowType type, RwTexture* texture, const CVector& posn, float frontX, float frontY, float sideX, float sideY, int16 intensity, uint8 red, uint8 green, uint8 blue, float zDistane, float scale, float drawDistance, bool temporaryShadow, float upDistance) {
-    return ((bool(__cdecl*)(uint32, eShadowType, RwTexture*, const CVector&, float, float, float, float, int16, uint8, uint8, uint8, float, float, float, bool, float))0x70BA00)(
-        id, type, texture, posn, frontX, frontY, sideX, sideY, intensity, red, green, blue, zDistane, scale, drawDistance, temporaryShadow, upDistance);
+    const auto& camPos = TheCamera.GetPosition();
+    const auto  distSq = sq(posn.y - camPos.y) + sq(posn.x - camPos.x);
+    if (distSq < sq(drawDistance)) {
+        // The shadow fades out during the last quarter of the draw distance
+        if (drawDistance != 0.0f) {
+            const auto dist      = std::sqrt(distSq);
+            const auto fadeStart = drawDistance * 0.75f;
+            if (fadeStart <= dist) {
+                const auto fade = 1.0f - (dist - fadeStart) * (4.0f / drawDistance);
+                intensity       = (int16)(int32)((float)intensity * fade);
+                red             = (uint8)(int32)((float)red * fade);
+                green           = (uint8)(int32)((float)green * fade);
+                blue            = (uint8)(int32)((float)blue * fade);
+            }
+        }
+    } else if (drawDistance != 0.0f) {
+        return true;
+    }
+
+    // Update the shadow if it's already stored
+    int16 slot = 0;
+    for (; slot < (int16)MAX_STATIC_SHADOWS; slot++) {
+        auto& s = aStaticShadows[slot];
+        if (s.m_nId != id || !s.m_pPolyBunch) {
+            continue;
+        }
+
+        const auto dx = std::abs(posn.x - s.m_vecPosn.x);
+        const auto dy = std::abs(posn.y - s.m_vecPosn.y);
+        const auto dz = std::abs(posn.z - s.m_vecPosn.z);
+        if ((dx < upDistance && dy < upDistance)
+            || (dx < 0.05f && dy < 0.05f && dz < 2.0f && frontX == s.m_fFrontX && frontY == s.m_fFrontY && sideX == s.m_fSideX && sideY == s.m_fSideY)
+        ) {
+            s.m_pTexture         = texture;
+            s.m_nType            = type;
+            s.m_nRed             = red;
+            s.m_nIntensity       = intensity;
+            s.m_nBlue            = blue;
+            s.m_nGreen           = green;
+            s.m_fScale           = scale;
+            s.m_fZDistance       = zDistane;
+            s.m_nTimeCreated     = CTimer::GetTimeInMS();
+            s.m_bJustCreated     = true;
+            s.m_bTemporaryShadow = temporaryShadow;
+            return true;
+        }
+
+        // The shadow moved, rebuild it in the same slot
+        s.Free();
+        break;
+    }
+
+    // Otherwise take a free slot
+    if (slot == (int16)MAX_STATIC_SHADOWS) {
+        for (slot = 0; slot < (int16)MAX_STATIC_SHADOWS; slot++) {
+            if (!aStaticShadows[slot].m_pPolyBunch) {
+                break;
+            }
+        }
+        if (slot == (int16)MAX_STATIC_SHADOWS) {
+            return true;
+        }
+    }
+
+    auto& s              = aStaticShadows[slot];
+    s.m_nType            = type;
+    s.m_pTexture         = texture;
+    s.m_nIntensity       = intensity;
+    s.m_nRed             = red;
+    s.m_nGreen           = green;
+    s.m_nBlue            = blue;
+    s.m_fZDistance       = zDistane;
+    s.m_fScale           = scale;
+    s.m_nId              = id;
+    s.m_vecPosn          = posn;
+    s.m_fFrontX          = frontX;
+    s.m_fFrontY          = frontY;
+    s.m_fSideX           = sideX;
+    s.m_fSideY           = sideY;
+    s.m_bJustCreated     = true;
+    s.m_bTemporaryShadow = temporaryShadow;
+    s.m_nTimeCreated     = CTimer::GetTimeInMS();
+    GeneratePolysForStaticShadow(slot);
+    return s.m_pPolyBunch != nullptr;
 }
 
 // 0x70BDA0
