@@ -208,7 +208,7 @@ uint32 CAEStreamingChannel::FillBuffer(void* buffer, uint32 size) {
     return filled;
 }
 
-/// 0x4F23D0
+// 0x4F23D0
 void CAEStreamingChannel::PrepareStream(CAEStreamingDecoder* newDecoder, int8 soundFlags, bool stopCurrent) {
     if (!newDecoder || !m_pDirectSoundBuffer) {
         return;
@@ -483,7 +483,7 @@ void CAEStreamingChannel::Stop() {
     m_lStoppingFrameCount = 0;
 }
 
-/// 0x4F2550
+// 0x4F2550
 void CAEStreamingChannel::Service() {
     UpdateStatus();
 
