@@ -486,12 +486,12 @@ void CDarkel::RegisterKillByPlayer(const CPed& killedPed, eWeaponType damageWeap
             }
             break;
         case WEAPON_RAMMEDBYCAR:
-            if (WeaponType == WEAPON_RUNOVERBYCAR) { // wrong?
+            if (WeaponType == WEAPON_RUNOVERBYCAR) { // Crossed on purpose, the original has the same pair
                 CountFrenzyKill();
             }
             break;
         case WEAPON_RUNOVERBYCAR:
-            if (WeaponType == WEAPON_RAMMEDBYCAR) { // wrong?
+            if (WeaponType == WEAPON_RAMMEDBYCAR) { // Crossed on purpose, the original has the same pair
                 CountFrenzyKill();
             }
             break;
