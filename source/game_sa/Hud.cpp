@@ -46,7 +46,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawOddJobMessage, 0x58CC80);
     RH_ScopedInstall(DrawRadar, 0x58A330);
     RH_ScopedInstall(DrawScriptText, 0x58C080);
-    RH_ScopedInstall(DrawSubtitles, 0x58C250, { .Reversed = false });
+    RH_ScopedInstall(DrawSubtitles, 0x58C250);
     RH_ScopedInstall(DrawSuccessFailedMessage, 0x58C6A0, { .Reversed = false });
     RH_ScopedInstall(DrawVehicleName, 0x58AEA0);
     RH_ScopedInstall(DrawVitalStats, 0x589650, { .Reversed = false });
@@ -1234,7 +1234,79 @@ void CHud::DrawScriptText(bool isBeforeFade) {
 
 // 0x58C250
 void CHud::DrawSubtitles() {
-    plugin::Call<0x58C250>();
+    // Set when the subtitles were last drawn in widescreen mode
+    static auto& s_WasWidescreen = StaticRef<bool>(0xBAB214);
+    // Subtitles stay visible during cutscenes only if set
+    static auto& s_DrawInCutscene = StaticRef<bool>(0xBA678C);
+
+    if (!m_Message[0]) {
+        return;
+    }
+    if (StaticRef<bool>(0xBAADC0) && !CGameLogic::IsCoopGameGoingOn()) {
+        return;
+    }
+
+    // Hide the vehicle and zone names
+    if (m_VehicleState != NAME_DONT_SHOW) {
+        m_VehicleState = NAME_FADE_OUT;
+    }
+    if (m_ZoneState != NAME_DONT_SHOW) {
+        m_ZoneState = NAME_FADE_OUT;
+    }
+
+    CFont::SetBackground(false, false);
+    CFont::SetBackgroundColor({ 0, 0, 0, 128 });
+    CFont::SetOrientation(eFontAlignment::ALIGN_CENTER);
+    CFont::SetProportional(true);
+    CFont::SetDropShadowPosition(0);
+    CFont::SetFontStyle(FONT_SUBTITLES);
+    CFont::SetColor({ 225, 225, 225, 255 });
+    CFont::SetDropShadowPosition(2);
+    CFont::SetDropColor({ 0, 0, 0, 255 });
+
+    const auto width  = (float)RsGlobal.maximumWidth;
+    const auto height = (float)RsGlobal.maximumHeight;
+    const auto unitX  = width * 0.0015625f;
+    const auto unitY  = height * 0.002232143f;
+
+    float x, y;
+    if (!TheCamera.m_bWideScreenOn) {
+        if (s_WasWidescreen) { // Don't leave a subtitle behind from the widescreen mode
+            m_Message[0] = '\0';
+        }
+        s_WasWidescreen = false;
+
+        CFont::SetScaleForCurrentLanguage(unitX * 0.58f, unitY * 1.22f);
+        const auto bubbleLeft = unitX * 140.0f + unitX * 8.0f; // The space taken by the radar
+        const auto bubbleSize = ((width - unitX * 20.0f) - unitX * 8.0f) - bubbleLeft;
+        if (!CTheScripts::bUseMessageFormatting) {
+            y = (height - unitY * 105.0f) - (unitY + unitY);
+            if (!bDrawingVitalStats) {
+                CFont::SetCentreSize(bubbleSize);
+                x = bubbleSize * 0.5f + bubbleLeft;
+            } else { // Narrower, so the vital stats stay visible
+                CFont::SetScaleForCurrentLanguage(unitX * 0.58f * 0.8f, unitY * 1.22f);
+                CFont::SetCentreSize(bubbleSize * 0.8f);
+                x = unitX * 40.0f + bubbleSize * 0.5f + bubbleLeft;
+            }
+        } else {
+            CFont::SetCentreSize(unitX * (float)CTheScripts::MessageWidth);
+            y = (height - unitY * 105.0f) - (unitY + unitY);
+            x = unitX * (float)CTheScripts::MessageCentre;
+        }
+    } else {
+        s_WasWidescreen = true;
+        if (!s_DrawInCutscene && CCutsceneMgr::ms_running) {
+            CFont::SetDropShadowPosition(0);
+            return;
+        }
+        CFont::SetCentreSize(width - unitX * 60.0f);
+        CFont::SetScale(unitX * 0.58f, unitY * 1.2f);
+        y = height - unitY * 80.0f;
+        x = (float)(RsGlobal.maximumWidth / 2);
+    }
+    CFont::PrintString(x, y, m_Message);
+    CFont::SetDropShadowPosition(0);
 }
 
 // 0x58C6A0
