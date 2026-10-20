@@ -24,6 +24,8 @@ enum ePlayerState : uint8 {
     PLAYERSTATE_LEFT_GAME
 };
 
+class CPad;
+
 class CPlayerInfo {
 public:
     CPlayerPed*    m_pPed;                    // Pointer to the player ped (should always be set)
@@ -135,6 +137,14 @@ private:
     CVector* GetPos_Hook(CVector* outPos);
 
     CPlayerInfo* Constructor();
+
+    // NOTSA, the parts of `Process`
+    void ProcessStuntStats();
+    void ProcessEnterExitVehicle(uint32 playerIndex, CPad* pad);
+    void ProcessRemoteVehicleExplosion();
+    void ProcessUpsideDownVehicle();
+    void ProcessMovementStats();
+    void ProcessChaseValue();
 };
 
 VALIDATE_SIZE(CPlayerInfo, 0x190);

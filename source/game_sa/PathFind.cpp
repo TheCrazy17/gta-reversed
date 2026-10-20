@@ -1751,3 +1751,8 @@ void CPathFind::SwitchRoadsOffInArea(float xMin, float xMax, float yMin, float y
 void CPathFind::SwitchPedRoadsOffInArea(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax, bool bSwitchOff, bool bBackToOriginal) {
     SwitchRoadsOffInArea(xMin, xMax, yMin, yMax, zMin, zMax, bSwitchOff, false, bBackToOriginal);
 }
+
+// 0x44EFC0
+float CPathFind::CalcRoadDensity(float x, float y) {
+    return plugin::CallMethodAndReturn<float, 0x44EFC0, CPathFind*, float, float>(this, x, y);
+}
