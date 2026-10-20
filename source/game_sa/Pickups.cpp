@@ -12,6 +12,7 @@
 #include "Radar.h"
 #include "Shadows.h"
 #include "Coronas.h"
+#include "PostEffects.h"
 #include "TaskSimpleJetPack.h"
 
 using namespace ModelIndices;
@@ -28,7 +29,7 @@ void CPickups::InjectHooks() {
     RH_ScopedInstall(DoCollectableEffects, 0x455E20);
     RH_ScopedInstall(DoMineEffects, 0x4560E0);
     RH_ScopedInstall(DoMoneyEffects, 0x454E80);
-    RH_ScopedInstall(DoPickUpEffects, 0x455720, { .Reversed = false });
+    RH_ScopedInstall(DoPickUpEffects, 0x455720);
     RH_ScopedInstall(FindPickUpForThisObject, 0x4551C0);
 
     // Cannot be hooked at all for now due to ABI fuckery, the return value is 32 bit, but causes the function to assume the calling convention of of T* Function(T*, ...)
@@ -288,7 +289,145 @@ void CPickups::DoMoneyEffects(CEntity* entity) {
 
 // 0x455720
 void CPickups::DoPickUpEffects(CEntity* entity) {
-    plugin::Call<0x455720, CEntity*>(entity);
+    auto* const object = entity->AsObject();
+    auto* const pickup = FindPickUpForThisObject(object);
+    const auto  model  = entity->m_nModelIndex;
+
+    if (model == MI_PICKUP_CAMERA) {
+        // The photo spots are only visible while taking photos, a shiny dot gives them away otherwise
+        if (TheCamera.GetActiveCam().m_nMode == MODE_CAMERA) {
+            object->objectFlags.bDoNotRender = false;
+        } else {
+            object->objectFlags.bDoNotRender = true;
+
+            if (CClock::GetGameClockHours() < 5 || CPostEffects::IsVisionFXActive()) {
+                const auto size  = (std::sin((float)(CTimer::GetTimeInMS() & 0x1FFF) * 0.0007666016f) + 1.7f) * 3.7f;
+                const auto red   = 100 - (int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * 3.0517578125e-05f * -50.0f);
+                const auto green = (int32)((float)red * 0.7f);
+                CCoronas::RegisterCorona(
+                    (uint32)entity,
+                    nullptr,
+                    (uint8)red,
+                    (uint8)green,
+                    (uint8)green,
+                    255,
+                    entity->GetPosition(),
+                    size,
+                    100.0f,
+                    CORONATYPE_HEADLIGHT,
+                    FLARETYPE_NONE,
+                    eCoronaReflType::CORREFL_NONE,
+                    eCoronaLOSCheck::LOSCHECK_OFF,
+                    eCoronaTrail::TRAIL_OFF,
+                    0.0f,
+                    false,
+                    1.5f,
+                    false,
+                    15.0f,
+                    false,
+                    false
+                );
+            }
+        }
+    } else {
+        object->objectFlags.bDoNotRender = pickup->PickUpShouldBeInvisible();
+    }
+
+    if (object->objectFlags.bDoNotRender) {
+        return;
+    }
+
+    // Colour of the text (index into the table of the pickup colours) for each kind of pickup.
+    // The original leaves it unset for the ones that never have a text, it is only a fallback.
+    const auto textColourIndex = [&]() -> int32 {
+        if (model == MI_PICKUP_ADRENALINE
+            || model == MI_PICKUP_HEALTH
+            || model == MI_PICKUP_BONUS
+            || model == MI_PICKUP_PROPERTY_FORSALE
+            || model == MI_PICKUP_CLOTHES
+        ) {
+            return 0x2F;
+        }
+        if (model == MI_PICKUP_BODYARMOUR) {
+            return 0x30;
+        }
+        if (model == MI_PICKUP_REVENUE) {
+            return 0x35;
+        }
+        if (model == MI_PICKUP_BRIBE
+            || model == MI_PICKUP_INFO
+            || model == MI_PICKUP_KILLFRENZY
+            || model == MI_PICKUP_PROPERTY
+            || model == MI_PICKUP_SAVEGAME
+        ) {
+            return 0;
+        }
+        return WeaponForModel(model);
+    };
+
+    // Price tag and name of the pickups that are for sale or have a value
+    if ((object->m_nObjectFlags & 0xC) || object->m_nBonusValue || object->m_wCostValue) {
+        const auto& camPos = TheCamera.GetPosition();
+        const auto& pos    = entity->GetPosition();
+        const auto  dist   = std::sqrt(sq(camPos.x - pos.x) + sq(camPos.y - pos.y));
+        if (dist < 14.0f && NumMessages < MAX_PICKUP_MESSAGES) {
+            CVector screenPos;
+            float   width, height;
+            if (CSprite::CalcScreenCoors({ pos.x, pos.y, pos.z + 0.7f }, &screenPos, &width, &height, true, true)) {
+                struct tPickupTextColour {
+                    uint8 r, g, b, a;
+                    float scale;
+                };
+                const auto& colour = StaticRef<tPickupTextColour[54]>(0x8A5FB0)[textColourIndex()];
+
+                auto& message       = aMessages[NumMessages];
+                message.pos         = { screenPos.x, screenPos.y };
+                message.weaponType  = WeaponForModel(model);
+                message.width       = width;
+                message.height      = height;
+                message.color       = CRGBA{ colour.r, colour.g, colour.b, (uint8)(int32)((1.0f - dist * (1.0f / 14.0f)) * 255.0f) };
+                message.field_19    = (char)object->m_nBonusValue;
+                message.price       = (uint32)object->m_wCostValue * 5;
+
+                if (object->objectFlags.bPickupInShopOutOfStock) {
+                    message.flags |= 1;
+                } else {
+                    message.flags &= ~1;
+                }
+
+                if (model == MI_PICKUP_PROPERTY || model == MI_PICKUP_PROPERTY_FORSALE) {
+                    const auto textIndex = (ePickupPropertyText)FindPickUpForThisObject(object)->m_nFlags.nPropertyTextIndex;
+                    message.text         = TheText.Get(CPickup::FindStringForTextIndex(textIndex));
+                } else {
+                    message.text = nullptr;
+                }
+                if (model == MI_PICKUP_PROPERTY_FORSALE) {
+                    message.flags |= 2;
+                } else {
+                    message.flags &= ~2;
+                }
+
+                NumMessages++;
+            }
+        }
+    }
+
+    // Rotates the pickup and scales the small ones up so they are easy to see
+    const auto& bounds     = CModelInfo::GetModelInfo(model)->GetColModel()->GetBoundingBox();
+    const auto  largestDim = std::max({ bounds.GetWidth(), bounds.GetLength(), bounds.GetHeight() });
+    auto        scale      = (std::max(1.2f / largestDim, 1.0f) - 1.0f) * 0.6f + 1.0f;
+    if (model == 362) {
+        scale = 1.2f;
+    }
+
+    const auto angle = (float)(CTimer::GetTimeInMS() & 0x7FF) * 0.0030566407f;
+    const auto cosA  = std::cos(angle) * scale;
+    const auto sinA  = std::sin(angle) * scale;
+
+    auto& matrix     = entity->GetMatrix();
+    matrix.GetRight()   = CVector{ cosA, sinA, 0.0f };
+    matrix.GetForward() = CVector{ -sinA, cosA, 0.0f };
+    matrix.GetUp()      = CVector{ 0.0f, 0.0f, scale };
 }
 
 // 0x4551C0
