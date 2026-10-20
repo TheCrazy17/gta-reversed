@@ -48,9 +48,11 @@ public:
     // flags 1
     bool         m_bIsPedGoingForCarDoor : 1{};
     bool         m_bFirstSubTaskNeedsToBeCreated : 1{};
+    uint8        m_DirectionGoingRoundCar : 4{}; //< Result of the last route computation
+    uint8        : 2;
     // flags 2
-    uint8        m_DirectionGoingRoundCar : 4{};
     uint8        m_ForceThisDirectionRoundCar : 4{};
+    uint8        : 4;
     CVector      m_TargetPt{};
     CVehicle*    m_Veh{};
     CPointRoute* m_Route{};

@@ -2,6 +2,7 @@
 
 #include "TaskComplexFollowPointRoute.h"
 #include "TaskComplexWalkRoundCar.h"
+#include "PedGeometryAnalyser.h"
 #include "CarEnterExit.h"
 
 void CTaskComplexWalkRoundCar::InjectHooks() {
@@ -13,7 +14,7 @@ void CTaskComplexWalkRoundCar::InjectHooks() {
 
     RH_ScopedInstall(SetNewVehicle, 0x654290);
     RH_ScopedInstall(CreateRouteTask, 0x6542E0);
-    RH_ScopedInstall(ComputeRouteRoundSmallCar, 0x6544F0, { .Reversed = false });
+    RH_ScopedInstall(ComputeRouteRoundSmallCar, 0x6544F0);
     RH_ScopedInstall(GoingForDoor, 0x654720);
     RH_ScopedInstall(ComputeRouteRoundBigCar, 0x656BB0, { .Reversed = false });
     RH_ScopedInstall(ComputeRoute, 0x657B80);
@@ -78,7 +79,45 @@ CTask* CTaskComplexWalkRoundCar::CreateRouteTask(CPed*) const {
 
 // 0x6544F0
 float CTaskComplexWalkRoundCar::ComputeRouteRoundSmallCar(CPed* ped) {
-    return plugin::CallMethodAndReturn<float, 0x6544F0, CTaskComplexWalkRoundCar*, CPed*>(this, ped);
+        const auto& pedPos = ped->GetPosition();
+
+    // The corners are only computed so the planes below can be taken from the cache
+    CVector corners[4];
+    CPedGeometryAnalyser::ComputeEntityBoundingBoxCorners(pedPos.z, *m_Veh, corners);
+
+    CVector planes[4];
+    float   planeDots[4];
+    CPedGeometryAnalyser::ComputeEntityBoundingBoxPlanes(pedPos.z, *m_Veh, &planes, planeDots);
+
+    // How far the ped is from the side of the vehicle that was hit
+    const auto hitSide = CPedGeometryAnalyser::ComputeEntityHitSide(*ped, *m_Veh);
+    const auto distToSide = hitSide == -1
+        ? 0.0f
+        : DotProduct(planes[hitSide], pedPos) + planeDots[hitSide];
+
+    // When going for the door the target must not be inside the vehicle, push it out through the closest side
+    if (m_bIsPedGoingForCarDoor) {
+        float distToPlane[4];
+        auto  i = 0;
+        for (; i < 4; i++) {
+            distToPlane[i] = DotProduct(planes[i], m_TargetPt) + planeDots[i];
+            if (distToPlane[i] >= 0.0f) {
+                break;
+            }
+        }
+        if (i == 4) {
+            if (const auto side = CPedGeometryAnalyser::ComputeEntityHitSide(m_TargetPt, *m_Veh); side != -1) {
+                m_TargetPt += planes[side] * (-distToPlane[side] + 0.05f);
+            }
+        }
+    }
+
+    // The forced direction is a signed 4 bit value
+    const auto forcedDir = (int32)(int8)(m_ForceThisDirectionRoundCar << 4) >> 4;
+    const auto dir       = CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(*ped, *m_Veh, m_TargetPt, *m_Route, forcedDir);
+    m_DirectionGoingRoundCar = (uint8)dir & 0xF;
+
+    return distToSide;
 }
 
 // 0x656BB0
