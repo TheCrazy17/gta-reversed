@@ -125,7 +125,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ReconsiderRoute, 0x42FC40);
     RH_ScopedInstall(RegisterVehicleOfInterest, 0x423DE0);
     RH_ScopedInstall(ScanForPedDanger, 0x42CE40);
-    RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0, { .Reversed = false });
+    RH_ScopedInstall(SetCoordsOfScriptCar, 0x4342A0);
     RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420, { .Reversed = false });
     RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0);
@@ -1857,7 +1857,44 @@ bool CCarCtrl::ScriptGenerateOneEmergencyServicesCar(uint32 modelId, CVector pos
 
 // 0x4342A0
 void CCarCtrl::SetCoordsOfScriptCar(CVehicle* vehicle, float x, float y, float z, uint8 arg5, uint8 arg6) {
-    plugin::Call<0x4342A0, CVehicle*, float, float, float, uint8, uint8>(vehicle, x, y, z, arg5, arg6);
+    // arg5 resets the orientation, arg6 puts the vehicle on top of the coordinates instead of in the middle of them
+    const auto ref = GetVehiclePool()->GetRef(vehicle);
+
+    // Below -100 means that the height is not known
+    if (z <= -100.0f) {
+        z = CWorld::FindGroundZForCoord(x, y);
+    }
+    if (arg6) {
+        z += vehicle->GetDistanceFromCentreOfMassToBaseOfModel();
+    }
+
+    vehicle->SetIsStatic(false);
+    CTheScripts::StuckCars.ClearStuckFlagForCar(ref);
+
+    CVector pos{ x, y, z };
+    vehicle->Teleport(pos, arg5);
+
+    if (vehicle->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+        CTheScripts::ClearSpaceForMissionEntity(pos, vehicle);
+        vehicle->m_autoPilot.m_nTempAction = TEMPACT_NONE;
+        return;
+    }
+
+    switch (vehicle->m_nVehicleType) {
+    case VEHICLE_TYPE_AUTOMOBILE:
+    case VEHICLE_TYPE_TRAILER:
+        vehicle->AsAutomobile()->PlaceOnRoadProperly();
+        break;
+    case VEHICLE_TYPE_BIKE:
+        vehicle->AsBike()->PlaceOnRoadProperly();
+        break;
+    default:
+        break;
+    }
+
+    CTheScripts::ClearSpaceForMissionEntity(pos, vehicle);
+    JoinCarWithRoadAccordingToMission(vehicle);
+    vehicle->m_autoPilot.m_nTempAction = TEMPACT_NONE;
 }
 
 // 0x4217C0
