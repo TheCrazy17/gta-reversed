@@ -15,6 +15,7 @@
 #include "EntryExitManager.h"
 #include "TaskSimpleUseGun.h"
 #include "eHud.h"
+#include "UserDisplay.h"
 
 void CHud::InjectHooks() {
     RH_ScopedClass(CHud);
@@ -41,7 +42,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawCrossHairs, 0x58E020); // -
     RH_ScopedInstall(DrawFadeState, 0x58D580);
     RH_ScopedInstall(DrawHelpText, 0x58B6E0, { .Reversed = false });
-    RH_ScopedInstall(DrawMissionTimers, 0x58B180, { .Reversed = false });
+    RH_ScopedInstall(DrawMissionTimers, 0x58B180);
     RH_ScopedInstall(DrawMissionTitle, 0x58D240);
     RH_ScopedInstall(DrawOddJobMessage, 0x58CC80);
     RH_ScopedInstall(DrawRadar, 0x58A330);
@@ -933,7 +934,131 @@ void CHud::DrawHelpText() {
 
 // 0x58B180
 void CHud::DrawMissionTimers() {
-    plugin::Call<0x58B180>();
+    if (m_BigMessage[STYLE_MIDDLE_SMALLER_HIGHER][0] && !bScriptForceDisplayWithCounters) {
+        return;
+    }
+    if (CGarages::MessageIDString[0]) {
+        return;
+    }
+
+    const auto playerInFocus = CWorld::PlayerInFocus;
+    const auto scaleY        = SCREEN_SCALE_Y(1.0f);
+
+    // Vertical start of the clock and of the counters under it. The bars of the second player are lower
+    const auto GetStartY = [&](float pos) {
+        return GetYPosBasedOnHealth(1, GetYPosBasedOnHealth(playerInFocus, pos, 12), 12);
+    };
+    auto clockY    = GetStartY(scaleY * 148.0f);
+    auto countersY = GetStartY(scaleY * 20.0f + scaleY * 148.0f);
+    if (CWorld::Players[1].m_pPed) {
+        clockY    += scaleY * 72.0f;
+        countersY += scaleY * 72.0f;
+    }
+
+    CFont::SetProportional(true);
+    CFont::SetBackground(false, false);
+    CFont::SetScale(SCREEN_STRETCH_X(0.5f), SCREEN_SCALE_Y(1.0f));
+    CFont::SetOrientation(eFontAlignment::ALIGN_RIGHT);
+    CFont::SetRightJustifyWrap(0.0f);
+    CFont::SetFontStyle(FONT_MENU);
+    CFont::SetWrapx(SCREEN_STRETCH_X(640.0f));
+    CFont::SetEdge(2);
+    CFont::SetDropColor({ 0, 0, 0, 255 });
+
+    auto& timer = CUserDisplay::OnscnTimer;
+
+    const auto clockEnabled = timer.m_Clock.m_bEnabled;
+    if (CWorld::Players[1].m_pPed && !clockEnabled) {
+        TimerMainCounterWasDisplayed = false;
+    }
+    for (auto i = 0u; i < COnscreenTimer::NUM_COUNTERS; i++) {
+        if (!timer.m_aCounters[i].m_bEnabled) {
+            TimerCounterWasDisplayed[i] = false;
+        }
+    }
+
+    if (!timer.m_bDisplay) {
+        return;
+    }
+
+    // While the hide state is not zero the text blinks, until it counts up to the end
+    const auto AdvanceBlink = [](int16& state) {
+        if (state != 0 && ++state > 50) {
+            state = 0;
+        }
+    };
+    const auto IsVisible = [](int16 state) {
+        return (CTimer::GetFrameCounter() & 4) != 0 || state == 0;
+    };
+
+    if (clockEnabled) {
+        if (!TimerMainCounterWasDisplayed) {
+            TimerMainCounterHideState = 1;
+        }
+        TimerMainCounterWasDisplayed = true;
+        AdvanceBlink(TimerMainCounterHideState);
+
+        CFont::SetColor(HudColour.GetRGB(HUD_COLOUR_LIGHT_GRAY));
+        if (IsVisible(TimerMainCounterHideState)) {
+            GxtChar text[200];
+            AsciiToGxtChar(timer.m_Clock.m_szDisplayedText, text);
+            CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(32.0f), clockY, text);
+
+            if (timer.m_Clock.m_szDescriptionTextKey[0]) {
+                CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(32.0f) - SCREEN_STRETCH_X(90.0f), clockY, TheText.Get(timer.m_Clock.m_szDescriptionTextKey));
+            }
+        }
+    } else {
+        countersY = GetYPosBasedOnHealth(1, GetYPosBasedOnHealth(playerInFocus, scaleY * 148.0f, 12), 12);
+        if (CWorld::Players[1].m_pPed) {
+            countersY += scaleY * 72.0f;
+        }
+    }
+
+    for (auto i = 0u; i < COnscreenTimer::NUM_COUNTERS; i++) {
+        auto& counter = timer.m_aCounters[i];
+        if (!counter.m_bEnabled) {
+            continue;
+        }
+
+        if (!TimerCounterWasDisplayed[i] && counter.m_bFlashWhenFirstDisplayed) {
+            TimerCounterHideState[i] = 1;
+        }
+        TimerCounterWasDisplayed[i] = true;
+        AdvanceBlink(TimerCounterHideState[i]);
+
+        if (!IsVisible(TimerCounterHideState[i])) {
+            continue;
+        }
+
+        CFont::SetColor(HudColour.GetRGB(counter.m_nColourId));
+
+        // Every line is placed with the vertical scale applied twice
+        const auto rowY = scaleY * 20.0f * (float)i * scaleY + countersY;
+        if (counter.m_nType == eOnscreenCounter::LINE) {
+            const auto value = (int16)std::atol(counter.m_szDisplayedText);
+            CSprite2d::DrawBarChart(
+                SCREEN_STRETCH_FROM_RIGHT(32.0f) - SCREEN_STRETCH_X(61.0f),
+                scaleY * 6.0f + rowY,
+                (uint16)SCREEN_STRETCH_X(61.0f),
+                (uint8)SCREEN_SCALE_Y(9.0f),
+                (float)value * 0.01f * 100.0f,
+                0,
+                0,
+                1,
+                HudColour.GetRGB(counter.m_nColourId),
+                { 0, 0, 0, 0 }
+            );
+        } else {
+            GxtChar text[200];
+            AsciiToGxtChar(counter.m_szDisplayedText, text);
+            CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(32.0f), rowY, text);
+        }
+
+        if (counter.m_szDescriptionTextKey[0]) {
+            CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(32.0f) - SCREEN_STRETCH_X(90.0f), rowY, TheText.Get(counter.m_szDescriptionTextKey));
+        }
+    }
 }
 
 // 0x58D240
