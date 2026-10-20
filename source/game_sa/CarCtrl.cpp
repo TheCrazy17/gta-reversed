@@ -114,7 +114,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(GetAIPlaneToAttackPlayer, 0x429780);
     RH_ScopedInstall(GetAIPlaneToDoDogFight, 0x429890);
     RH_ScopedInstall(GetAIPlaneToDoDogFightAgainstPlayer, 0x42F370);
-    RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0, { .Reversed = false });
+    RH_ScopedInstall(IsThisAnAppropriateNode, 0x42DAB0);
     RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0);
     RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
     RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10);
@@ -1002,7 +1002,115 @@ bool CCarCtrl::IsAnyoneParking() {
 
 // 0x42DAB0
 bool CCarCtrl::IsThisAnAppropriateNode(CVehicle* vehicle, CNodeAddress nodeAddress1, CNodeAddress nodeAddress2, CNodeAddress nodeAddress3, bool arg5) {
-    return plugin::CallAndReturn<bool, 0x42DAB0, CVehicle*, CNodeAddress, CNodeAddress, CNodeAddress, bool>(vehicle, nodeAddress1, nodeAddress2, nodeAddress3, arg5);
+    const auto areaNodes3 = ThePaths.m_pPathNodes[nodeAddress3.m_wAreaId];
+    if (!areaNodes3 || nodeAddress1 == nodeAddress3) {
+        return false;
+    }
+
+    // `node2` is where the vehicle is coming from, `node3` is the candidate
+    const auto& node2 = ThePaths.m_pPathNodes[nodeAddress2.m_wAreaId][nodeAddress2.m_wNodeId];
+    const auto& node3 = areaNodes3[nodeAddress3.m_wNodeId];
+
+    if (node2.m_bWaterNode != node3.m_bWaterNode && vehicle->m_nModelIndex != MODEL_VORTEX) {
+        return false;
+    }
+
+    const auto  driver    = vehicle->m_pDriver;
+    const auto  vehClass  = [&] { return CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->AsVehicleModelInfoPtr()->m_nVehicleClass; };
+    const auto  vehPos    = vehicle->GetPosition();
+    const auto  IsOccupied = [&] { // Checks the things that stop a vehicle from using a roadblock / parking node
+        if (vehicle->IsLawEnforcementVehicle()) {
+            return true;
+        }
+        if (vehClass() == VEHICLE_CLASS_BIG) {
+            return true;
+        }
+        if (driver && driver->m_nPedType == PED_TYPE_CRIMINAL) {
+            return true;
+        }
+        return IsAnyoneParking();
+    };
+    const auto IsNodeFree = [&] {
+        int16 numColliding{};
+        CWorld::FindObjectsKindaColliding(node3.GetPosition(), 5.0f, true, &numColliding, 2, nullptr, false, true, false, false, false);
+        return numColliding == 0;
+    };
+
+    switch (node3.m_nBehaviourType) {
+    case 1: { // Roadblock
+        if (vehicle->m_nCreatedBy == MISSION_VEHICLE) {
+            return false;
+        }
+        if (driver && driver->IsCreatedBy(PED_MISSION)) {
+            return false;
+        }
+        if (vehClass() == VEHICLE_CLASS_BIG) {
+            return false;
+        }
+        if (!arg5) {
+            const auto toNode = node3.GetPosition() - vehPos;
+            const auto link   = node3.GetPosition() - node2.GetPosition();
+            if (CrossProduct(link, toNode).z < 0.0f) {
+                return false;
+            }
+        }
+        return !IsOccupied() && IsNodeFree();
+    }
+    case 2: { // Parking
+        if (vehicle->m_nCreatedBy == MISSION_VEHICLE) {
+            return false;
+        }
+        if (driver && driver->IsCreatedBy(PED_MISSION)) {
+            return false;
+        }
+        if (!arg5) {
+            const auto toNode = node3.GetPosition() - vehPos;
+            if (DotProduct(vehicle->GetForwardVector(), toNode) < 0.0f) {
+                return false;
+            }
+        }
+        return !IsOccupied() && IsNodeFree();
+    }
+    case 5:
+    case 10: {
+        if (arg5) {
+            return false;
+        }
+        const auto& bb = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox();
+        if (bb.m_vecMax.z < 2.0f) {
+            return false;
+        }
+        break;
+    }
+    case 8:
+    case 9: {
+        if (arg5) {
+            return false;
+        }
+        const auto& bb = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox();
+        if (bb.m_vecMax.z > 1.5f || bb.m_vecMax.x > 2.0f || bb.m_vecMax.y > 4.0f) {
+            return false;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    if (vehicle->m_nCreatedBy == MISSION_VEHICLE
+        && vehicle->m_autoPilot.m_nCarMission == MISSION_CRUISE
+        && node3.m_bDontWander
+        && !node2.m_bDontWander
+    ) {
+        return false;
+    }
+    if (node3.m_onDeadEnd && !node2.m_onDeadEnd) {
+        return false;
+    }
+    if (node3.m_isSwitchedOff && !node2.m_isSwitchedOff) {
+        return false;
+    }
+    return !arg5;
 }
 
 // 0x423EA0
