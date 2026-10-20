@@ -92,7 +92,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
     RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0, { .Reversed = false });
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
-    RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470, { .Reversed = false });
+    RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470);
     RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400);
     RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20, { .Reversed = false });
     RH_ScopedInstall(FindPathDirection, 0x422090);
@@ -411,7 +411,61 @@ void CCarCtrl::FindIntersection2Lines(float arg1, float arg2, float arg3, float 
 
 // 0x42B470
 void CCarCtrl::FindLinksToGoWithTheseNodes(CVehicle* vehicle) {
-    plugin::Call<0x42B470, CVehicle*>(vehicle);
+    static_assert(offsetof(CAutoPilot, m_nCurrentPathNodeInfo) == 0x14 && offsetof(CAutoPilot, m_nNextPathNodeInfo) == 0x16);
+    static_assert(offsetof(CAutoPilot, _smthCurr) == 0x25 && offsetof(CAutoPilot, _smthNext) == 0x26);
+    static_assert(offsetof(CVehicle, m_nForcedRandomRouteSeed) == 0x45E);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    if (vehicle->m_nForcedRandomRouteSeed) {
+        std::srand((unsigned)(int32)vehicle->m_nForcedRandomRouteSeed);
+    }
+
+    const auto current = autoPilot.m_currentAddress;
+    const auto start   = autoPilot.m_startingRouteNode;
+    const auto& node   = *ThePaths.GetPathNode(current);
+    const auto  base   = node.m_wBaseLinkId;
+
+    // Nodes are ordered by area first and then by their index in it
+    const auto IsBefore = [](CNodeAddress a, CNodeAddress b) {
+        return a.m_wAreaId < b.m_wAreaId || (a.m_wAreaId == b.m_wAreaId && a.m_wNodeId < b.m_wNodeId);
+    };
+
+    // The link that leads to the node the vehicle is heading to
+    int32 toStartIdx = 0;
+    do {
+        if (ThePaths.m_pNodeLinks[current.m_wAreaId][base + toStartIdx] == start) {
+            break;
+        }
+        toStartIdx++;
+    } while (toStartIdx < 12);
+    autoPilot.m_nNextPathNodeInfo = ThePaths.m_pNaviLinks[current.m_wAreaId][base + toStartIdx];
+    autoPilot._smthNext           = IsBefore(current, start) ? -1 : 1;
+
+    // The link to continue with, the one pointing the closest to where the vehicle is
+    int32 chosen = 0;
+    if (node.m_nNumLinks != 1) {
+        chosen     = -1;
+        auto best  = 999999.9f;
+        for (auto i = 0u; i < node.m_nNumLinks; i++) {
+            const auto link = ThePaths.m_pNodeLinks[current.m_wAreaId][base + i];
+            if (link == start || !ThePaths.IsAreaLoaded(link.m_wAreaId)) {
+                continue;
+            }
+            const auto fromPos = node.GetPosition();
+            const auto toPos   = ThePaths.GetPathNode(link)->GetPosition();
+            if (const auto dist = CCollision::DistToLine(fromPos, toPos, vehicle->GetPosition()); dist < best) {
+                best   = dist;
+                chosen = i;
+            }
+        }
+        if (chosen < 0) {
+            chosen = 0;
+        }
+    }
+
+    autoPilot.m_nCurrentPathNodeInfo = ThePaths.m_pNaviLinks[current.m_wAreaId][base + chosen];
+    autoPilot._smthCurr              = IsBefore(ThePaths.m_pNodeLinks[current.m_wAreaId][base + chosen], current) ? -1 : 1;
 }
 
 // 0x434400
