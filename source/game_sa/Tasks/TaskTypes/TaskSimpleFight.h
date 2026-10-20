@@ -28,11 +28,11 @@ public:
     std::array<float, 5> m_fChain;
     std::array<float, 5> m_fRadius;
     float  m_fGroundLoop;
-    int32  ABlockHit;
-    int32  ABlockChain;
-    uint8  m_nHitLevel;
-    int32  m_nDamage;
-    int32  field_58;
+    float  ABlockHit;
+    float  ABlockChain;
+    std::array<uint8, 5> m_nHitLevel; //< Per move, see `GetHitLevel`
+    std::array<uint8, 5> m_nDamage;   //< Per move
+    uint8  pad_5A[2];
     std::array<int32, 5> m_Hit;
     std::array<int32, 5> m_AltHit;
     uint16 m_wFlags;
