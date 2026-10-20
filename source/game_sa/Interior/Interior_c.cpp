@@ -86,7 +86,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(IsVisible, 0x5929F0);
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .Reversed = false });
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120, { .Reversed = false });
-    RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340, { .Reversed = false });
+    RH_ScopedInstall(PlaceFurnitureInCorner, 0x593340);
     RH_ScopedInstall(FindEmptyTiles, 0x591C50);
     RH_ScopedInstall(FurnishShop, 0x59A790);
 }
@@ -2048,10 +2048,62 @@ CObject* Interior_c::PlaceFurnitureOnWall(int32 furnitureGroupId, int32 furnitur
 // 0x593340
 // NOTSA: Header signature only - return type corrected from `void` to `CObject*` (raw disasm shows the
 // caller TEST/JZ-ing EAX right after the call, same fix as PlaceFurniture/PlaceFurnitureOnWall).
-CObject* Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 a6, int32 a2, int32* a9, int32* a10, int32* a11,
-                                        int32* a12, int32* a13) {
-    return plugin::CallMethodAndReturn<CObject*, 0x593340, Interior_c*, int32, int32, int32, float, int32, int32, int32, int32*, int32*, int32*, int32*, int32*>(this, furnitureGroupId, furnitureSubgroupId,
-                                                                                                                                       id, a4, a5, a6, a2, a9, a10, a11, a12, a13);
+CObject* Interior_c::PlaceFurnitureInCorner(int32 furnitureGroupId, int32 furnitureSubgroupId, int32 id, float a4, int32 a5, int32 cornerSide, int32 offset, int32* outSide, int32* outX, int32* outY,
+                                        int32* outA, int32* outB) {
+    auto* const furniture = g_furnitureMan.GetFurniture(furnitureGroupId, furnitureSubgroupId, (int16)id, m_box->m_status);
+    if (!furniture) {
+        return nullptr;
+    }
+
+    // A fixed corner is tried once, otherwise random ones are tried until one fits
+    const auto randomSide = cornerSide == -1;
+    const auto attempts   = randomSide ? 20 : 1;
+    for (auto attempt = 0; attempt < attempts; attempt++) {
+        if (randomSide) {
+            cornerSide = (int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * 0.000030517578125f * 4.0f);
+        }
+
+        int32 x{}, y{};
+        switch (cornerSide) {
+        case 0:
+            x = 0;
+            y = m_box->m_depth - furniture->m_nWidthY - offset;
+            break;
+        case 1:
+            x = offset;
+            y = 0;
+            break;
+        case 2:
+            x = m_box->m_width - furniture->m_nWidthX;
+            y = offset;
+            break;
+        case 3:
+            x = m_box->m_width - furniture->m_nWidthY - offset;
+            y = m_box->m_depth - furniture->m_nWidthX;
+            break;
+        }
+
+        int32 placedA{}, placedB{};
+        if (auto* const obj = PlaceFurniture(furniture, x, y, a4, a5, cornerSide, &placedA, &placedB, 0)) {
+            if (outSide) {
+                *outSide = cornerSide;
+            }
+            if (outX) {
+                *outX = x;
+            }
+            if (outY) {
+                *outY = y;
+            }
+            if (outA) {
+                *outA = placedA;
+            }
+            if (outB) {
+                *outB = placedB;
+            }
+            return obj;
+        }
+    }
+    return nullptr;
 }
 
 // 0x591C50
