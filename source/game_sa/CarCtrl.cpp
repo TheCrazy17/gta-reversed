@@ -90,7 +90,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(CreatePoliceChase, 0x42C2B0, { .Reversed = false });
     RH_ScopedInstall(DealWithBend_Racing, 0x428040, { .Reversed = false });
     RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
-    RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0, { .Reversed = false });
+    RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0);
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
     RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470);
     RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400);
@@ -523,7 +523,70 @@ void CCarCtrl::DragCarToPoint(CVehicle* vehicle, CVector* pos) {
 
 // 0x4325C0
 float CCarCtrl::FindAngleToWeaveThroughTraffic(CVehicle* vehicle, CPhysical* physical, float arg3, float arg4, float arg5) {
-    return plugin::CallAndReturn<float, 0x4325C0, CVehicle*, CPhysical*, float, float, float>(vehicle, physical, arg3, arg4, arg5);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nCarDrivingStyle) == 0x3B9);
+    // arg3 is the heading the vehicle has, arg4 the one it wants to go in and arg5 scales how far ahead to look
+    const auto& moveSpeed = vehicle->GetMoveSpeed();
+    const auto  reach     = std::min(std::sqrt(moveSpeed.y * moveSpeed.y + moveSpeed.x * moveSpeed.x) * 2.5f + 1.0f, 2.0f) * arg5 * 12.0f;
+
+    const auto& pos  = vehicle->GetPosition();
+    const auto  minX = pos.x - reach;
+    const auto  maxX = reach + pos.x;
+    const auto  minY = pos.y - reach;
+    const auto  maxY = reach + pos.y;
+
+    const auto Sector = [](float coord) { return (int32)std::floor(coord * 0.02f + 60.0f); };
+    const auto startX = std::max(Sector(minX), 0);
+    const auto startY = std::max(Sector(minY), 0);
+    const auto endX   = std::min(Sector(maxX), 119);
+    const auto endY   = std::min(Sector(maxY), 119);
+
+    // The two headings that avoid what is around, they are narrowed down by what is in the sectors
+    float avoidA = arg3;
+    float avoidB = arg3;
+
+    CWorld::AdvanceCurrentScanCode();
+
+    // Go over the sectors until the result stops changing
+    float lastA = -9999.9f;
+    float lastB = -9999.9f;
+    while (lastA != avoidA || lastB != avoidB) {
+        lastA = avoidA;
+        lastB = avoidB;
+        for (auto y = startY; y <= endY; y++) {
+            for (auto x = startX; x <= endX; x++) {
+                auto& sector = CWorld::GetRepeatSector(x, y);
+                WeaveThroughCarsSectorList(sector.Vehicles, vehicle, physical, minX, minY, maxX, maxY, &avoidA, &avoidB);
+                if (vehicle->m_autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS) {
+                    WeaveThroughPedsSectorList(sector.Peds, vehicle, physical, minX, minY, maxX, maxY, &avoidA, &avoidB);
+                }
+                WeaveThroughObjectsSectorList(sector.Objects, vehicle, minX, minY, maxX, maxY, &avoidA, &avoidB);
+                // The original goes over the vehicles one more time here, with the same scan code that does nothing
+            }
+        }
+    }
+
+    // Everything is in the range of -PI to PI
+    const auto Wrap = [](float angle) {
+        while (angle < -PI) {
+            angle += TWO_PI;
+        }
+        while (angle > PI) {
+            angle -= TWO_PI;
+        }
+        return angle;
+    };
+
+    const auto middle = Wrap(Wrap(arg4 - arg3) * 0.5f + arg3);
+    const auto diffA  = std::abs(Wrap(avoidA - middle));
+    const auto diffB  = std::abs(Wrap(avoidB - middle));
+
+    if (diffA > HALF_PI && diffB > HALF_PI) {
+        return middle;
+    }
+    if (std::abs(diffA - diffB) >= 0.08f && diffA < diffB) {
+        return avoidA;
+    }
+    return avoidB;
 }
 
 // 0x4226F0
