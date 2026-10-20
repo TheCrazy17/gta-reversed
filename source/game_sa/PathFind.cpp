@@ -73,14 +73,14 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(SwitchOffNodeAndNeighbours, 0x452160);
     //RH_ScopedInstall(Find2NodesForCarCreation, 0x452090);
     //RH_ScopedInstall(TestCoorsCloseness, 0x452000);
-    RH_ScopedInstall(FindNextNodeWandering, 0x451B70, { .Reversed = false });
+    RH_ScopedInstall(FindNextNodeWandering, 0x451B70);
     RH_ScopedInstall(DoPathSearch, 0x4515D0);
     RH_ScopedInstall(FindParkingNodeInArea, 0x4513F0);
     RH_ScopedInstall(FindLinkBetweenNodes, 0x451350);
     RH_ScopedInstall(ReturnInteriorNodeIndex, 0x451300);
     RH_ScopedInstall(FindNthNodeClosestToCoors, 0x44F8C0);
-    //RH_ScopedInstall(FindNodeClosestInRegion, 0x44F2C0);
-    //RH_ScopedInstall(CalcDistToAnyConnectingLinks, 0x44F190);
+    RH_ScopedInstall(FindNodeClosestInRegion, 0x44F2C0);
+    RH_ScopedInstall(CalcDistToAnyConnectingLinks, 0x44F190);
     //RH_ScopedInstall(CalcRoadDensity, 0x44EFC0);
     RH_ScopedInstall(TestForPedTrafficLight, 0x44D480);
     RH_ScopedInstall(UnMarkAllRoadNodesAsDontWander, 0x44D400);
@@ -103,8 +103,8 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(SetLinksBridgeLights, 0x44D960);
     RH_ScopedInstall(Save, 0x5D34C0);
     RH_ScopedInstall(Load, 0x5D3500);
-    RH_ScopedInstall(GeneratePedCreationCoors_Interior, 0x44ECA0, { .Reversed = false });
-    RH_ScopedInstall(FindNodeClosestToCoors, 0x44F460, { .Reversed = false });
+    RH_ScopedInstall(GeneratePedCreationCoors_Interior, 0x44ECA0);
+    RH_ScopedInstall(FindNodeClosestToCoors, 0x44F460);
 }
 
 void CPathNode::InjectHooks() {
@@ -255,7 +255,46 @@ bool CPathFind::TestCrossesRoad(CNodeAddress startNodeAddress, CNodeAddress targ
 
 // 0x44ECA0
 bool CPathFind::GeneratePedCreationCoors_Interior(float x, float y, CVector* outCoords, CNodeAddress* unused1, CNodeAddress* unused2, float* outOrientation) {
-    return plugin::CallMethodAndReturn<bool, 0x44ECA0>(this, x, y, outCoords, unused1, unused2, outOrientation);
+    const auto area = FindRegionForCoors({ x, y });
+    for (auto attempt = 0; attempt < 200; attempt++) {
+        if (!m_pPathNodes[area] || !m_anNumPedNodes[area]) {
+            continue;
+        }
+
+        // Pick a random ped node, interiors are high above the map
+        const auto& node    = m_pPathNodes[area][(CGeneral::GetRandomNumber() >> 6) % m_anNumPedNodes[area] + m_anNumVehicleNodes[area]];
+        const auto  nodePos = node.GetPosition();
+        if (sq(nodePos.x - x) + sq(nodePos.y - y) >= 2500.0f || nodePos.z <= 900.0f) {
+            continue;
+        }
+
+        // Then a random spot on one of the links of the node
+        for (auto l = 0u; l < node.m_nNumLinks; l++) {
+            const auto link = m_pNodeLinks[area][node.m_wBaseLinkId + l];
+            if (link.m_wAreaId >= NUM_PATH_MAP_AREAS || !m_pPathNodes[link.m_wAreaId]) {
+                continue;
+            }
+            const auto targetPos = m_pPathNodes[link.m_wAreaId][link.m_wNodeId].GetPosition();
+
+            for (auto tries = 0; tries < 5; tries++) {
+                const auto t = (float)(CGeneral::GetRandomNumber() & 0xFF) * (1.0f / 256.0f);
+                *outOrientation = t;
+                *outCoords = CVector{
+                    nodePos.x * (1.0f - t) + targetPos.x * t,
+                    nodePos.y * (1.0f - t) + targetPos.y * t,
+                    nodePos.z * (1.0f - t) + targetPos.z * t
+                };
+
+                bool       found{};
+                const auto groundZ = CWorld::FindGroundZFor3DCoord({ outCoords->x, outCoords->y, outCoords->z + 2.0f }, &found);
+                if (found && std::abs(groundZ - outCoords->z) < 3.0f) {
+                    outCoords->z = groundZ;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 // 0x44D480
@@ -321,8 +360,118 @@ void CPathFind::RemoveBadStartNode(CVector pos, CNodeAddress* address, int16* nu
 }
 
 // 0x451B70
-void CPathFind::FindNextNodeWandering(uint8 nodeType, CVector vecPos, CNodeAddress* originAddress, CNodeAddress* targetAddress, uint8 dir, uint8* outDir) {
-    plugin::CallMethod<0x451B70, CPathFind*, uint8, CVector, CNodeAddress*, CNodeAddress*, uint8, uint8*>(this, nodeType, vecPos, originAddress, targetAddress, dir, outDir);
+void CPathFind::FindNextNodeWandering(uint8 nodeType, CVector pos, CNodeAddress* originAddress, CNodeAddress* targetAddress, uint8 dir, uint8* outDir) {
+    const CNodeAddress prevOrigin = originAddress ? *originAddress : CNodeAddress{};
+
+    // Keep going from the previous node, unless the vehicle is too far from it
+    CNodeAddress cur{};
+    auto         useClosest = !originAddress || prevOrigin.m_wAreaId == (uint16)-1;
+    if (!useClosest) {
+        if (!m_pPathNodes[prevOrigin.m_wAreaId]) {
+            targetAddress->m_wAreaId = (uint16)-1;
+            *outDir                  = 0;
+            return;
+        }
+        const auto& prevNode = m_pPathNodes[prevOrigin.m_wAreaId][prevOrigin.m_wNodeId];
+        const auto  radius   = std::max((float)prevNode.m_nPathWidth * 0.125f, 7.0f);
+        if (radius < (pos - prevNode.GetPosition()).Magnitude()) {
+            useClosest = true;
+        } else {
+            cur = prevOrigin;
+        }
+    }
+    if (useClosest) {
+        cur = FindNodeClosestToCoors(pos, (ePathType)nodeType, 999999.88f, 0, 0, 0, 0, 0);
+    }
+
+    auto foundTarget = false;
+    if (cur.m_wAreaId == (uint16)-1 || !m_pPathNodes[cur.m_wAreaId]) {
+        targetAddress->m_wAreaId = (uint16)-1;
+        cur.m_wAreaId            = (uint16)-1;
+    } else {
+        const auto& node = m_pPathNodes[cur.m_wAreaId][cur.m_wNodeId];
+        targetAddress->m_wAreaId = (uint16)-1;
+
+        // Pick the link that leads the closest to the wanted direction
+        const auto angle   = (float)dir * 0.7853982f;
+        const auto dirSin  = std::sin(angle);
+        const auto dirCos  = std::cos(angle);
+        auto       bestDot = -999999.0f;
+        for (auto l = 0u; l < node.m_nNumLinks; l++) {
+            const auto link = m_pNodeLinks[node.m_wAreaId][node.m_wBaseLinkId + l];
+            if (!m_pPathNodes[link.m_wAreaId]) {
+                continue;
+            }
+            const auto& linked = m_pPathNodes[link.m_wAreaId][link.m_wNodeId];
+            if (!node.m_isSwitchedOff && linked.m_isSwitchedOff) {
+                continue;
+            }
+            if (!node.m_bDontWander && linked.m_bDontWander) {
+                continue;
+            }
+
+            auto dx = linked.GetPosition().x - node.GetPosition().x;
+            auto dy = linked.GetPosition().y - node.GetPosition().y;
+            const auto invLen = 1.0f / std::sqrt(dx * dx + dy * dy);
+            dx *= invLen;
+            dy *= invLen;
+
+            const auto dot = dx * dirSin + dy * dirCos;
+            if (bestDot > dot) {
+                continue;
+            }
+            *targetAddress = link;
+            bestDot        = dot;
+
+            // The 8 directions are numbered clockwise, starting at north
+            if (dx < 0.0f) {
+                if (-dx <= std::abs(dy) * 2.0f) {
+                    if (dy <= dx * -2.0f) {
+                        if (dx + dx <= dy) {
+                            *outDir = dy <= 0.0f ? 5 : 7;
+                        } else {
+                            *outDir = 4;
+                        }
+                    } else {
+                        *outDir = 0;
+                    }
+                } else {
+                    *outDir = 6;
+                }
+            } else if (dx <= std::abs(dy) * 2.0f) {
+                if (dy <= dx + dx) {
+                    if (dx * -2.0f <= dy) {
+                        *outDir = dy <= 0.0f ? 3 : 1;
+                    } else {
+                        *outDir = 4;
+                    }
+                } else {
+                    *outDir = 0;
+                }
+            } else {
+                *outDir = 2;
+            }
+        }
+
+        *originAddress = cur;
+        foundTarget    = targetAddress->m_wAreaId != (uint16)-1;
+    }
+    if (!foundTarget) { // Dead end
+        *outDir        = 0;
+        *targetAddress = cur;
+    }
+
+    // Don't end up at the node the vehicle was already on, use the first link that is loaded instead
+    if (*targetAddress == prevOrigin && prevOrigin.m_wAreaId != (uint16)-1 && m_pPathNodes[prevOrigin.m_wAreaId]) {
+        const auto& prevNode = m_pPathNodes[prevOrigin.m_wAreaId][prevOrigin.m_wNodeId];
+        for (auto l = 0u; l < prevNode.m_nNumLinks; l++) {
+            const auto link = m_pNodeLinks[prevNode.m_wAreaId][prevNode.m_wBaseLinkId + l];
+            if (m_pPathNodes[link.m_wAreaId]) {
+                *targetAddress = link;
+                break;
+            }
+        }
+    }
 }
 
 // 0x4515D0
@@ -821,16 +970,141 @@ CNodeAddress CPathFind::FindNodeClosestToCoors(
     CVector pos,
     ePathType nodeType,
     float maxDistance,
-    uint16 unk2,
+    uint16 bLowTraffic,
     int32 unk3,
     uint16 unk4,
     uint16 bBoatsOnly,
-    int32 unk6
+    int32 bIgnoreInterior
 ) {
-    CNodeAddress tempAddress;
-    plugin::CallMethodAndReturn<CNodeAddress*, 0x44F460, CPathFind*, CNodeAddress*, CVector, ePathType, float, uint16, int32, uint16, uint16, int32>(
-        this, &tempAddress, pos, nodeType, maxDistance, unk2, unk3, unk4, bBoatsOnly, unk6);
-    return tempAddress;
+    CNodeAddress result{};
+    auto         bestDist = maxDistance;
+
+    const auto SearchArea = [&](size_t area, bool unused) {
+        FindNodeClosestInRegion(&result, (uint16)area, pos, (uint8)nodeType, &bestDist, bLowTraffic, unk4, bBoatsOnly, unused);
+    };
+
+    // Find the region the position is in
+    const auto regionX = std::min(std::max(0, (int32)((pos.x - -3000.0f) * (1.0f / 750.0f))), 7);
+    const auto regionY = std::min(std::max(0, (int32)((pos.y - -3000.0f) * (1.0f / 750.0f))), 7);
+    SearchArea(regionX + regionY * 8, bIgnoreInterior);
+
+    // Distance to the closest edge of the region, nodes in the neighbouring regions can't be closer than this
+    auto edgeDist = pos.x - ((float)regionX * 750.0f - 3000.0f);
+    edgeDist      = std::min(edgeDist, ((float)(regionX + 1) * 750.0f - 3000.0f) - pos.x);
+    edgeDist      = std::min(edgeDist, pos.y - ((float)regionY * 750.0f - 3000.0f));
+    edgeDist      = std::min(edgeDist, ((float)(regionY + 1) * 750.0f - 3000.0f) - pos.y);
+
+    // Search the regions around, ring by ring, until a ring can't hold anything closer than what was already found
+    if (edgeDist < bestDist) {
+        const auto IsInMap = [](int32 v) { return v >= 0 && v < 8; };
+        for (auto ring = 1; ring < 5; ring++) {
+            const auto left = regionX - ring, right = regionX + ring;
+            const auto top = regionY - ring, bottom = regionY + ring;
+
+            if (IsInMap(left)) {
+                for (auto row = top; row <= bottom; row++) {
+                    if (IsInMap(row)) {
+                        SearchArea(left + row * 8, bIgnoreInterior);
+                    }
+                }
+            }
+            if (IsInMap(right)) {
+                for (auto row = top; row <= bottom; row++) {
+                    if (IsInMap(row)) {
+                        SearchArea(right + row * 8, bIgnoreInterior);
+                    }
+                }
+            }
+            if (IsInMap(top)) {
+                for (auto col = left + 1; col < right; col++) {
+                    if (IsInMap(col)) {
+                        SearchArea(col + top * 8, bIgnoreInterior);
+                    }
+                }
+            }
+            if (IsInMap(bottom)) {
+                for (auto col = left + 1; col < right; col++) {
+                    if (IsInMap(col)) {
+                        SearchArea(col + bottom * 8, bIgnoreInterior);
+                    }
+                }
+            }
+
+            edgeDist += 750.0f;
+            if (bestDist < edgeDist) {
+                break;
+            }
+        }
+    }
+
+    if (!bIgnoreInterior) {
+        for (auto area = NUM_PATH_MAP_AREAS; area < NUM_PATH_MAP_AREAS + NUM_PATH_INTERIOR_AREAS; area++) {
+            SearchArea(area, false);
+        }
+    }
+    return result;
+}
+
+// 0x44F2C0
+void CPathFind::FindNodeClosestInRegion(CNodeAddress* outAddress, uint16 areaId, CVector pos, uint8 nodeType, float* outDist, bool bLowTraffic, bool bUnkn, bool bBoats, bool bUnused) {
+    if (!m_pPathNodes[areaId]) {
+        return;
+    }
+
+    uint32 first{}, end{};
+    switch (nodeType) {
+    case PATH_TYPE_VEH:
+        end = m_anNumVehicleNodes[areaId];
+        break;
+    case PATH_TYPE_PED:
+        first = m_anNumVehicleNodes[areaId];
+        end   = m_anNumNodes[areaId];
+        break;
+    default:
+        return;
+    }
+
+    for (auto i = first; i < end; i++) {
+        auto& node = m_pPathNodes[areaId][i];
+        if (bLowTraffic && node.m_isSwitchedOff) {
+            continue;
+        }
+        if (bUnkn && node.unk1) {
+            continue;
+        }
+        if (bBoats != node.m_bWaterNode) {
+            continue;
+        }
+
+        const auto nodePos = node.GetPosition();
+        const auto dist    = (std::abs(nodePos.x - pos.x) + std::abs(nodePos.y - pos.y) + std::abs(nodePos.z - pos.z) * 3.0f) * 0.3f;
+        if (dist >= *outDist) {
+            continue;
+        }
+        const auto totalDist = CalcDistToAnyConnectingLinks(&node, pos) * 0.2f + dist;
+        if (totalDist < *outDist) {
+            *outDist             = totalDist;
+            outAddress->m_wAreaId = areaId;
+            outAddress->m_wNodeId = (uint16)i;
+        }
+    }
+}
+
+// 0x44F190
+float CPathFind::CalcDistToAnyConnectingLinks(CPathNode* node, CVector pos) {
+    auto minDistSq = 999999.9f;
+    for (auto i = 0u; i < node->m_nNumLinks; i++) {
+        const auto link       = m_pNodeLinks[node->m_wAreaId][node->m_wBaseLinkId + i];
+        const auto otherNodes = m_pPathNodes[link.m_wAreaId];
+        if (!otherNodes) {
+            continue;
+        }
+        const auto distSq = CCollision::DistToLineSqr(node->GetPosition(), otherNodes[link.m_wNodeId].GetPosition(), pos);
+        if (distSq <= minDistSq) {
+            minDistSq = distSq;
+        }
+    }
+    return std::sqrt(minDistSq);
 }
 
 // 0x450A60
