@@ -48,7 +48,7 @@ public:
     int32 AddInterior(Interior_c* interior);
     void SetupPeds();
     void UpdatePeds();
-    int32 SetupHousePeds();
+    void SetupHousePeds();
     int8 SetupPaths();
     int8 ArePathsLoaded();
     void Setup();

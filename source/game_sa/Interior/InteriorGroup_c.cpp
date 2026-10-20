@@ -36,7 +36,7 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(Update, 0x5968E0);
     RH_ScopedInstall(SetupPeds, 0x596890);
     RH_ScopedInstall(UpdatePeds, 0x596830);
-    RH_ScopedInstall(SetupHousePeds, 0x5965E0, { .Reversed = false });
+    RH_ScopedInstall(SetupHousePeds, 0x5965E0);
     RH_ScopedInstall(SetupPaths, 0x595590, { .Reversed = false });
     RH_ScopedInstall(ArePathsLoaded, 0x595380);
     RH_ScopedInstall(Setup, 0x595320);
@@ -139,8 +139,62 @@ void InteriorGroup_c::UpdatePeds() {
 }
 
 // 0x5965E0
-int32 InteriorGroup_c::SetupHousePeds() {
-    return plugin::CallMethodAndReturn<int32, 0x5965E0, InteriorGroup_c*>(this);
+void InteriorGroup_c::SetupHousePeds() {
+    CStreaming::StreamPedsForInterior(0);
+    CStreaming::LoadAllRequestedModels(false);
+    m_numPeds = 0;
+
+    const CVector spawnPos = m_pEntity->GetMatrix().GetPosition();
+
+    const auto RandPercent = [] {
+        return (int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * (1.0f / 32768.0f) * 100.0f);
+    };
+
+    auto numPeds = (RandPercent() <= 50 ? 1 : 0) + 1;
+
+    // Sometimes the house is filled with members of the gang that owns the area
+    auto     isGangHouse = false;
+    ePedType gangType{};
+    if (CPopCycle::m_pCurrZoneInfo) {
+        gangType = CPopCycle::PickGangToCreateMembersOf();
+        if (gangType != PED_TYPE_PLAYER1 && CGangs::ChooseGangPedModel((eGangID)(gangType - PED_TYPE_GANG1)) >= 0) {
+            isGangHouse = true;
+            if (RandPercent() > 15) {
+                isGangHouse = false;
+            } else {
+                numPeds = (CGeneral::GetRandomNumber() >= 0x3FFF ? 1 : 0) + 3;
+            }
+        }
+    }
+
+    for (auto i = 0; i < numPeds; i++) {
+        eModelID model;
+        if (isGangHouse) {
+            model = CGangs::ChooseGangPedModel((eGangID)(gangType - PED_TYPE_GANG1));
+        } else {
+            auto selector = i;
+            if (numPeds == 1) {
+                selector = CGeneral::GetRandomNumber() < 0x3FFF ? 0 : 1;
+            }
+            model = (eModelID)CStreaming::FindMIPedSlotForInterior(selector);
+        }
+
+        const auto pedType = CModelInfo::GetPedModelInfo(model)->GetPedType();
+        const auto slot    = m_numPeds;
+        const auto ped     = CPopulation::AddPed(pedType, model, spawnPos, false);
+
+        m_peds[slot] = ped;
+        if (ped) {
+            m_numPeds++;
+            CTheScripts::ScriptsForBrains.StartOrRequestNewStreamedScriptBrainWithThisName("house", ped, 3);
+            ped->SetCharCreatedBy(PED_MISSION);
+            ped->GetIntelligence()->SetPedDecisionMakerType(7);
+            ped->GetTaskManager().SetTask(new CTaskInteriorBeInHouse{ this }, TASK_PRIMARY_DEFAULT);
+        }
+        if (!g_abInteriorPedSlotActive[i]) {
+            RemovePed(m_peds[slot]);
+        }
+    }
 }
 
 // 0x595590
