@@ -8,6 +8,10 @@
 #include "FxInfoManager.h"
 
 #include "Particle.h"
+#include "WaterLevel.h"
+#include "MovementInfo.h"
+#include "FxSystem.h"
+#include "FxSystemBP.h"
 #include "FxTools.h"
 
 void FxEmitterBP_c::InjectHooks() {
@@ -16,7 +20,7 @@ void FxEmitterBP_c::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x4A18D0);
     RH_ScopedInstall(RenderHeatHaze, 0x4A1940, { .Reversed = false });
-    RH_ScopedInstall(UpdateParticle, 0x4A21D0, { .Reversed = false });
+    RH_ScopedInstall(UpdateParticle, 0x4A21D0);
     RH_ScopedVMTInstall(CreateInstance, 0x4A2B40); // bad
     RH_ScopedVMTInstall(Update, 0x4A2BC0);
     RH_ScopedVMTInstall(Load, 0x5C25F0);
@@ -37,7 +41,64 @@ void FxEmitterBP_c::RenderHeatHaze(RwCamera* camera, uint32 txdHashKey, float br
 
 // 0x4A21D0
 bool FxEmitterBP_c::UpdateParticle(float deltaTime, FxEmitterPrt_c* emitter) {
-    return plugin::CallMethodAndReturn<bool, 0x4A21D0, FxEmitterBP_c*, float, FxEmitterPrt_c*>(this, deltaTime, emitter);
+    auto* const system = emitter->m_System;
+
+    // Returns true when the particle is done and has to be removed
+    deltaTime = (float)system->m_nTimeMult * 0.001f * deltaTime;
+    emitter->m_fCurrentLife += deltaTime;
+    if (emitter->m_fTotalLife <= emitter->m_fCurrentLife) {
+        return true;
+    }
+
+    emitter->m_Pos.x += deltaTime * emitter->m_Velocity.x;
+    emitter->m_Pos.y += deltaTime * emitter->m_Velocity.y;
+    emitter->m_Pos.z += deltaTime * emitter->m_Velocity.z;
+
+    MovementInfo_t movement;
+    movement.m_Pos = emitter->m_Pos;
+    movement.m_Vel = emitter->m_Velocity;
+    m_FxInfoManager.ProcessMovementInfo(system->m_fCurrentTime, emitter->m_fCurrentLife / emitter->m_fTotalLife, deltaTime, system->m_SystemBP->m_fLength, false, &movement);
+    emitter->m_Pos      = movement.m_Pos;
+    emitter->m_Velocity = movement.m_Vel;
+
+    if (movement.m_bHasFloatInfo || movement.m_bHasUnderwaterInfo) {
+        float      waterLevel;
+        const auto isWater = CWaterLevel::GetWaterLevel(emitter->m_Pos.x, emitter->m_Pos.y, emitter->m_Pos.z, waterLevel, true, nullptr);
+        if (movement.m_bHasFloatInfo && isWater && emitter->m_Pos.z < waterLevel) {
+            emitter->m_Pos.z = waterLevel;
+        }
+        if (movement.m_bHasUnderwaterInfo && (!isWater || waterLevel < emitter->m_Pos.z)) {
+            return true;
+        }
+    }
+
+    // Spinning, the range is picked by the random value of the particle
+    const auto& [rotMinA, rotMaxA, rotMinB, rotMaxB] = movement.m_Rot;
+    const auto  random = (float)emitter->m_RandR;
+    const auto  mult   = (float)emitter->m_MultRot;
+    const auto  Spin   = [&](float min, float max, float t) {
+        return ((max - min) * t + min) * mult;
+    };
+
+    float spin;
+    if ((rotMinA <= 0.0f && rotMaxA <= 0.0f) || (rotMinB <= 0.0f && rotMaxB <= 0.0f)) {
+        if (rotMinA > 0.0f || rotMaxA > 0.0f) {
+            emitter->m_CurrentRotation += Spin(rotMinA, rotMaxA, random / 255.0f) * deltaTime;
+            return false;
+        }
+        if (rotMinB <= 0.0f && rotMaxB <= 0.0f) {
+            return false;
+        }
+        spin = Spin(rotMinB, rotMaxB, random / 255.0f);
+    } else {
+        if (emitter->m_RandR < 0x80) {
+            emitter->m_CurrentRotation += Spin(rotMinA, rotMaxA, random * 0.0078125f) * deltaTime;
+            return false;
+        }
+        spin = Spin(rotMinB, rotMaxB, (random - 128.0f) * 0.0078125f);
+    }
+    emitter->m_CurrentRotation -= spin * deltaTime;
+    return false;
 }
 
 // 0x4A2B40

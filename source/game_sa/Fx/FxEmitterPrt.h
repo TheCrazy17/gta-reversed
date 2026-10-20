@@ -8,9 +8,9 @@
 struct RwRGBA;
 class FxSystem_c;
 
-class FxEmitterPrt_c : public Particle_c, ListItem_c<FxEmitterPrt_c> {
+class FxEmitterPrt_c : public Particle_c {
 public:
-    CRGBA m_MultColor;
+    CRGBA m_MultColor; // 0x2C
     FixedFloat<uint8, 255.0f> m_MultSize;
     FixedFloat<uint8, 255.0f> m_MultRot;
     uint8 m_RandR;
@@ -19,7 +19,7 @@ public:
     FixedFloat<uint8, 100.0f> m_Brightness;
     int8  m_RotZ;
     bool  m_bLocalToSystem;
-    float m_CurrentRotation;
+    float m_CurrentRotation; // 0x38
 
 public:
     FxEmitterPrt_c() = default;  // 0x4A94E0
@@ -29,4 +29,4 @@ public:
 
     static void* operator new[](size_t size);
 };
-VALIDATE_SIZE(FxEmitterPrt_c, 0x44);
+VALIDATE_SIZE(FxEmitterPrt_c, 0x3C);
