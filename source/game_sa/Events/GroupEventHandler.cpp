@@ -64,7 +64,7 @@ void CGroupEventHandler::InjectHooks() {
     RH_ScopedInstall(ComputeResponsePedFriend, 0x5FB2D0);
     RH_ScopedInstall(ComputeResponseNewGangMember, 0x5F9840);
     RH_ScopedInstall(ComputeResponseLeaderExitedCar, 0x5F90A0);
-    RH_ScopedInstall(ComputeResponsLeaderQuitEnteringCar, 0x5F9530, { .Reversed = false });
+    RH_ScopedInstall(ComputeResponsLeaderQuitEnteringCar, 0x5F9530);
     RH_ScopedInstall(ComputeResponseLeaderEnteredCar, 0x5F8900, { .Reversed = false });
     RH_ScopedInstall(ComputeResponseLeaderEnterExit, 0x5F9710);
     RH_ScopedInstall(ComputeResponseGunAimedAt, 0x5FBD10);
@@ -466,7 +466,36 @@ CTaskAllocator* CGroupEventHandler::ComputeResponseDamage(const CEventDamage& e,
 
 // 0x5F9530
 CTaskAllocator* CGroupEventHandler::ComputeResponsLeaderQuitEnteringCar(const CEvent& e, CPedGroup* pg, CPed* originator) {
-    return plugin::CallAndReturn<CTaskAllocator*, 0x5F9530, const CEvent&, CPedGroup*, CPed*>(e, pg, originator);
+    // Followers get out of the vehicle they are in, or stop heading to the one they were about to get into
+    for (auto i = 0; i < TOTAL_PED_GROUP_FOLLOWERS; i++) {
+        auto* const member = pg->GetMembership().GetMember(i);
+        if (!member) {
+            continue;
+        }
+
+        if (member->bInVehicle && member->m_pVehicle) {
+            pg->GetIntelligence().SetEventResponseTask(member, CTaskComplexLeaveCar{ member->m_pVehicle, 0, i * 500, true, false });
+            continue;
+        }
+
+        CVehicle* targetVeh{};
+        if (const auto* const waitTask = notsa::dyn_cast_if_present<CTaskComplexEnterCarAsPassengerWait>(member->GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER_WAIT))) {
+            targetVeh = waitTask->GetCar();
+        }
+        if (!targetVeh) {
+            if (const auto* const enterTask = notsa::dyn_cast_if_present<CTaskComplexEnterCarAsPassenger>(member->GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER))) {
+                targetVeh = enterTask->GetTargetCar();
+            }
+        }
+        if (!targetVeh) {
+            continue;
+        }
+
+        // Stagger them a bit so they don't all leave at once
+        const auto jitter = (int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * 0.000030517578125f * -500.0f);
+        pg->GetIntelligence().SetEventResponseTask(member, CTaskComplexLeaveCar{ targetVeh, 0, i * 500 - jitter + 250, false, false });
+    }
+    return nullptr;
 }
 
 // 0x5FAA50
