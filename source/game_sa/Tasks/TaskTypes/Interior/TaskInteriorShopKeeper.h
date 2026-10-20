@@ -23,6 +23,7 @@ public:
     CTask*    CreateFirstSubTask(CPed* ped) override;
     CTask*    ControlSubTask(CPed* ped) override;
 
+    void SetStartServeAnim(bool v) { m_bStartServeAnim = v; }
 
 private: // Wrappers for hooks
     // 0x675660
@@ -36,6 +37,7 @@ private: // Wrappers for hooks
         this->CTaskInteriorShopKeeper::~CTaskInteriorShopKeeper();
         return this;
     }
+
 
 private:
     bool             m_bStartServeAnim{};
