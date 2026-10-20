@@ -36,7 +36,7 @@ void CShadows::InjectHooks() {
     RH_ScopedInstall(CastShadowEntityXYZ, 0x70A040, { .Reversed = false });
     RH_ScopedInstall(CastPlayerShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A470);
     RH_ScopedInstall(CastShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A630);
-    RH_ScopedInstall(CastRealTimeShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A7E0, { .Reversed = false });
+    RH_ScopedInstall(CastRealTimeShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A7E0);
     RH_ScopedInstall(RenderStoredShadows, 0x70A960);
     RH_ScopedInstall(GeneratePolysForStaticShadow, 0x70B730, { .Reversed = false });
     RH_ScopedInstall(StoreStaticShadow, 0x70BA00, { .Reversed = false });
@@ -809,7 +809,38 @@ void CShadows::CastShadowSectorList(PtrListType& ptrList, float conrerAX, float 
 // 0x70A7E0
 template<typename PtrListType>
 void CShadows::CastRealTimeShadowSectorList(PtrListType& ptrList, float conrerAX, float cornerAY, float cornerBX, float cornerBY, CVector* posn, float frontX, float frontY, float sideX, float sideY, int16 intensity, uint8 red, uint8 green, uint8 blue, float zDistance, float scale, CPolyBunch** ppPolyBunch, CRealTimeShadow* realTimeShadow, uint8* pDayNightIntensity) {
-    ((void(__cdecl*)(PtrListType&, float, float, float, float, CVector*, float, float, float, float, int16, uint8, uint8, uint8, float, float, CPolyBunch**, CRealTimeShadow*, uint8*))0x70A7E0)(ptrList, conrerAX, cornerAY, cornerBX, cornerBY, posn, frontX, frontY, sideX, sideY, intensity, red, green, blue, zDistance, scale, ppPolyBunch, realTimeShadow, pDayNightIntensity);
+    for (auto* const entity : ptrList) {
+        if (entity->IsScanCodeCurrent()) {
+            continue;
+        }
+        entity->SetCurrentScanCode();
+
+        if (!entity->m_bUsesCollision || entity->m_bDontCastShadowsOn) {
+            continue;
+        }
+
+        if (!entity->IsInCurrentArea()) {
+            continue;
+        }
+
+        // Strictly overlapping, touching rectangles don't count
+        const auto entityRect = entity->GetBoundRect();
+        if (!(conrerAX < entityRect.right && entityRect.left < cornerBX && cornerAY < entityRect.top && entityRect.bottom < cornerBY)) {
+            continue;
+        }
+
+        // Quick Z height check of the bounding box
+        const auto& cm         = entity->GetColModel();
+        const auto  entityPosZ = entity->GetPosition().z;
+        if (cm->m_boundBox.m_vecMax.z + entityPosZ <= posn->z - zDistance) {
+            continue;
+        }
+        if (cm->m_boundBox.m_vecMin.z + entityPosZ >= posn->z) {
+            continue;
+        }
+
+        CastShadowEntityXYZ(entity, posn, frontX, frontY, sideX, sideY, intensity, red, green, blue, zDistance, scale, ppPolyBunch, realTimeShadow);
+    }
 }
 
 // 0x70A960
