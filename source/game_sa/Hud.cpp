@@ -47,7 +47,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawRadar, 0x58A330);
     RH_ScopedInstall(DrawScriptText, 0x58C080);
     RH_ScopedInstall(DrawSubtitles, 0x58C250);
-    RH_ScopedInstall(DrawSuccessFailedMessage, 0x58C6A0, { .Reversed = false });
+    RH_ScopedInstall(DrawSuccessFailedMessage, 0x58C6A0);
     RH_ScopedInstall(DrawVehicleName, 0x58AEA0);
     RH_ScopedInstall(DrawVitalStats, 0x589650, { .Reversed = false });
     RH_ScopedInstall(DrawAmmo, 0x5893B0);
@@ -1242,7 +1242,7 @@ void CHud::DrawSubtitles() {
     if (!m_Message[0]) {
         return;
     }
-    if (StaticRef<bool>(0xBAADC0) && !CGameLogic::IsCoopGameGoingOn()) {
+    if (m_BigMessage[STYLE_WHITE_MIDDLE][0] && !CGameLogic::IsCoopGameGoingOn()) { // Busted / wasted
         return;
     }
 
@@ -1311,7 +1311,80 @@ void CHud::DrawSubtitles() {
 
 // 0x58C6A0
 void CHud::DrawSuccessFailedMessage() {
-    plugin::Call<0x58C6A0>();
+    // `posY` is a function static in the original
+    static auto& s_PosYInitialised = StaticRef<uint32>(0xBAB21C);
+    static auto& s_PosY            = StaticRef<float>(0xBAB218);
+
+    const auto unitX = (float)RsGlobal.maximumWidth * 0.0015625f;
+    const auto unitY = (float)RsGlobal.maximumHeight * 0.002232143f;
+    const auto halfH = (float)(RsGlobal.maximumHeight / 2);
+
+    if (!(s_PosYInitialised & 1)) {
+        s_PosYInitialised |= 1;
+        s_PosY = halfH - unitY * 10.0f;
+    }
+
+    auto& message = m_BigMessage[STYLE_MIDDLE];
+    auto& x       = BigMessageX[STYLE_MIDDLE];
+    auto& slide   = BigMessageInUse[STYLE_MIDDLE];
+    auto& alpha   = BigMessageAlpha[STYLE_MIDDLE];
+
+    if (!message[0]) {
+        x = 0.0f;
+        return;
+    }
+
+    if (x == 0.0f) { // The message was just set, find where it should be drawn
+        slide = -60.0f;
+        x     = 1.0f;
+        alpha = 0.0f;
+        if (m_BigMessage[STYLE_MIDDLE_SMALLER][0] || m_BigMessage[STYLE_WHITE_MIDDLE_SMALLER][0]) {
+            s_PosY = unitY * 25.0f + (halfH - unitY * 10.0f);
+        } else {
+            if (!m_BigMessage[STYLE_WHITE_MIDDLE][0]) {
+                // Higher up if the message takes more than a line
+                if (CFont::GetNumberLines((float)(RsGlobal.maximumWidth / 2), halfH - unitY * 10.0f, message) > 1) {
+                    s_PosY = (halfH - unitY * 10.0f) - unitY * 15.0f;
+                    return;
+                }
+            }
+            s_PosY = halfH - unitY * 10.0f;
+        }
+        return;
+    }
+
+    CFont::SetBackground(false, false);
+    CFont::SetScale((float)((double)unitX * 1.3), (float)((double)unitY * 1.8));
+    CFont::SetProportional(true);
+    CFont::SetJustify(false);
+    CFont::SetOrientation(eFontAlignment::ALIGN_CENTER);
+    CFont::SetCentreSize(unitX * 590.0f);
+    CFont::SetFontStyle(FONT_PRICEDOWN);
+    CFont::SetEdge(2);
+    CFont::SetDropColor({ 0, 0, 0, (uint8)(int32)alpha });
+    CFont::SetColor(HudColour.GetRGBA(HUD_COLOUR_GOLD, (uint8)(int32)alpha));
+
+    // The time passed as the original passes it to the conversion: truncated to an integer, then taken as unsigned
+    const auto TimeStepMs = [] { return (float)(uint32)(int32)CTimer::GetTimeStepInMS(); };
+
+    if ((float)(RsGlobal.maximumWidth - 20) <= slide) { // Fully slid in, stay for a bit then fade out
+        x += CTimer::GetTimeStep();
+        if (x >= 120.0f) {
+            x     = 120.0f;
+            alpha = alpha - TimeStepMs() * 0.3f;
+        }
+        if (alpha <= 0.0f) {
+            alpha      = 0.0f;
+            message[0] = '\0';
+        }
+    } else { // Slide in while fading in
+        slide += TimeStepMs() * 0.3f;
+        alpha = TimeStepMs() * 0.3f + alpha;
+        if (alpha > 255.0f) {
+            alpha = 255.0f;
+        }
+    }
+    CFont::PrintString((float)(RsGlobal.maximumWidth / 2), s_PosY, message);
 }
 
 // 0x58AEA0
