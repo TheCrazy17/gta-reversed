@@ -168,7 +168,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(GetBikeRidingSkill, 0x5DF510);
     RH_ScopedInstall(SetPedPositionInCar, 0x5DF910);
     RH_ScopedInstall(SetRadioStation, 0x5DFD90);
-    RH_ScopedInstall(PositionAttachedPed, 0x5DFDF0, { .Reversed = false });
+    RH_ScopedInstall(PositionAttachedPed, 0x5DFDF0);
     RH_ScopedInstall(ResetGunFlashAlpha, 0x5DF4E0);
 
     RH_ScopedVMTInstall(SetModelIndex, 0x5E4880);
@@ -1360,7 +1360,65 @@ void CPed::SetRadioStation()
 */
 void CPed::PositionAttachedPed()
 {
-    ((void(__thiscall *)(CPed*))0x5DFDF0)(this);
+    auto* const parent = m_pAttachedTo;
+    if (!parent) {
+        return;
+    }
+
+    static_assert(offsetof(CAutomobile, m_aCarNodes) + CAR_MISC_B * sizeof(RwFrame*) == 0x69C);
+
+    CMatrix attachMat{};
+
+    // The fire truck ladder follows the frame of its moving part
+    if (parent->m_nModelIndex == MODEL_FIRELA && parent->AsAutomobile()->m_aCarNodes[CAR_MISC_B] && m_vecTurretOffset.z < -900.0f) {
+        attachMat.Attach(RwFrameGetLTM(parent->AsAutomobile()->m_aCarNodes[CAR_MISC_B]), false);
+        attachMat.Detach();
+        attachMat.GetPosition() += attachMat.TransformVector({ m_vecTurretOffset.x, m_vecTurretOffset.y, m_vecTurretOffset.z + 1000.0f });
+    } else {
+        attachMat = parent->GetMatrix();
+        attachMat.GetPosition() += attachMat.TransformVector(m_vecTurretOffset);
+    }
+
+    const auto heading = std::atan2(-attachMat.GetForward().x, attachMat.GetForward().y);
+
+    // Only the player is free to turn, everyone else has to stay inside the limits
+    if (m_nPedType != PED_TYPE_PLAYER1 && m_nPedType != PED_TYPE_PLAYER2) {
+        auto wantedHeading = heading;
+        switch (m_fTurretAngleA) {
+        case 1: wantedHeading = heading + PI / 2.0f; break;
+        case 2: wantedHeading = heading + PI;        break;
+        case 3: wantedHeading = heading - PI / 2.0f; break;
+        }
+        wantedHeading = CGeneral::LimitRadianAngle(wantedHeading);
+
+        m_fCurrentRotation = CGeneral::LimitRadianAngle(m_fCurrentRotation);
+
+        auto diff = m_fCurrentRotation - wantedHeading;
+        if (diff > PI) {
+            diff -= TWO_PI;
+        } else if (diff < -PI) {
+            diff += TWO_PI;
+        }
+
+        if (diff > m_fTurretAngleB) {
+            m_fCurrentRotation = wantedHeading + m_fTurretAngleB;
+        } else if (diff < -m_fTurretAngleB) {
+            m_fCurrentRotation = wantedHeading - m_fTurretAngleB;
+        }
+        m_fCurrentRotation = CGeneral::LimitRadianAngle(m_fCurrentRotation);
+    }
+
+    CMatrix rotation{};
+    rotation.SetRotateZ(m_fCurrentRotation - heading);
+    attachMat *= rotation;
+    SetMatrix(attachMat);
+
+    if (const auto type = parent->GetType(); type == ENTITY_TYPE_VEHICLE || type == ENTITY_TYPE_OBJECT) {
+        m_vecMoveSpeed = parent->m_vecMoveSpeed;
+        m_vecTurnSpeed = parent->m_vecTurnSpeed;
+    }
+    m_standingOnEntity = nullptr;
+    bIsStanding        = true;
 }
 
 /*!
