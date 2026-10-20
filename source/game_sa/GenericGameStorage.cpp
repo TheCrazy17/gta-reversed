@@ -586,7 +586,7 @@ bool CGenericGameStorage::CheckSlotDataValid(int32 slot) {
     assert(slot < MAX_SAVEGAME_SLOTS);
 
     char fileName[MAX_PATH]{};
-    s_PcSaveHelper.GenerateGameFilename(slot, fileName);
+    s_PcSaveHelper.FormatGameFilename(slot, fileName);
 
     if (CheckDataNotCorrupt(slot, fileName)) {
         CStreaming::DeleteAllRwObjects();
@@ -755,7 +755,7 @@ void CGenericGameStorage::MakeValidSaveName(int32 slot) {
     assert(slot < MAX_SAVEGAME_SLOTS);
 
     char path[MAX_PATH]{};
-    s_PcSaveHelper.GenerateGameFilename(slot, path);
+    s_PcSaveHelper.FormatGameFilename(slot, path);
 
     if (strlen(path) >= 257) { // Make sure there's space for the file extension
         path[257] = 0;
@@ -803,7 +803,7 @@ bool CGenericGameStorage::OpenFileForReading(const char* fileName, int32 slot) {
 
     if (fileName) {
         strcpy_s(ms_LoadFileName, fileName);
-        s_PcSaveHelper.GenerateGameFilename(slot, ms_LoadFileNameWithPath);
+        s_PcSaveHelper.FormatGameFilename(slot, ms_LoadFileNameWithPath);
     }
 
     ms_FileHandle = CFileMgr::OpenFile(ms_LoadFileName, "rb");

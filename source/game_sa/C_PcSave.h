@@ -31,6 +31,7 @@ public:
 
     static void SetSaveDirectory(const char* path);
     void GenerateGameFilename(int32 slot, char* out);
+    void FormatGameFilename(int32 slot, std::span<char> out); // NOTSA: Same as above, but knows the size of the buffer
     void PopulateSlotInfo();
     uint32 SaveSlot(int32 slot);
     bool DeleteSlot(int32 slot);

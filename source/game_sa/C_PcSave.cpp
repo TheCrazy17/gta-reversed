@@ -14,7 +14,7 @@ void C_PcSave::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(SetSaveDirectory, 0x619040);
-    RH_ScopedInstall(GenerateGameFilename, 0x6190A0); // bad
+    RH_ScopedInstall(GenerateGameFilename, 0x6190A0);
     RH_ScopedInstall(PopulateSlotInfo, 0x619140);
     RH_ScopedInstall(SaveSlot, 0x619060);
     RH_ScopedInstall(DeleteSlot, 0x6190D0);
@@ -27,14 +27,15 @@ void C_PcSave::SetSaveDirectory(const char* path) {
 
 // 0x6190A0
 void C_PcSave::GenerateGameFilename(int32 slot, char* out) {
+    // The original does not know the size of `out` either, MAX_PATH is the biggest buffer that is used with it
+    FormatGameFilename(slot, { out, (size_t)MAX_PATH });
+}
+
+// NOTSA
+void C_PcSave::FormatGameFilename(int32 slot, std::span<char> out) {
     assert(slot < MAX_SAVEGAME_SLOTS);
 
-    // NOTSA: `out` is type-erased, so we can't deduce its real capacity here - the original code just used
-    // an unbounded sprintf(). Bound it to the smallest buffer any caller actually passes in
-    // (CGenericGameStorage::ms_LoadFileNameWithPath, 104 bytes) so sprintf_s's size claim can never exceed
-    // the real destination buffer (the old `std::size(DefaultPCSaveFileName) + ...` formula could claim up
-    // to 262 bytes, overflowing that 104-byte buffer for long save-directory paths).
-    sprintf_s(out, std::size(CGenericGameStorage::ms_LoadFileNameWithPath), "%s%i%s", DefaultPCSaveFileName, slot + 1, ".b");
+    std::snprintf(out.data(), out.size(), "%s%i%s", DefaultPCSaveFileName, slot + 1, ".b");
 }
 
 // 0x619140
@@ -52,7 +53,7 @@ void C_PcSave::PopulateSlotInfo() {
         char path[MAX_PATH]{};
         CSimpleVariablesSaveStructure vars{};
 
-        GenerateGameFilename(i, path);
+        FormatGameFilename(i, path);
         auto file = CFileMgr::OpenFile(path, "rb");
         if (file) {
             CFileMgr::Seek(file, strlen(CGenericGameStorage::ms_BlockTagName), SEEK_SET);
@@ -105,6 +106,6 @@ bool C_PcSave::DeleteSlot(int32 slot) {
 
     char path[MAX_PATH]{};
     s_PcSaveHelper.error = eErrorCode::NONE;
-    GenerateGameFilename(slot, path);
+    FormatGameFilename(slot, path);
     return std::filesystem::remove(path);
 }
