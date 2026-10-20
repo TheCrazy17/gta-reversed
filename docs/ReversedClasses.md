@@ -1,17 +1,17 @@
-# Reimplementation progress (*): 98%
+# Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 12:17:19 UTC
-(Triggered by commit [28ea63a7](https://github.com/TheCrazy17/gta-reversed/commit/28ea63a774ee1d365967eef6813732e85dc81f8a))
+Last update was at Oct 20, 2026 at 14:02:43 UTC
+(Triggered by commit [822e6e39](https://github.com/TheCrazy17/gta-reversed/commit/822e6e3974332bbae6548ae6d2b5f6382b0f9b3d))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8196 out of 8342 functions done in 720 categories)
+## Stats (8237 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (675/720) [94%]
+#### Completely reversed categories (683/720) [95%]
 
 <details>
 <summary>See list of categories</summary>
@@ -59,6 +59,7 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CMirrors (8)<br />
 - CFire (5)<br />
 - CExplosion (12)<br />
+- CClothesBuilder (23)<br />
 - CClothes (11)<br />
 - CBulletInfo (4)<br />
 - CRestart (11)<br />
@@ -164,6 +165,7 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CPedType (13)<br />
 - CAcquaintance (5)<br />
 - CWeather (14)<br />
+- CPathFind (64)<br />
 - CPathNode (1)<br />
 - CLoadMonitor (7)<br />
 - CPedStats (5)<br />
@@ -239,6 +241,7 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CHandObject (3)<br />
 - CBuilding (2)<br />
 - CAnimatedBuilding (3)<br />
+- CGroupEventHandler (32)<br />
 - CEvent (3)<br />
 - CEventSeenPanickedPed (2)<br />
 - CEventCarUpsideDown (2)<br />
@@ -387,6 +390,7 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CTaskComplexInWater (7)<br />
 - CTaskComplexInvestigateDeadPed (9)<br />
 - CTaskComplexInvestigateDisturbance (8)<br />
+- CTaskComplexKillPedOnFootArmed (11)<br />
 - CTaskComplexKillPedGroupOnFoot (9)<br />
 - CTaskComplexKillPedOnFootMelee (10)<br />
 - CTaskComplexKillPedOnFootStealth (7)<br />
@@ -650,11 +654,15 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CAEPedlessSpeechAudioEntity (11)<br />
 - CAEPedSpeechAudioEntity (58)<br />
 - CAEWeaponAudioEntity (20)<br />
+- CAEPoliceScannerAudioEntity (17)<br />
 - CAETwinLoopSoundEntity (7)<br />
 - CAEVehicleAudioEntity (106)<br />
 - CAEWaterCannonAudioEntity (7)<br />
 - CAEWeatherAudioEntity (5)<br />
 - CAEAudioChannel (12)<br />
+- CAEAudioHardware (55)<br />
+- CAEStaticChannel (8)<br />
+- CAEStreamingChannel (24)<br />
 - CAEBankLoader (6)<br />
 - CAEDataStream (20)<br />
 - CAEStreamTransformer (2)<br />
@@ -693,7 +701,7 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 
 </details>
 
-#### Partially reversed categories (44/720) [6%]
+#### Partially reversed categories (36/720) [5%]
 
 <details>
 <summary>See list of categories</summary>
@@ -701,46 +709,38 @@ Last update was at Oct 20, 2026 at 12:17:19 UTC
 - CWeaponEffects (8/9) [89%]<br />
 - CRope (5/7) [71%]<br />
 - CFileLoader (47/48) [98%]<br />
-- CClothesBuilder (16/23) [70%]<br />
 - CPopulation (65/66) [98%]<br />
 - CWeapon (36/41) [88%]<br />
-- CStats (49/51) [96%]<br />
-- CCarCtrl (69/111) [62%]<br />
+- CStats (50/51) [98%]<br />
+- CCarCtrl (83/111) [75%]<br />
 - CPostEffects (35/38) [92%]<br />
 - CStencilShadows (9/13) [69%]<br />
-- CFont (33/36) [92%]<br />
+- CFont (34/36) [94%]<br />
 - CGangWars (33/35) [94%]<br />
 - CRoadBlocks (7/8) [88%]<br />
 - CClouds (20/21) [95%]<br />
 - CPlayerInfo (27/28) [96%]<br />
-- CCarEnterExit (28/32) [88%]<br />
-- CPathFind (59/62) [95%]<br />
+- CCarEnterExit (29/32) [91%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CRadar (64/65) [98%]<br />
 - CPickups (36/37) [97%]<br />
 - CProjectileInfo (11/12) [92%]<br />
-- CShadows (23/31) [74%]<br />
+- CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
 - CPed (137/145) [94%]<br />
-- CGroupEventHandler (31/32) [97%]<br />
 - CEventHandler (69/72) [96%]<br />
 - CTaskComplexGangFollower (6/7) [86%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
-- CTaskComplexKillPedOnFootArmed (10/11) [91%]<br />
 - CTaskSimpleCarDrive (12/13) [92%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEPedAudioEntity (17/20) [85%]<br />
-- CAEPoliceScannerAudioEntity (16/17) [94%]<br />
 - CAEScriptAudioEntity (17/19) [89%]<br />
-- CAEAudioHardware (54/55) [98%]<br />
-- CAEStaticChannel (7/8) [88%]<br />
-- CAEStreamingChannel (22/24) [92%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
 - Interior_c (50/52) [96%]<br />
-- InteriorGroup_c (22/24) [92%]<br />
+- InteriorGroup_c (23/24) [96%]<br />
 
 </details>
 

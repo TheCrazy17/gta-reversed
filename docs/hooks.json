@@ -3942,7 +3942,7 @@
   {
     "Category": "CClothesBuilder",
     "Name": "PreprocessClothesDesc",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
@@ -3967,22 +3967,22 @@
   {
     "Category": "CClothesBuilder",
     "Name": "BlendGeometry-3",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
     "Name": "BlendGeometry-2",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
     "Name": "CopyGeometry",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
     "Name": "ConstructGeometryArray",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
@@ -4027,12 +4027,12 @@
   {
     "Category": "CClothesBuilder",
     "Name": "ConstructTextures",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
     "Name": "ConstructGeometryAndSkinArrays",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CClothesBuilder",
@@ -8207,7 +8207,7 @@
   {
     "Category": "CStats",
     "Name": "BuildStatLine",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStats",
@@ -8397,7 +8397,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "ChooseModel",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8407,7 +8407,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "ClitargetOrientationToLink",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8442,12 +8442,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "FindLinksToGoWithTheseNodes",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "FindMaximumSpeedForThisCarInTraffic",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8512,12 +8512,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "GenerateEmergencyServicesCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "GenerateOneEmergencyServicesCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8552,12 +8552,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "IsThisAnAppropriateNode",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "JoinCarWithRoadSystem",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8622,7 +8622,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8652,17 +8652,17 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarBlockingPlayerForwardAndBack",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarParkParallel",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarParkPerpendicular",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8777,12 +8777,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "TestCollisionBetween2MovingRects",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "TestCollisionBetween2MovingRects_OnlyFrontBumper",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -10537,7 +10537,7 @@
   {
     "Category": "CFont",
     "Name": "PrintChar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CFont",
@@ -13897,7 +13897,7 @@
   {
     "Category": "CCarEnterExit",
     "Name": "IsPlayerToQuitCarEnter",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarEnterExit",
@@ -14297,7 +14297,7 @@
   {
     "Category": "CPathFind",
     "Name": "FindNextNodeWandering",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathFind",
@@ -14322,6 +14322,16 @@
   {
     "Category": "CPathFind",
     "Name": "FindNthNodeClosestToCoors",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPathFind",
+    "Name": "FindNodeClosestInRegion",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPathFind",
+    "Name": "CalcDistToAnyConnectingLinks",
     "IsReversed": true
   },
   {
@@ -14432,12 +14442,12 @@
   {
     "Category": "CPathFind",
     "Name": "GeneratePedCreationCoors_Interior",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathFind",
     "Name": "FindNodeClosestToCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathNode",
@@ -16887,12 +16897,12 @@
   {
     "Category": "CShadows",
     "Name": "AddPermanentShadow",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",
     "Name": "UpdatePermanentShadows",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",
@@ -16992,12 +17002,12 @@
   {
     "Category": "CShadows",
     "Name": "GeneratePolysForStaticShadow",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",
     "Name": "StoreStaticShadow",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",
@@ -20567,7 +20577,7 @@
   {
     "Category": "CGroupEventHandler",
     "Name": "ComputeResponseLeaderEnteredCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CGroupEventHandler",
@@ -25597,7 +25607,7 @@
   {
     "Category": "CTaskComplexKillPedOnFootArmed",
     "Name": "CreateNextSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexKillPedOnFootArmed",
@@ -36117,7 +36127,7 @@
   {
     "Category": "CAEPoliceScannerAudioEntity",
     "Name": "AddAudioEvent",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEPoliceScannerAudioEntity",
@@ -37232,7 +37242,7 @@
   {
     "Category": "CAEAudioHardware",
     "Name": "PlaySound",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEStaticChannel",
@@ -37272,7 +37282,7 @@
   {
     "Category": "CAEStaticChannel",
     "Name": "SetAudioBuffer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEStreamingChannel",
@@ -37292,7 +37302,7 @@
   {
     "Category": "CAEStreamingChannel",
     "Name": "PrepareStream",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEStreamingChannel",
@@ -37362,7 +37372,7 @@
   {
     "Category": "CAEStreamingChannel",
     "Name": "Service",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEStreamingChannel",
@@ -40827,7 +40837,7 @@
   {
     "Category": "InteriorGroup_c",
     "Name": "SetupHousePeds",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "InteriorGroup_c",
