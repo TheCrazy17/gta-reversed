@@ -12,7 +12,7 @@ void CTaskSimpleCarWaitToSlowDown::InjectHooks() {
     RH_ScopedVMTInstall(GetTaskType, 0x6469F0);
     RH_ScopedVMTInstall(MakeAbortable, 0x646A60);
     RH_ScopedVMTInstall(ProcessPed, 0x646AD0);
-    // crash RH_ScopedVMTInstall(SetPedPosition, 0x646AB0);
+    // RH_ScopedVMTInstall(SetPedPosition, 0x646AB0); // Disabled, it crashed once. The code matches the original, so the cause is not known (it calls CPed::SetPedPositionInCar)
 }
 
 // 0x646990
