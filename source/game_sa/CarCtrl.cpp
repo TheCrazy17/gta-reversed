@@ -115,7 +115,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0);
     RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090);
     RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
-    RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20);
     RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0, { .Reversed = false });
@@ -1534,7 +1534,63 @@ void CCarCtrl::SteerAIBoatWithPhysicsHeadingForTarget(CVehicle* vehicle, float a
 
 // 0x422B20
 void CCarCtrl::SteerAICarBlockingPlayerForwardAndBack(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x422B20, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    // arg2: steering, arg3: gas / reverse, arg4: brake, arg5: handbrake
+    *arg2 = 0.0f;
+    *arg5 = false;
+
+    // Where the player is heading, a bit more to where they are looking
+    auto playerSpeed = FindPlayerSpeed();
+    auto* const playerEntity = FindPlayerEntity();
+    if (!playerEntity->m_matrix) {
+        playerEntity->AllocateMatrix();
+        playerEntity->m_placement.UpdateMatrix(playerEntity->m_matrix);
+    }
+    playerSpeed.x += playerEntity->GetForward().x * 0.1f;
+    playerSpeed.y += playerEntity->GetForward().y * 0.1f;
+
+    auto right = vehicle->GetRight();
+    right.z    = 0.0f;
+    right.Normalise();
+    auto forward = vehicle->GetForward();
+    forward.z    = 0.0f;
+    forward.Normalise();
+
+    const auto toPlayer = FindPlayerCoors() - vehicle->GetPosition();
+
+    // When the player will cross the vehicle's side line
+    auto approachSpeed = DotProduct(right, playerSpeed);
+    if (approachSpeed == 0.0f) {
+        approachSpeed = 0.01f;
+    }
+    const auto timeToCross = -(DotProduct(toPlayer, right) / approachSpeed);
+    if (timeToCross < 0.0f) {
+        *arg3 = 0.0f;
+        *arg4 = 0.0f;
+        return;
+    }
+
+    // How far in front of or behind the vehicle the player will be by then
+    const auto speedAlong = DotProduct(forward, vehicle->GetMoveSpeed());
+    auto       offset     = DotProduct(toPlayer, forward) + DotProduct(forward, playerSpeed) * timeToCross - speedAlong * timeToCross;
+    if (offset > 0.0f) {
+        *arg3 = std::min(offset * 0.1f, 1.0f);
+        *arg4 = 0.0f;
+        return;
+    }
+
+    if (speedAlong > 0.0f) {
+        // Going forward but the player is behind, brake
+        const auto brake = std::min(offset * -0.1f, 1.0f);
+        *arg3            = 0.0f;
+        *arg4            = brake;
+        if (brake > 0.95f) {
+            *arg5 = true;
+        }
+        return;
+    }
+
+    *arg3 = std::max(offset * 0.1f, -1.0f);
+    *arg4 = 0.0f;
 }
 
 // 0x433BA0
