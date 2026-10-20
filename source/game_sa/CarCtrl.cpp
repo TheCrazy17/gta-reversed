@@ -143,7 +143,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280);
-    RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0);
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990);
     RH_ScopedInstall(SteerAICarWithPhysics_OnlyMission, 0x436A90, { .Reversed = false });
     RH_ScopedInstall(SteerAIHeliAsPoliceHeli, 0x42AAD0);
@@ -2369,7 +2369,30 @@ void CCarCtrl::SteerAICarWithPhysicsHeadingForTarget(CVehicle* vehicle, CPhysica
 
 // 0x4335E0
 void CCarCtrl::SteerAICarWithPhysicsTryingToBlockTarget(CVehicle* vehicle, CEntity* Unusued, float arg3, float arg4, float arg5, float arg6, float* arg7, float* arg8, float* arg9, bool* arg10) {
-    plugin::Call<0x4335E0, CVehicle*, CEntity*, float, float, float, float, float*, float*, float*, bool*>(vehicle, Unusued, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nCarDrivingStyle) == 0x3B9);
+
+    // arg3 and arg4 are the position of the target, arg5 and arg6 its speed, arg7 steering, arg8 gas, arg9 brake, arg10 handbrake
+    auto speedX = arg5;
+    auto speedY = arg6;
+    if (const auto speed = std::sqrt(speedY * speedY + speedX * speedX); speed > 0.13f) {
+        const auto scale = 0.13f / speed;
+        speedX *= scale;
+        speedY *= scale;
+    }
+
+    // Aims for where the target will be in a while
+    const auto x = speedX * 60.0f + arg3;
+    const auto y = speedY * 60.0f + arg4;
+
+    vehicle->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+    SteerAICarWithPhysicsHeadingForTarget(vehicle, nullptr, x, y, arg7, arg8, arg9, arg10);
+
+    // Once there stops in front of it
+    const auto& pos = vehicle->GetPosition();
+    if ((x - pos.x) * (x - pos.x) + (y - pos.y) * (y - pos.y) < 25.0f) {
+        auto& mission = vehicle->m_autoPilot.m_nCarMission;
+        mission = mission == MISSION_BLOCKCAR_CLOSE ? MISSION_BLOCKCAR_HANDBRAKESTOP : MISSION_BLOCKPLAYER_HANDBRAKESTOP;
+    }
 }
 
 // 0x428990
