@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 98%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 19, 2026 at 21:07:46 UTC
-(Triggered by commit [8fd78447](https://github.com/TheCrazy17/gta-reversed/commit/8fd78447dba9e9bf12aa457f81eced63275ff68c))
+Last update was at Oct 20, 2026 at 11:08:32 UTC
+(Triggered by commit [59a9b090](https://github.com/TheCrazy17/gta-reversed/commit/59a9b090ac14a8bc88765a5773f09a346e7c984a))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8143 out of 8342 functions done in 720 categories)
+## Stats (8178 out of 8342 functions done in 720 categories)
 
-#### Completely reversed categories (665/720) [92%]
+#### Completely reversed categories (668/720) [93%]
 
 <details>
 <summary>See list of categories</summary>
@@ -97,6 +97,7 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - CCover (16)<br />
 - CVehicleAnimGroup (5)<br />
 - CVehicleAnimGroupData (5)<br />
+- CPedDamageResponseCalculator (7)<br />
 - CPedClothesDesc (7)<br />
 - CTimer (13)<br />
 - CTagManager (19)<br />
@@ -547,6 +548,7 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - CTaskComplexTreatAccident (7)<br />
 - CTaskComplexGoToPointAndStandStillTimed (6)<br />
 - CTaskComplexPartnerShove (1)<br />
+- CTaskSimpleRunNamedAnim (7)<br />
 - CTaskComplexStuckInAir (6)<br />
 - CTaskSimpleHoldEntity (14)<br />
 - CTaskSimpleGoTo (4)<br />
@@ -677,13 +679,14 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
 - InteriorManager_c (21)<br />
+- CTheScripts (69)<br />
 - CStreamedScripts (12)<br />
 - CScripted2dEffects (5)<br />
 - CScriptResourceManager (4)<br />
 
 </details>
 
-#### Partially reversed categories (53/720) [7%]
+#### Partially reversed categories (50/720) [7%]
 
 <details>
 <summary>See list of categories</summary>
@@ -692,23 +695,22 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - CRope (5/7) [71%]<br />
 - CFileLoader (47/48) [98%]<br />
 - CClothesBuilder (16/23) [70%]<br />
-- CPopulation (64/66) [97%]<br />
+- CPopulation (65/66) [98%]<br />
 - CPedGroupIntelligence (26/27) [96%]<br />
-- CPedDamageResponseCalculator (5/7) [71%]<br />
 - CWeapon (36/41) [88%]<br />
 - CStats (49/51) [96%]<br />
-- CCarCtrl (44/111) [40%]<br />
+- CCarCtrl (69/111) [62%]<br />
 - CPostEffects (35/38) [92%]<br />
 - CStencilShadows (9/13) [69%]<br />
 - CFont (33/36) [92%]<br />
 - CGangWars (33/35) [94%]<br />
 - CRoadBlocks (7/8) [88%]<br />
 - CClouds (20/21) [95%]<br />
-- CPlayerInfo (26/28) [93%]<br />
+- CPlayerInfo (27/28) [96%]<br />
 - CCarEnterExit (28/32) [88%]<br />
-- CPathFind (56/62) [90%]<br />
+- CPathFind (57/62) [92%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
-- CRadar (63/65) [97%]<br />
+- CRadar (64/65) [98%]<br />
 - CPickups (36/37) [97%]<br />
 - CProjectileInfo (11/12) [92%]<br />
 - CShadows (22/31) [71%]<br />
@@ -717,14 +719,13 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - CPhysical (54/56) [96%]<br />
 - CGroupEventHandler (30/32) [94%]<br />
 - CEventHandler (69/72) [96%]<br />
-- CTaskComplexGangFollower (4/7) [57%]<br />
+- CTaskComplexGangFollower (5/7) [71%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
 - CTaskComplexKillPedOnFootArmed (10/11) [91%]<br />
 - CTaskSimpleCarDrive (12/13) [92%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
-- CTaskComplexWalkRoundCar (9/13) [69%]<br />
-- CTaskSimpleRunNamedAnim (6/7) [86%]<br />
+- CTaskComplexWalkRoundCar (10/13) [77%]<br />
 - CTaskSimpleFight (4/5) [80%]<br />
 - CCustomBuildingDNPipeline (15/16) [94%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
@@ -739,7 +740,6 @@ Last update was at Oct 19, 2026 at 21:07:46 UTC
 - Interior_c (48/52) [92%]<br />
 - InteriorGroup_c (22/24) [92%]<br />
 - CRunningScript (37/39) [95%]<br />
-- CTheScripts (68/69) [99%]<br />
 
 </details>
 

@@ -5157,7 +5157,7 @@
   {
     "Category": "CPopulation",
     "Name": "ManageObject",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPopulation",
@@ -7167,7 +7167,7 @@
   {
     "Category": "CPedDamageResponseCalculator",
     "Name": "ComputeWillForceDeath",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedDamageResponseCalculator",
@@ -7182,7 +7182,7 @@
   {
     "Category": "CPedDamageResponseCalculator",
     "Name": "ComputeDamageResponse",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedClothesDesc",
@@ -8457,7 +8457,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "FindPathDirection",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8482,12 +8482,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "FindGhostRoadHeight",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "FireHeliRocketsAtTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8527,7 +8527,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "GetAIHeliToAttackPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8537,17 +8537,17 @@
   {
     "Category": "CCarCtrl",
     "Name": "GetAIPlaneToAttackPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "GetAIPlaneToDoDogFight",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "GetAIPlaneToDoDogFightAgainstPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8562,12 +8562,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "JoinCarWithRoadSystemGotoCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "PickNextNodeAccordingStrategy",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8592,7 +8592,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "ReconsiderRoute",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8602,7 +8602,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "ScanForPedDanger",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8637,17 +8637,17 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIBoatWithPhysicsAttackingPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIBoatWithPhysicsCirclingPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIBoatWithPhysicsHeadingForTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8692,7 +8692,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsHeadingForTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8702,7 +8702,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsTryingToBlockTarget_Stop",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8712,12 +8712,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliAsPoliceHeli",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliFlyingAwayFromPlayer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8727,22 +8727,22 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliToFollowEntity",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliToKeepEntityInView",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliToLand",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIHeliTowardsTargetCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8757,7 +8757,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAIPlaneTowardsTargetCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8767,7 +8767,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SwitchBetweenPhysicsAndGhost",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8797,7 +8797,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "TriggerDogFightMoves",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -13137,7 +13137,7 @@
   {
     "Category": "CPlayerInfo",
     "Name": "FindClosestCarSectorList",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPlayerInfo",
@@ -14322,7 +14322,7 @@
   {
     "Category": "CPathFind",
     "Name": "FindNthNodeClosestToCoors",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPathFind",
@@ -15632,7 +15632,7 @@
   {
     "Category": "CRadar",
     "Name": "ClipRadarPoly",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRadar",
@@ -24882,7 +24882,7 @@
   {
     "Category": "CTaskComplexGangFollower",
     "Name": "CreateFirstSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexGangFollower",
@@ -31197,7 +31197,7 @@
   {
     "Category": "CTaskComplexWalkRoundCar",
     "Name": "ControlSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexMedicTreatInjuredPed",
@@ -31467,7 +31467,7 @@
   {
     "Category": "CTaskSimpleRunNamedAnim",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskSimpleRunNamedAnim",
@@ -41517,7 +41517,7 @@
   {
     "Category": "CTheScripts",
     "Name": "ScriptDebugCircle2D",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTheScripts",
