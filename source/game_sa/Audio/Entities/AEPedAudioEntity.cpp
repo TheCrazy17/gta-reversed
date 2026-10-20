@@ -29,7 +29,7 @@ void CAEPedAudioEntity::InjectHooks() {
     RH_ScopedInstall(HandleSwimSplash, 0x4E26A0);
     RH_ScopedInstall(HandleSwimWake, 0x4E2790);
     RH_ScopedInstall(PlayShirtFlap, 0x4E2A90);
-    RH_ScopedInstall(Service, 0x4E2EE0, { .Reversed = false });
+    RH_ScopedInstall(Service, 0x4E2EE0);
 }
 
 // 0x5DE8D0
@@ -979,5 +979,78 @@ void CAEPedAudioEntity::PlayShirtFlap(float volume, float speed) {
 
 // 0x4E2EE0
 void CAEPedAudioEntity::Service() {
-    plugin::CallMethod<0x4E2EE0, CAEPedAudioEntity*>(this);
+    if (!m_pPed->IsPlayer()) {
+        return;
+    }
+
+    auto volume    = -100.0f;
+    auto speed     = 1.0f;
+    auto fallBlend = 0.0f;
+    auto paraBlend = 0.0f;
+
+    // Wind only blows when the player is not inside of a vehicle
+    const auto attachedTo = m_pPed->m_pAttachedTo;
+    const auto windBlows  = !((attachedTo && attachedTo->GetIsTypeVehicle()) || m_pPed->bInVehicle);
+
+    // Driving a bike or an open top car makes the wind depend on the speed of the vehicle
+    if (m_pPed->m_nPedState == PEDSTATE_DRIVING && m_pPed->m_pVehicle) {
+        const auto vehicle = m_pPed->m_pVehicle;
+        if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE
+            || (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE && vehicle->IsOpenTopCar())
+        ) {
+            const auto vehicleSpeed = std::abs(vehicle->GetMoveSpeed().Magnitude());
+            if (vehicleSpeed > 0.0f) {
+                const auto baseVolume = vehicle->m_vehicleAudio.m_AuSettings.VehicleAudioType == AE_BMX
+                    ? -17.0f
+                    : -10.0f;
+                const auto t = std::clamp(vehicleSpeed, 0.0f, 1.0f);
+                volume       = CAEAudioUtility::AudioLog10(t) * 20.0f + baseVolume;
+                speed        = (1.2f - 0.8f) * t + 0.8f;
+            }
+        }
+    }
+
+    const auto usingParachute = m_pPed->GetIntelligence() && m_pPed->GetIntelligence()->GetUsingParachute();
+
+    if (windBlows) {
+        // Speed of the ped, on foot only the part above the half of it is heard
+        auto  t = m_pPed->GetMoveSpeed().Magnitude() / 0.7f;
+        float baseVolume;
+        if (!usingParachute) {
+            baseVolume = -16.0f;
+            t          = t < 0.5f
+                ? 0.0f
+                : std::clamp((t - 0.5f) / (1.0f - 0.5f), 0.0f, 1.0f);
+        } else {
+            baseVolume = -7.0f;
+            if (const auto assoc = RpAnimBlendClumpGetAssociation(m_pPed->GetRpClump(), "FALL")) {
+                fallBlend = std::clamp(assoc->m_BlendAmount, 0.0f, 1.0f);
+            }
+            if (const auto assoc = RpAnimBlendClumpGetAssociation(m_pPed->GetRpClump(), "Para")) {
+                paraBlend = std::clamp(assoc->m_BlendAmount, 0.0f, 1.0f);
+            }
+            t = std::clamp(t, 0.0f, 1.0f);
+        }
+        volume = CAEAudioUtility::AudioLog10(t) * 20.0f + baseVolume;
+        speed  = (1.6f - 0.8f) * t + 0.8f;
+    }
+
+    speed *= 0.5f * fallBlend + 1.0f;
+    const auto targetVolume = 4.0f * fallBlend + volume + -6.0f * paraBlend;
+
+    // The volume of the flapping follows the target slowly
+    if (targetVolume > field_158) {
+        field_158 = std::min(field_158 + 5.0f, targetVolume);
+    } else if (targetVolume <= field_158) {
+        field_158 = std::max(field_158 - 2.0f, targetVolume);
+    }
+    if (targetVolume < -20.0f && field_158 < -20.0f) {
+        field_158 = targetVolume;
+    }
+
+    if (field_158 > -100.0f) {
+        PlayShirtFlap(field_158, speed);
+    } else {
+        m_sTwinLoopSoundEntity.StopSoundAndForget();
+    }
 }
