@@ -75,7 +75,7 @@ void CPathFind::InjectHooks() {
     //RH_ScopedInstall(TestCoorsCloseness, 0x452000);
     RH_ScopedInstall(FindNextNodeWandering, 0x451B70, { .Reversed = false });
     RH_ScopedInstall(DoPathSearch, 0x4515D0);
-    RH_ScopedInstall(FindParkingNodeInArea, 0x4513F0, { .Reversed = false });
+    RH_ScopedInstall(FindParkingNodeInArea, 0x4513F0);
     RH_ScopedInstall(FindLinkBetweenNodes, 0x451350);
     RH_ScopedInstall(ReturnInteriorNodeIndex, 0x451300);
     RH_ScopedInstall(FindNthNodeClosestToCoors, 0x44F8C0);
@@ -966,9 +966,43 @@ CCarPathLinkAddress CPathFind::FindLinkBetweenNodes(CNodeAddress nodeAddrA, CNod
 
 // 0x4513F0
 CVector CPathFind::FindParkingNodeInArea(float minX, float maxX, float minY, float maxY, float minZ, float maxZ) {
-    CVector vecOut;
-    plugin::CallMethod<0x4513F0, CPathFind*, CVector*, float, float, float, float, float, float>(this, &vecOut, minX, maxX, minY, maxY, minZ, maxZ);
-    return vecOut;
+    // Which of the parking nodes found is returned, it moves on by one on every call
+    static auto& s_NextParkingNode = StaticRef<int32>(0x977B9C);
+
+    std::optional<CVector> firstFound{};
+    std::optional<CVector> chosen{};
+    int32                  count = 0;
+    for (auto area = 0u; area < NUM_PATH_MAP_AREAS; area++) {
+        if (!m_pPathNodes[area]) {
+            continue;
+        }
+        for (auto& node : std::span{ m_pPathNodes[area], m_anNumVehicleNodes[area] }) {
+            const auto pos = node.GetPosition();
+            if (!(minX < pos.x && pos.x < maxX && minY < pos.y && pos.y < maxY && minZ < pos.z && pos.z < maxZ)) {
+                continue;
+            }
+            if (node.m_nBehaviourType != 2) {
+                continue;
+            }
+            if (count == 0) {
+                firstFound = pos;
+            }
+            if (count == s_NextParkingNode) {
+                chosen = pos;
+            }
+            count++;
+        }
+    }
+
+    s_NextParkingNode++;
+    if (count <= s_NextParkingNode) {
+        s_NextParkingNode = 0;
+    }
+
+    if (!firstFound) {
+        return CVector{ 0.0f, 0.0f, 0.0f };
+    }
+    return chosen ? *chosen : *firstFound;
 }
 
 // 0x450F30
