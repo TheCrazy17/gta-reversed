@@ -56,7 +56,7 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(PopulateFavoriteRadioStationList, 0x558EC0);
     RH_ScopedInstall(FindMostFavoriteRadioStation, 0x558FA0);
     RH_ScopedInstall(FindLeastFavoriteRadioStation, 0x559010);
-    RH_ScopedInstall(BuildStatLine, 0x559230, { .Reversed = false });
+    RH_ScopedInstall(BuildStatLine, 0x559230);
     RH_ScopedInstall(CheckForStatsMessage, 0x559760);
     RH_ScopedInstall(LoadStatUpdateConditions, 0x559860);
     RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0);
@@ -212,8 +212,85 @@ float CStats::GetPercentageProgress() {
 }
 
 // 0x559230
-void CStats::BuildStatLine(char* line, void* pValue1, int32 metrics, void* pValue2, int32 type) {
-    plugin::Call<0x559230, char*, void*, int32, void*, int32>(line, pValue1, metrics, pValue2, type);
+void CStats::BuildStatLine(const char* labelKey, void* pValue1, int32 metrics, void* pValue2, int32 type) {
+    if (!labelKey) {
+        return;
+    }
+
+    gString2[0] = '\0';
+
+    // The text of a GXT entry as ASCII (0x69F7E0)
+    const auto TextAsAscii = [](const char* key) {
+        return plugin::CallAndReturn<const char*, 0x69F7E0, const GxtChar*, uint32>(TheText.Get(key), 0);
+    };
+
+    if (type == 1) { // Time, "minutes:seconds"
+        const auto minutes = *(int32*)pValue1;
+        const auto seconds = *(int32*)pValue2;
+        sprintf_s(gString2, seconds < 10 ? "%d:0%d" : "%d:%d", minutes, seconds);
+    } else if (pValue2) { // "x of y"
+        switch (metrics) {
+        case 0:
+            sprintf_s(gString2, " %d %s %d", *(int32*)pValue1, TextAsAscii("FEST_OO"), *(int32*)pValue2);
+            break;
+        case 1:
+            sprintf_s(gString2, "%.2f %s %.2f", (double)*(float*)pValue1, TextAsAscii("FEST_OO"), (double)*(float*)pValue2);
+            break;
+        case 3:
+            sprintf_s(gString2, "$%.2f %s $%.2f", (double)*(float*)pValue1, TextAsAscii("FEST_OO"), (double)*(float*)pValue2);
+            break;
+        default:
+            break;
+        }
+    } else if (pValue1) {
+        switch (metrics) {
+        case 0:
+            sprintf_s(gString2, "%d", *(int32*)pValue1);
+            break;
+        case 1:
+            sprintf_s(gString2, "%.2f", (double)*(float*)pValue1);
+            break;
+        case 2:
+            sprintf_s(gString2, "%0.2f%%", (double)*(float*)pValue1);
+            break;
+        case 3:
+            sprintf_s(gString2, "$%.2f", (double)*(float*)pValue1);
+            break;
+        case 4:
+            sprintf_s(gString2, "%d|", *(int32*)pValue1);
+            break;
+        case 5: { // Weight
+            const auto lbs = *(int32*)pValue1;
+            if (CLocalisation::Metric()) {
+                // The format wants an integer, but a double is passed (Like the original does)
+#pragma warning(suppress: 4477)
+                sprintf_s(gString2, "%dkgs", (double)((float)lbs * 0.4536f));
+            } else {
+                sprintf_s(gString2, "%dlbs", lbs);
+            }
+            break;
+        }
+        case 6:
+            sprintf_s(gString2, "%.2f %s", (double)*(float*)pValue1, TextAsAscii("ST_MILE"));
+            break;
+        case 7:
+            sprintf_s(gString2, "%.2fm", (double)*(float*)pValue1);
+            break;
+        case 8:
+            sprintf_s(gString2, "%.2fft", (double)(*(float*)pValue1 * 3.3333333f));
+            break;
+        case 9:
+            sprintf_s(gString2, "%d %s", *(int32*)pValue1, TextAsAscii("ST_SECS"));
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Prepare the label (Without any of the `~x~` control codes) and the value
+    GxtCharStrcpy(gGxtString, TheText.Get(labelKey));
+    plugin::Call<0x719240, GxtChar*>(gGxtString); // Removes the control codes
+    AsciiToGxtChar(gString2, gGxtString2);
 }
 
 // 0x559540

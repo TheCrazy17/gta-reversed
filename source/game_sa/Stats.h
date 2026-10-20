@@ -84,7 +84,7 @@ public:
     static int32 FindLeastFavoriteRadioStation();
     static int32 FindCriminalRatingNumber();
     static float GetPercentageProgress();
-    static void BuildStatLine(char* line, void* pValue1, int32 metrics, void* pValue2, int32 type);
+    static void BuildStatLine(const char* labelKey, void* pValue1, int32 metrics, void* pValue2, int32 type);
     static int32 ConvertToMins(int32 value);
     static int32 ConvertToSecs(int32 value);
     static bool SafeToShowThisStat(eStats stat);
