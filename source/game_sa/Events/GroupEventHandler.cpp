@@ -47,6 +47,10 @@
 #include "Events/EventNewGangMember.h"
 #include "Events/EventLeaderEntryExit.h"
 #include "Events/EventLeaderExitedCarAsDriver.h"
+#include "Events/EventLeaderEnteredCarAsDriver.h"
+#include "Tasks/TaskTypes/TaskSimpleCarDrive.h"
+#include "Tasks/TaskComplexUseSequence.h"
+#include "Tasks/TaskSequences.h"
 
 void CGroupEventHandler::InjectHooks() {
     RH_ScopedClass(CGroupEventHandler);
@@ -65,7 +69,7 @@ void CGroupEventHandler::InjectHooks() {
     RH_ScopedInstall(ComputeResponseNewGangMember, 0x5F9840);
     RH_ScopedInstall(ComputeResponseLeaderExitedCar, 0x5F90A0);
     RH_ScopedInstall(ComputeResponsLeaderQuitEnteringCar, 0x5F9530);
-    RH_ScopedInstall(ComputeResponseLeaderEnteredCar, 0x5F8900, { .Reversed = false });
+    RH_ScopedInstall(ComputeResponseLeaderEnteredCar, 0x5F8900);
     RH_ScopedInstall(ComputeResponseLeaderEnterExit, 0x5F9710);
     RH_ScopedInstall(ComputeResponseGunAimedAt, 0x5FBD10);
     RH_ScopedInstall(ComputeResponseGather, 0x5F99F0);
@@ -355,8 +359,91 @@ CTaskAllocator* CGroupEventHandler::ComputeResponseLeaderExitedCar(const CEventE
 }
 
 // 0x5F8900
-CTaskAllocator* CGroupEventHandler::ComputeResponseLeaderEnteredCar(const CEvent& e, CPedGroup* pg, CPed* originator) {
-    return plugin::CallAndReturn<CTaskAllocator*, 0x5F8900, const CEvent&, CPedGroup*, CPed*>(e, pg, originator);
+CTaskAllocator* CGroupEventHandler::ComputeResponseLeaderEnteredCar(const CEventLeaderEnteredCarAsDriver& e, CPedGroup* pg, CPed* originator) {
+    auto&      intel  = pg->GetIntelligence();
+    auto&      membs  = pg->GetMembership();
+    const auto leader = membs.GetLeader();
+    const auto veh    = e.m_vehicle;
+    if (!leader || !veh) {
+        return nullptr;
+    }
+
+    // Mission created peds are given their seat first
+    std::array<CPed*, 7> followers{};
+    size_t               numFollowers{};
+    for (auto* const m : membs.GetFollowers()) {
+        if (m->IsCreatedBy(PED_MISSION)) {
+            followers[numFollowers++] = m;
+        }
+    }
+    for (auto* const m : membs.GetFollowers()) {
+        if (!m->IsCreatedBy(PED_MISSION)) {
+            followers[numFollowers++] = m;
+        }
+    }
+
+    // Only a lone follower is forced to the front seat, and only if nobody who matters is sitting there
+    const auto ShouldForceFrontSeat = [&](CPed* ped) {
+        if (numFollowers != 1 || veh->m_nVehicleType == VEHICLE_TYPE_BIKE || veh->m_nVehicleSubType == VEHICLE_TYPE_QUAD) {
+            return false;
+        }
+        if (const auto front = veh->m_apPassengers[0]; front && front != ped) {
+            if (rng::contains(followers, front) || front == leader || front->bDontDragMeOutCar) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const auto SetDriveDefaultTask = [&](CPed* ped) {
+        CTaskComplexSequence seq{ new CTaskSimpleCarDrive{ veh, nullptr, true } };
+        for (auto& tp : intel.GetDefaultPedTaskPairs()) {
+            if (tp.Ped == ped) {
+                if (tp.Task) {
+                    seq.AddTask(tp.Task->Clone());
+                }
+                break;
+            }
+        }
+        intel.SetDefaultTask(ped, seq);
+    };
+
+    const auto seqId = intel.GetTaskSeqId();
+    CPed*      prev  = leader;
+    int32      numSeated{};
+    for (auto* const ped : followers) {
+        if (!ped) {
+            continue;
+        }
+
+        if (numSeated >= veh->m_nMaxPassengers) {
+            intel.SetEventResponseTask(ped, CTaskComplexLeaveAnyCar{ 0, true, false });
+            continue;
+        }
+
+        const auto forceFrontSeat = ShouldForceFrontSeat(ped);
+        if (e.m_TaskId == TASK_GROUP_ENTER_CAR_AND_PERFORM_SEQUENCE && seqId >= 0 && seqId < CTaskSequences::NUM_SEQUENCES && CTaskSequences::ms_taskSequence[seqId].IsActive()) {
+            CTaskComplexSequence seq{
+                new CTaskComplexEnterCarAsPassengerWait{ veh, prev, forceFrontSeat, PEDMOVE_RUN },
+                new CTaskComplexUseSequence{ seqId }
+            };
+            intel.SetEventResponseTask(ped, seq);
+        } else {
+            intel.SetEventResponseTask(ped, CTaskComplexEnterCarAsPassengerWait{ veh, prev, forceFrontSeat, PEDMOVE_RUN });
+            if (!ped->bHasGroupDriveTask) {
+                ped->bHasGroupDriveTask = true;
+                SetDriveDefaultTask(ped);
+            }
+        }
+        numSeated++;
+        prev = ped;
+    }
+
+    if (!leader->IsPlayer() && !leader->bHasGroupDriveTask) {
+        leader->bHasGroupDriveTask = true;
+        SetDriveDefaultTask(leader);
+    }
+    return nullptr;
 }
 
 // 0x5F9710
@@ -799,7 +886,7 @@ CTaskAllocator* CGroupEventHandler::ComputeEventResponseTasks(const CEventGroupE
     case EVENT_VEHICLE_DAMAGE_COLLISION:
         return ComputeResponseVehicleDamage(static_cast<const CEventVehicleDamage&>(*e), g, p);
     case EVENT_LEADER_ENTERED_CAR_AS_DRIVER:
-        return ComputeResponseLeaderEnteredCar(*e, g, p);
+        return ComputeResponseLeaderEnteredCar(static_cast<const CEventLeaderEnteredCarAsDriver&>(*e), g, p);
     case EVENT_LEADER_EXITED_CAR_AS_DRIVER:
         return ComputeResponseLeaderExitedCar(static_cast<const CEventLeaderExitedCarAsDriver&>(*e), g, p);
     case EVENT_LEADER_QUIT_ENTERING_CAR_AS_DRIVER:
