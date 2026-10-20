@@ -17,6 +17,17 @@ class CObject;
 class Furniture_c;
 class InteriorGroup_c;
 
+//! Where a ped leaves the interior through a door, and which two goto points lead to it
+struct ExitPoint_t {
+    char    pad0[2];
+    int8    gotoPtA; // 0x2, -1 if none
+    int8    gotoPtB; // 0x3, -1 if none
+    CVector inner;   // 0x4
+    float   pad1;
+    CVector outer;   // 0x14
+};
+VALIDATE_SIZE(ExitPoint_t, 0x20);
+
 class Interior_c : public ListItem_c<Interior_c> {
 public:
     int32             m_interiorId;         // 0x8
@@ -39,7 +50,7 @@ public:
     int8              m_interiorInfosCount; // 0x40D
     char              gap40E[2];            // 0x40E - alignment padding before m_gotoPoints
     InteriorGotoPoint_t m_gotoPoints[16];   // 0x410
-    char              gap510[128];          // 0x510 - exit-point candidate data, written by CalcExitPts (unreversed)
+    ExitPoint_t       m_exitPts[4];         // 0x510 - set by CalcExitPts, one per door of the box (m_door, left, top, right)
     InteriorInfo_t    m_interiorInfos[16];  // 0x590
     int8              m_furnitureGroupId;   // 0x790
     int8              m_furnitureId;        // 0x791

@@ -82,7 +82,7 @@ void Interior_c::InjectHooks() {
     RH_ScopedInstall(AddPickups, 0x591F90);
     RH_ScopedInstall(Exit, 0x592230);
     RH_ScopedInstall(FindBoundingBox, 0x5922C0);
-    RH_ScopedInstall(CalcExitPts, 0x5924A0, { .Reversed = false });
+    RH_ScopedInstall(CalcExitPts, 0x5924A0);
     RH_ScopedInstall(IsVisible, 0x5929F0);
     RH_ScopedInstall(PlaceFurniture, 0x592AA0, { .Reversed = false });
     RH_ScopedInstall(PlaceFurnitureOnWall, 0x593120);
@@ -2009,7 +2009,132 @@ void Interior_c::FindBoundingBox(int32 x, int32 y, int32* minX, int32* maxX, int
 
 // 0x5924A0
 void Interior_c::CalcExitPts() {
-    plugin::CallMethod<0x5924A0, Interior_c*>(this);
+    const auto  numPts = (int32)m_gotoPointCount;
+    const auto& box    = *m_box;
+
+    const auto PtX = [&](int32 i) { return (float)m_gotoPoints[i].X; };
+    const auto PtY = [&](int32 i) { return (float)m_gotoPoints[i].Y; };
+
+    // The middle of a door that spans start to end, in tiles
+    const auto DoorMiddle = [](int32 start, int32 end) {
+        return ((float)(end - start) * 0.5f + (float)start) - 0.5f;
+    };
+
+    // Door on the front wall
+    if (box.m_door >= 0) {
+        auto&       exit = m_exitPts[0];
+        const auto  x    = (float)box.m_door - 0.5f;
+        float       y;
+        if (numPts < 3) {
+            exit.gotoPtA = -1;
+            exit.gotoPtB = -1;
+            y            = 0.0f;
+        } else {
+            auto i = 0;
+            do {
+                if (x < PtX(i)) {
+                    break;
+                }
+                i += 2;
+            } while (i < numPts);
+
+            if (i == 0) {
+                exit.gotoPtA = 0;
+                exit.gotoPtB = -1;
+            } else if (i == numPts) {
+                exit.gotoPtA = (int8)(numPts - 2);
+                exit.gotoPtB = -1;
+            } else {
+                exit.gotoPtA = (int8)i;
+                exit.gotoPtB = (int8)(i - 2);
+            }
+            y = PtY(0) - 0.25f;
+        }
+        GetTileCentre(x, y, &exit.inner);
+        GetTileCentre(x, -0.25f, &exit.outer);
+    }
+
+    // Door on the left wall
+    if (box.m_lDoorStart >= 0) {
+        auto&       exit = m_exitPts[1];
+        const auto  y    = DoorMiddle(box.m_lDoorStart, box.m_lDoorEnd);
+        float       x;
+        if (numPts < 3) {
+            exit.gotoPtA = -1;
+            exit.gotoPtB = -1;
+            x            = 0.0f;
+        } else {
+            if (PtY(0) <= y) {
+                if (y <= PtY(1)) {
+                    exit.gotoPtA = 0;
+                    exit.gotoPtB = 1;
+                } else {
+                    exit.gotoPtA = 1;
+                    exit.gotoPtB = -1;
+                }
+            } else {
+                exit.gotoPtA = 0;
+                exit.gotoPtB = -1;
+            }
+            x = PtX(0) - 0.25f;
+        }
+        GetTileCentre(x, y, &exit.inner);
+        GetTileCentre(-0.25f, y, &exit.outer);
+    }
+
+    // Door on the back wall
+    if (box.m_tDoorStart >= 0) {
+        auto&       exit = m_exitPts[2];
+        const auto  x    = DoorMiddle(box.m_tDoorStart, box.m_tDoorEnd);
+        float       y;
+        if (numPts < 3) {
+            exit.gotoPtA = -1;
+            exit.gotoPtB = -1;
+            y            = (float)(int32)(box.m_depth - 1);
+        } else {
+            auto i = 1;
+            do {
+                if (x < PtX(i)) {
+                    break;
+                }
+                i += 2;
+            } while (i < numPts);
+
+            if (i == numPts) {
+                exit.gotoPtA = (int8)(numPts - 1);
+                exit.gotoPtB = -1;
+            } else {
+                exit.gotoPtA = (int8)i;
+                exit.gotoPtB = (int8)(i - 2);
+            }
+            y = PtY(1) + 0.25f;
+        }
+        GetTileCentre(x, y, &exit.inner);
+        GetTileCentre(x, (float)(int32)(box.m_depth - 1) + 0.25f, &exit.outer);
+    }
+
+    // Door on the right wall
+    if (box.m_rDoorStart >= 0) {
+        auto&       exit = m_exitPts[3];
+        const auto  y    = DoorMiddle(box.m_rDoorStart, box.m_rDoorEnd);
+        float       x;
+        if (numPts < 3) {
+            exit.gotoPtA = -1;
+            exit.gotoPtB = -1;
+            x            = (float)(int32)(box.m_width - 1);
+        } else {
+            if (PtY(numPts - 2) <= y) {
+                exit.gotoPtA = (int8)(numPts - 1);
+                exit.gotoPtB = y <= PtY(numPts - 1) ? (int8)(numPts - 2) : (int8)-1;
+            } else {
+                exit.gotoPtA = (int8)(numPts - 2);
+                exit.gotoPtB = -1;
+            }
+            x = PtX(numPts - 2) + 0.25f;
+        }
+        GetTileCentre(x, y, &exit.inner);
+        GetTileCentre((float)(int32)(box.m_width - 1) + 0.25f, y, &exit.outer);
+    }
 }
 
 // 0x5929F0
