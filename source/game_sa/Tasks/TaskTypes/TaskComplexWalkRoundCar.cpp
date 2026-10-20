@@ -16,7 +16,7 @@ void CTaskComplexWalkRoundCar::InjectHooks() {
     RH_ScopedInstall(CreateRouteTask, 0x6542E0);
     RH_ScopedInstall(ComputeRouteRoundSmallCar, 0x6544F0);
     RH_ScopedInstall(GoingForDoor, 0x654720);
-    RH_ScopedInstall(ComputeRouteRoundBigCar, 0x656BB0, { .Reversed = false });
+    RH_ScopedInstall(ComputeRouteRoundBigCar, 0x656BB0);
     RH_ScopedInstall(ComputeRoute, 0x657B80);
 
     RH_ScopedVMTInstall(Clone, 0x655B00);
@@ -122,7 +122,55 @@ float CTaskComplexWalkRoundCar::ComputeRouteRoundSmallCar(CPed* ped) {
 
 // 0x656BB0
 float CTaskComplexWalkRoundCar::ComputeRouteRoundBigCar(CPed* ped) {
-    return plugin::CallMethodAndReturn<float, 0x656BB0, CTaskComplexWalkRoundCar*, CPed*>(this, ped);
+    using PGA = CPedGeometryAnalyser;
+
+    // The closest points are looked for with a wider tolerance than usual
+    const auto ClosestSurfacePoints = [&](CVector& pedPoint, CVector& targetPoint) {
+        const auto saved = PGA::ms_BoundingBoxTolerance;
+        PGA::ms_BoundingBoxTolerance = 0.7f;
+        PGA::ComputeClosestSurfacePoint(*ped, *m_Veh, pedPoint);
+        PGA::ComputeClosestSurfacePoint(m_TargetPt, *m_Veh, targetPoint);
+        PGA::ms_BoundingBoxTolerance = saved;
+    };
+
+    const auto pedSide    = PGA::ComputeEntityHitSide(*ped, *m_Veh);
+    const auto targetSide = PGA::ComputeEntityHitSide(m_TargetPt, *m_Veh);
+
+    CVector lastPoint;
+    if (pedSide == targetSide) {
+        // Both are on the same side, so it's a straight line along it
+        CVector pedPoint;
+        ClosestSurfacePoints(pedPoint, lastPoint);
+        m_Route->AddUnlessFull(pedPoint);
+    } else {
+        // Work out the way round with the small car code, while the ped and the target are moved to the closest points of the vehicle
+        CVector pedPoint, targetPoint;
+        ClosestSurfacePoints(pedPoint, targetPoint);
+
+        const auto savedPedPos = ped->GetPosition();
+        const auto savedTarget = m_TargetPt;
+        ped->SetPosn(pedPoint);
+        m_TargetPt = targetPoint;
+        ComputeRouteRoundSmallCar(ped);
+        m_TargetPt = savedTarget;
+        ped->SetPosn(savedPedPos);
+
+        // The route is rebuilt to start at the ped's point, followed by what the small car code found
+        const CPointRoute inner = *m_Route;
+        m_Route->Clear();
+        m_Route->AddUnlessFull(pedPoint);
+        for (const auto& point : inner.GetAll()) {
+            m_Route->AddUnlessFull(point);
+        }
+
+        const auto saved = PGA::ms_BoundingBoxTolerance;
+        PGA::ms_BoundingBoxTolerance = 0.7f;
+        PGA::ComputeClosestSurfacePoint(m_TargetPt, *m_Veh, lastPoint);
+        PGA::ms_BoundingBoxTolerance = saved;
+    }
+    m_Route->AddUnlessFull(lastPoint);
+
+    return 0.0f;
 }
 
 // 0x657B80

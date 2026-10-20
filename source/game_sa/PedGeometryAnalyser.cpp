@@ -141,7 +141,7 @@ int32 CPedGeometryAnalyser::ComputeBuildingHitPoints(const CVector& a1, const CV
 // 0x5F5D80
 void CPedGeometryAnalyser::ComputeClearTarget(const CPed& ped, const CVector& targetPosn, CVector& outTarget) {
     static constexpr auto MAX_RADIUS = 5.00f; // _DAT_0086c6a4
-    static constexpr auto STEP       = 0.35f; // DAT_008d22b0
+    const auto STEP = ms_BoundingBoxTolerance;
 
     outTarget = targetPosn;
 
@@ -562,7 +562,7 @@ bool CPedGeometryAnalyser::ComputeRouteRoundSphere(const CPed& ped, const CColSp
 
 // 0x5F5A30
 bool CPedGeometryAnalyser::GetIsLineOfSightClear(const CPed& ped, const CVector& target, CEntity& entity, float& outDist) {
-    static constexpr auto TOLERANCE = 0.35f;  // DAT_008d22b0 - dead-zone half-width around each plane for the inside/outside/on classification
+    const auto TOLERANCE = ms_BoundingBoxTolerance; // dead-zone half-width around each plane for the inside/outside/on classification
     static constexpr auto DENOM_EPS = 0.001f; // _DAT_00858cdc - guards the clip-parameter division against a near-parallel/zero denominator
 
     auto segStart = ped.GetPosition();

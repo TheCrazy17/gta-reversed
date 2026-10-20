@@ -24,6 +24,9 @@ VALIDATE_SIZE(CPointRoute, 0x64);
 class CPedGeometryAnalyser {
 public:
     static void InjectHooks();
+
+    //! Dead-zone around bounding box planes and the step used to push targets away from them. It's `0.35` unless some task changes it for a while.
+    static inline auto& ms_BoundingBoxTolerance = StaticRef<float>(0x8D22B0);
     
     static bool CanPedJumpObstacle(const CPed& ped, const CEntity& entity);
     static bool CanPedJumpObstacle(const CPed& ped, const CEntity& entity, const CVector& contactNormal, const CVector& contactPos);
