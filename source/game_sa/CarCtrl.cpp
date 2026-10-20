@@ -8,6 +8,7 @@
 #include "StdInc.h"
 
 #include "CarCtrl.h"
+#include "Tasks/TaskTypes/TaskComplexLeaveAnyCar.h"
 #include "Entity/Vehicle/Plane.h"
 #include "Entity/Vehicle/Train.h"
 #include "Wanted.h"
@@ -116,7 +117,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090);
     RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
     RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20);
-    RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0);
     RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
@@ -1595,7 +1596,55 @@ void CCarCtrl::SteerAICarBlockingPlayerForwardAndBack(CVehicle* vehicle, float* 
 
 // 0x433BA0
 void CCarCtrl::SteerAICarParkParallel(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x433BA0, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    // arg2: steering, arg3: gas, arg4: brake, arg5: handbrake
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    if (!ThePaths.IsAreaLoaded(autoPilot.m_startingRouteNode.m_wAreaId) || !ThePaths.IsAreaLoaded(autoPilot.m_currentAddress.m_wAreaId)) {
+        autoPilot.m_nCarMission = MISSION_STOP_FOREVER;
+        *arg2 = 0.0f;
+        *arg3 = 0.0f;
+        *arg4 = 0.0f;
+        return;
+    }
+
+    const auto& currentNode = *ThePaths.GetPathNode(autoPilot.m_currentAddress);
+    const auto& targetNode  = *ThePaths.GetPathNode(autoPilot.m_startingRouteNode);
+
+    // Parallel parking goes a little past the node, along the way the road goes
+    CVector target = targetNode.GetPosition();
+    if (autoPilot.m_nCarMission == MISSION_PARK_PARALLEL) {
+        auto along = targetNode.GetPosition() - currentNode.GetPosition();
+        along.Normalise();
+        target = targetNode.GetPosition() + along;
+    }
+
+    SteerAICarWithPhysicsHeadingForTarget(vehicle, nullptr, target.x, target.y, arg2, arg3, arg4, arg5);
+    autoPilot.m_nCruiseSpeed = std::min<uint8>(autoPilot.m_nCruiseSpeed, 8);
+
+    const auto dist = (CVector2D{ target } - CVector2D{ vehicle->GetPosition() }).Magnitude();
+    if (autoPilot.m_nCarMission == MISSION_PARK_PARALLEL) {
+        if (dist < 4.0f) {
+            autoPilot.m_nCarMission = MISSION_PARK_PARALLEL_2;
+        }
+        return;
+    }
+
+    if (dist >= 2.0f) {
+        return;
+    }
+
+    // Parked, everybody gets out
+    autoPilot.m_nCarMission = MISSION_STOP_FOREVER;
+    vehicle->vehicleFlags.bEngineOn = false;
+    vehicle->vehicleFlags.bLightsOn = false;
+    if (auto* const driver = vehicle->m_pDriver) {
+        driver->GetTaskManager().SetTask(new CTaskComplexLeaveAnyCar{ 0, true, false }, TASK_PRIMARY_PRIMARY, false);
+    }
+    for (auto* const passenger : vehicle->m_apPassengers) {
+        if (passenger) {
+            passenger->GetTaskManager().SetTask(new CTaskComplexLeaveAnyCar{ 0, true, false }, TASK_PRIMARY_PRIMARY, false);
+        }
+    }
 }
 
 // 0x433EA0
