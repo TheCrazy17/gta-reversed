@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 18:34:39 UTC
-(Triggered by commit [9baf56f4](https://github.com/TheCrazy17/gta-reversed/commit/9baf56f43003798617de612c1116d8e09327d7c6))
+Last update was at Oct 20, 2026 at 18:58:15 UTC
+(Triggered by commit [6c1afe3a](https://github.com/TheCrazy17/gta-reversed/commit/6c1afe3aed86cae25a46b3eaf841e2d2b9861a1c))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8246 out of 8344 functions done in 720 categories)
+## Stats (8248 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (688/720) [96%]
+#### Completely reversed categories (689/720) [96%]
 
 <details>
 <summary>See list of categories</summary>
@@ -134,6 +134,7 @@ Last update was at Oct 20, 2026 at 18:34:39 UTC
 - CColourSet (2)<br />
 - CSkidmarks (7)<br />
 - CMovingThings (5)<br />
+- CRoadBlocks (8)<br />
 - CBridge (4)<br />
 - CCranes (5)<br />
 - CGridRef (5)<br />
@@ -706,7 +707,7 @@ Last update was at Oct 20, 2026 at 18:34:39 UTC
 
 </details>
 
-#### Partially reversed categories (31/720) [4%]
+#### Partially reversed categories (30/720) [4%]
 
 <details>
 <summary>See list of categories</summary>
@@ -718,11 +719,10 @@ Last update was at Oct 20, 2026 at 18:34:39 UTC
 - CWeapon (36/41) [88%]<br />
 - CStats (50/51) [98%]<br />
 - CCarCtrl (83/111) [75%]<br />
-- CPostEffects (35/38) [92%]<br />
+- CPostEffects (36/38) [95%]<br />
 - CStencilShadows (9/13) [69%]<br />
 - CFont (34/36) [94%]<br />
 - CGangWars (33/35) [94%]<br />
-- CRoadBlocks (7/8) [88%]<br />
 - CPlayerInfo (27/28) [96%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CProjectileInfo (11/12) [92%]<br />
