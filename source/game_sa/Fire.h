@@ -31,6 +31,8 @@ public:
     bool IsScript() const { return m_IsCreatedByScript; }
     void SetIsScript(bool b) { m_IsCreatedByScript = b; }
 
+    void SetRemovalDist(uint8 dist) { m_RemovalDist = dist; }
+
     bool IsFirstGen() const { return m_IsFirstGeneration; }
     void SetIsFirstGen(bool b) { m_IsFirstGeneration = b; }
 
