@@ -57,7 +57,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedOverloadedInstall(FindNodeCoorsForScript, "LinkedNode", 0x4505E0, CVector(CPathFind::*)(CNodeAddress, bool*));
     RH_ScopedInstall(IsWaterNodeNearby, 0x450DE0);
     RH_ScopedInstall(CountNeighboursToBeSwitchedOff, 0x4504F0);
-    RH_ScopedInstall(FindNodeOrientationForCarPlacement, 0x450320, { .Reversed = false });
+    RH_ScopedInstall(FindNodeOrientationForCarPlacement, 0x450320);
     //RH_ScopedInstall(FindNodePairClosestToCoors, 0x44FEE0);
     RH_ScopedInstall(FindNodeClosestToCoorsFavourDirection, 0x44FCE0);
     //RH_ScopedInstall(FindNodeClosestToCoors, 0x44FA30);
@@ -1139,7 +1139,42 @@ size_t CPathFind::CountNeighboursToBeSwitchedOff(const CPathNode& node) {
 
 // 0x450320
 float CPathFind::FindNodeOrientationForCarPlacement(CNodeAddress nodeInfo) {
-    return plugin::CallMethodAndReturn<float, 0x450320, CPathFind*, CNodeAddress>(this, nodeInfo);
+    if (!IsAreaLoaded(nodeInfo.m_wAreaId)) {
+        return 0.0f;
+    }
+    const auto& node = m_pPathNodes[nodeInfo.m_wAreaId][nodeInfo.m_wNodeId];
+    if (node.m_nNumLinks == 0) {
+        return 0.0f;
+    }
+
+    // Look for the first link that has a lane going the way the node points, the last link is used when none has
+    const int32 searchCount = node.m_nNumLinks - 1;
+    int32       linkIdx     = 0;
+    for (; linkIdx < searchCount; linkIdx++) {
+        const auto naviAddr = m_pNaviLinks[nodeInfo.m_wAreaId][node.m_wBaseLinkId + linkIdx];
+        if (!IsAreaLoaded(naviAddr.m_wAreaId)) {
+            continue;
+        }
+        const auto& navi = GetCarPathLink(naviAddr);
+        if (navi.m_attachedTo == nodeInfo ? navi.m_numSameDirLanes != 0 : navi.m_numOppositeDirLanes != 0) {
+            break;
+        }
+    }
+
+    const auto linked = m_pNodeLinks[nodeInfo.m_wAreaId][node.m_wBaseLinkId + linkIdx];
+    if (!IsAreaLoaded(linked.m_wAreaId)) {
+        return 0.0f;
+    }
+
+    // The angle of the direction from this node to the linked one
+    const auto& linkedNode = m_pPathNodes[linked.m_wAreaId][linked.m_wNodeId];
+    CVector2D  dir{ linkedNode.GetPosition().x - node.GetPosition().x, linkedNode.GetPosition().y - node.GetPosition().y };
+    if (const auto len = dir.Magnitude(); len == 0.0f) {
+        dir.x = 1.0f;
+    } else {
+        dir *= 1.0f / len;
+    }
+    return std::atan2(-dir.x, dir.y) * 57.295776f;
 }
 
 // 0x452160
