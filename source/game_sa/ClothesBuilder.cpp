@@ -25,7 +25,7 @@ void CClothesBuilder::InjectHooks() {
     //RH_ScopedInstall(nullptr, 0x5A4380, { .Reversed = false }); AtomicInstanceCB
     //RH_ScopedInstall(nullptr, 0x5A43A0, { .Reversed = false });
     //RH_ScopedInstall(nullptr, 0x5A44A0, { .Reversed = false }); DestroyTextureCB
-    RH_ScopedInstall(PreprocessClothesDesc, 0x5A44C0, { .Reversed = false });
+    RH_ScopedInstall(PreprocessClothesDesc, 0x5A44C0);
     RH_ScopedInstall(ReleaseGeometry, 0x5A47B0);
     RH_ScopedGlobalInstall(GetAtomicWithName, 0x5A4810);
     RH_ScopedInstall(AddWeightToBoneVertex, 0x5A4840);
@@ -83,8 +83,123 @@ int32 CClothesBuilder::RequestTexture(uint32 txdNameKey) {
 }
 
 // 0x5A44C0
-void CClothesBuilder::PreprocessClothesDesc(CPedClothesDesc& desc, bool a2) {
-    plugin::Call<0x5A44C0, CPedClothesDesc&, bool>(desc, a2);
+void CClothesBuilder::PreprocessClothesDesc(CPedClothesDesc& desc, bool isCutscenePlayer) {
+    // Models listed by the `IGNORE` / `EXCLUSIVE` tags, the rules in between only apply to the parts that
+    // are (not) wearing one of these. Free slots are marked with -1
+    struct {
+        int32 key{ -1 };
+        bool  isIgnore{};
+    } filters[8];
+
+    const auto& rules = CClothes::ms_clothesRules;
+    for (uint32 pos = 0; pos < CClothes::ms_numRuleTags;) {
+        const auto tag = (eClothRule)rules[pos];
+
+        // Arguments of the rule, which of them are used depends on the tag
+        int32 key = -1, part = -1;
+        uint32 arg1{}, arg2{};
+
+        switch (tag) {
+        case eClothRule::TAG_CUTS:
+            key  = (int32)rules[pos + 1];
+            arg1 = rules[pos + 2];
+            pos += 3;
+            break;
+        case eClothRule::TAG_SETC:
+            key  = (int32)rules[pos + 1];
+            part = (int32)rules[pos + 2];
+            arg1 = rules[pos + 3];
+            arg2 = rules[pos + 4];
+            pos += 5;
+            break;
+        case eClothRule::TAG_TEX:
+            key  = (int32)rules[pos + 1];
+            arg2 = rules[pos + 2];
+            pos += 3;
+            break;
+        case eClothRule::TAG_HIDE:
+            key  = (int32)rules[pos + 1];
+            part = (int32)rules[pos + 2];
+            pos += 3;
+            break;
+        case eClothRule::TAG_END_IGNORE:
+        case eClothRule::TAG_END_EXCLUSIVE: {
+            const auto endKey = (int32)rules[pos + 1];
+            pos += 2;
+            for (auto& f : filters) {
+                if (f.key == endKey) {
+                    f.key = -1;
+                    break;
+                }
+            }
+            continue;
+        }
+        case eClothRule::TAG_IGNORE:
+        case eClothRule::TAG_EXCLUSIVE: {
+            const auto filterKey = (int32)rules[pos + 1];
+            pos += 2;
+            for (auto& f : filters) {
+                if (f.key == -1) {
+                    f.key      = filterKey;
+                    f.isIgnore = tag == eClothRule::TAG_IGNORE;
+                    break;
+                }
+            }
+            continue;
+        }
+        default:
+            NOTSA_UNREACHABLE();
+        }
+
+        for (auto p = 0; p < (int32)desc.m_anModelKeys.size(); p++) {
+            // The part that is checked against the filters
+            const auto checkedPart = part != -1 ? part : p;
+            const auto isFiltered  = rng::any_of(filters, [&](auto& f) {
+                return f.key != -1 && (desc.m_anModelKeys[checkedPart] == (uint32)f.key) == f.isIgnore;
+            });
+            if (isFiltered) {
+                continue;
+            }
+
+            switch (tag) {
+            case eClothRule::TAG_CUTS: // Replace a model, but only for the cutscene player
+                if (isCutscenePlayer && desc.m_anModelKeys[p] == (uint32)key) {
+                    desc.SetModel(arg1, (eClothesModelPart)p);
+                }
+                break;
+            case eClothRule::TAG_SETC: // If the part wears `key`, change the model and / or texture of another part
+                if (desc.m_anModelKeys[p] == (uint32)key) {
+                    if (part == 2) { // Legs are only given the model, without a texture
+                        desc.SetModel(arg1, (eClothesModelPart)2);
+                        break;
+                    }
+                    const auto texPart = CClothes::GetDependentTexture((eClothesModelPart)part);
+                    auto       texKey  = arg2;
+                    auto       mdlKey  = arg1;
+                    if (texKey == 0) {
+                        texKey = desc.m_anTextureKeys[texPart];
+                    }
+                    if (mdlKey == 0) {
+                        mdlKey = desc.m_anModelKeys[part];
+                    }
+                    desc.SetTextureAndModel(texKey, mdlKey, texPart);
+                }
+                break;
+            case eClothRule::TAG_TEX: // If the part wears `key`, put a texture on it
+                if (desc.m_anModelKeys[p] == (uint32)key) {
+                    desc.SetTextureAndModel(arg2, (uint32)key, CClothes::GetDependentTexture((eClothesModelPart)p));
+                }
+                break;
+            case eClothRule::TAG_HIDE: // If the part wears `key`, take off another part
+                if (desc.m_anModelKeys[p] == (uint32)key) {
+                    desc.SetModel(0u, (eClothesModelPart)part);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    }
 }
 
 // unused
