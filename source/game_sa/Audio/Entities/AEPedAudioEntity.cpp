@@ -25,7 +25,7 @@ void CAEPedAudioEntity::InjectHooks() {
     RH_ScopedInstall(HandleLandingEvent, 0x4E18E0);
     RH_ScopedInstall(HandlePedSwing, 0x4E1A40);
     RH_ScopedInstall(HandlePedHit, 0x4E1CC0, { .Reversed = false });
-    RH_ScopedInstall(HandlePedJacked, 0x4E2350, { .Reversed = false });
+    RH_ScopedInstall(HandlePedJacked, 0x4E2350);
     RH_ScopedInstall(HandleSwimSplash, 0x4E26A0);
     RH_ScopedInstall(HandleSwimWake, 0x4E2790);
     RH_ScopedInstall(PlayShirtFlap, 0x4E2A90);
@@ -612,7 +612,90 @@ void CAEPedAudioEntity::HandlePedHit(eAudioEvents event, CPhysical* physical, ui
 
 // 0x4E2350
 void CAEPedAudioEntity::HandlePedJacked(eAudioEvents event) {
-    plugin::CallMethod<0x4E2350, CAEPedAudioEntity*, int32>(this, event);
+    if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN)) {
+        if (!AudioEngine.IsLoadingTuneActive()) {
+            AEAudioHardware.LoadSoundBank(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN);
+        }
+        return;
+    }
+
+    const auto volume = GetDefaultVolume(event);
+    const auto now    = CTimer::GetTimeInMS();
+
+    // The sounds start silent, `UpdateParameters` starts them once their time (stored in the client variable) came
+    const auto PlayAt = [&](eSoundBankSlot bankSlot, eSoundID sfxId, uint32 startTime) {
+        m_tempSound.Initialise(
+            bankSlot,
+            sfxId,
+            this,
+            m_pPed->GetPosition(),
+            volume,
+            2.0f, // rollOff
+            0.0f, // speed
+            1.0f, // doppler
+            0,    // frameDelay
+            SOUND_LIFESPAN_TIED_TO_PHYSICAL_ENTITY | SOUND_REQUEST_UPDATES,
+            0.0f, // speedVariance
+            0     // playTime
+        );
+        m_tempSound.RegisterWithPhysicalEntity(m_pPed);
+        m_tempSound.m_Event          = event;
+        m_tempSound.m_ClientVariable = (float)startTime;
+        AESoundManager.RequestNewSound(&m_tempSound);
+    };
+
+    auto lastSoundTime = now;
+    {
+        // Every kind of jacking has its own set of sounds and timing
+        int32  firstSfx{ -1 };
+        int32  secondSfx{ -1 };
+        uint32 firstTime{};
+        switch (event) {
+        case AE_PED_JACKED_CAR_PUNCH:
+            firstSfx     = 0x3A;
+            secondSfx    = CAEAudioUtility::GetRandomNumberInRange(0x28, 0x2B);
+            firstTime    = now + 500;
+            lastSoundTime = now + 0x855;
+            break;
+        case AE_PED_JACKED_CAR_HEAD_BANG:
+            firstSfx     = 0x32;
+            secondSfx    = CAEAudioUtility::GetRandomNumberInRange(0x24, 0x27);
+            firstTime    = now + 0x3A5;
+            lastSoundTime = now + 0xA49;
+            break;
+        case AE_PED_JACKED_CAR_KICK:
+            secondSfx    = CAEAudioUtility::GetRandomNumberInRange(0x28, 0x2B);
+            firstTime    = now + 0x384;
+            lastSoundTime = now + 0xAF0;
+            break;
+        case AE_PED_JACKED_BIKE:
+            firstSfx     = 0x3A;
+            secondSfx    = CAEAudioUtility::GetRandomNumberInRange(0x28, 0x2B);
+            firstTime    = now + 0x21;
+            lastSoundTime = now + 0x16E;
+            break;
+        case AE_PED_JACKED_DOZER:
+            secondSfx    = CAEAudioUtility::GetRandomNumberInRange(0x24, 0x27);
+            firstTime    = now + 0x10A;
+            lastSoundTime = now + 0x341;
+            break;
+        default:
+            break;
+        }
+
+        if (firstSfx != -1) {
+            PlayAt(SND_BANK_SLOT_WEAPON_GEN, (eSoundID)firstSfx, firstTime);
+        }
+        if (secondSfx != -1) {
+            PlayAt(SND_BANK_SLOT_WEAPON_GEN, (eSoundID)secondSfx, firstTime);
+        }
+    }
+
+    if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_FEET_GENERIC, SND_BANK_SLOT_FOOTSTEPS_GENERIC)) {
+        AEAudioHardware.LoadSoundBank(SND_BANK_FEET_GENERIC, SND_BANK_SLOT_FOOTSTEPS_GENERIC);
+        return;
+    }
+    PlayAt(SND_BANK_SLOT_FOOTSTEPS_GENERIC, (eSoundID)0, lastSoundTime);
 }
 
 // 0x4E26A0
