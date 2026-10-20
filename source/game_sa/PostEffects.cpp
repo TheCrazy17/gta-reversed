@@ -51,7 +51,7 @@ void CPostEffects::InjectHooks() {
     RH_ScopedInstall(Fog, 0x704150);
     RH_ScopedInstall(CCTV, 0x702F40);
     RH_ScopedInstall(Grain, 0x7037C0);
-    RH_ScopedInstall(SpeedFX, 0x7030A0, { .Reversed = false });
+    RH_ScopedInstall(SpeedFX, 0x7030A0);
     RH_ScopedInstall(DarknessFilter, 0x702F00);
     RH_ScopedInstall(ColourFilter, 0x703650);
     RH_ScopedInstall(Radiosity, 0x702080, { .Reversed = false });
@@ -841,7 +841,109 @@ void CPostEffects::Grain(int32 strengthMask, bool update) {
 
 // 0x7030A0
 void CPostEffects::SpeedFX(float speed) {
-    plugin::Call<0x7030A0, float>(speed);
+    // Settings of the effect for every speed range (starting from the speed of the entry)
+    struct SpeedFXLevel {
+        float speed;
+        int32 numPasses;
+        int32 spread; // Distance of the passes, in 1/400 of the screen
+        int32 jitter;
+    };
+    static auto& levels = StaticRef<SpeedFXLevel[7]>(0x8D5190);
+
+    // Looking to the sides only blurs horizontally
+    const auto lookDir  = TheCamera.GetActiveCam().m_nDirectionWasLooking;
+    const auto isLookingLeft  = lookDir == 1;
+    const auto isLookingRight = lookDir == 2;
+
+    int32 numPasses = 0;
+    int32 spread    = 0;
+    int32 jitter    = 0;
+    for (auto i = (int32)std::size(levels) - 1; i >= 0; i--) {
+        if (levels[i].speed <= speed) {
+            numPasses = levels[i].numPasses;
+            spread    = levels[i].spread;
+            jitter    = levels[i].jitter;
+            break;
+        }
+    }
+    if (isLookingLeft || isLookingRight) {
+        spread /= 2;
+        jitter = 0;
+    }
+    if (numPasses <= 0) {
+        return;
+    }
+
+    ImmediateModeRenderStatesStore();
+    ImmediateModeRenderStatesSet();
+
+    // Random offset of the texture coordinates
+    float jitterU = 0.0f;
+    float jitterV = 0.0f;
+    if (jitter > 0) {
+        jitterU = ms_imf.fFrontBufferU2 * (float)jitter * 0.004f;
+        jitterV = ms_imf.fFrontBufferV2 * (float)jitter * 0.004f;
+        jitterU = (float)CGeneral::GetRandomNumber() * 3.051851e-05f * jitterU;
+        jitterV = (float)CGeneral::GetRandomNumber() * 3.051851e-05f * jitterV;
+    }
+
+    // Every pass moves the sides of the front buffer a bit further away from each other.
+    // The offsets are named by the vertex they belong to (and the axis), like the original.
+    const auto stepU = ms_imf.fFrontBufferU2 * (float)spread * 0.0025f;
+    const auto stepV = (float)spread * ms_imf.fFrontBufferV2 * 0.0025f;
+
+    float offU1 = stepU;  // Added to U of the first vertex
+    float offU1b = stepU; // Added to U of the third vertex
+    float offU2 = -stepU; // Added to U of the second vertex
+    float offU2b = -stepU; // Added to U of the fourth vertex
+    float offV1 = stepV;  // Added to V of the first vertex
+    float offV2 = stepV;  // Added to V of the second vertex
+    float offV3 = -stepV; // Added to V of the third vertex
+    float offV4 = -stepV; // Added to V of the fourth vertex
+
+    for (auto pass = 0; pass < numPasses; pass++) {
+        if (isLookingLeft) {
+            jitterU = jitterV = 0.0f;
+            offV1 = offV2 = offV3 = offV4 = 0.0f;
+            offU2 = offU2b = 0.0f;
+        }
+        if (isLookingRight) {
+            jitterU = jitterV = 0.0f;
+            offV1 = offV2 = offV3 = offV4 = 0.0f;
+            offU1 = offU1b = 0.0f;
+        }
+
+        ms_imf.quad[0].u = ms_imf.fFrontBufferU1 + offU1 + jitterU;
+        ms_imf.quad[0].v = ms_imf.fFrontBufferV1 + offV1 + jitterV;
+        ms_imf.quad[1].u = (ms_imf.fFrontBufferU2 + offU2) - jitterU;
+        ms_imf.quad[1].v = ms_imf.fFrontBufferV1 + offV2 + jitterV;
+        ms_imf.quad[2].u = ms_imf.fFrontBufferU1 + offU1b + jitterU;
+        ms_imf.quad[2].v = (ms_imf.fFrontBufferV2 + offV4) - jitterU;
+        ms_imf.quad[3].u = (ms_imf.fFrontBufferU2 + offU2b) - jitterU;
+        ms_imf.quad[3].v = (ms_imf.fFrontBufferV2 + offV3) - jitterV;
+
+        DrawQuad(0.0f, 0.0f, (float)RsGlobal.maximumWidth, (float)RsGlobal.maximumHeight, 255, 255, 255, (uint8)m_SpeedFXAlpha, pRasterFrontBuffer);
+
+        offU2 -= stepU;
+        offU2b -= stepU;
+        offV3 -= stepV;
+        offV4 -= stepV;
+        offV1 += stepV;
+        offV2 += stepV;
+        offU1 += stepU;
+        offU1b += stepU;
+    }
+
+    ms_imf.quad[0].u = 0.0f;
+    ms_imf.quad[0].v = 0.0f;
+    ms_imf.quad[1].u = 1.0f;
+    ms_imf.quad[1].v = 0.0f;
+    ms_imf.quad[2].u = 0.0f;
+    ms_imf.quad[2].v = 1.0f;
+    ms_imf.quad[3].u = 1.0f;
+    ms_imf.quad[3].v = 1.0f;
+
+    ImmediateModeRenderStatesReStore();
 }
 
 // 0x702F00
