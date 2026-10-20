@@ -190,6 +190,9 @@ FxEmitterPrt_c* FxEmitter_c::CreateParticle(const EmissionInfo_t& emissionInfo, 
         }
         return reinterpret_cast<FxEmitterPrt_c*>(prt);
     }();
+    if (!particle) {
+        return nullptr;
+    }
 
     particle->m_fCurrentLife = 0.0f;
     particle->m_fTotalLife = (((float)(CGeneral::GetRandomNumber() % 10'000) / 5'000.0f - 1.0f) * emissionInfo.m_fLifeBias + emissionInfo.m_fLife) * fxMults.m_fLife;

@@ -21,12 +21,13 @@ const auto& SIN_LUT = StaticRef<std::array<float, SIN_LUT_SIZE>>(0xBB3E00) = [](
     return lut;
 }();
 
+// The index is a signed truncation that wraps around, so negative angles work too
 float CMaths::GetSinFast(float rad) {
-    return SIN_LUT[(uint32)(rad / SIN_LUT_STEP) % SIN_LUT_SIZE];
+    return SIN_LUT[(int32)(rad * (1.0f / SIN_LUT_STEP)) & (SIN_LUT_SIZE - 1)];
 }
 
 float CMaths::GetCosFast(float rad) {
-    return GetSinFast(rad + PI / 2.f); // cos(x) == sin(x + PI/2)
+    return SIN_LUT[(int32)(rad * (1.0f / SIN_LUT_STEP) + (float)(SIN_LUT_SIZE / 4)) & (SIN_LUT_SIZE - 1)]; // cos(x) == sin(x + PI/2), a quarter of the table
 }
 
 void CMaths::InitMathsTables() {
