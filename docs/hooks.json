@@ -16002,7 +16002,7 @@
   {
     "Category": "CPickups",
     "Name": "DoPickUpEffects",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPickups",
@@ -35632,12 +35632,12 @@
   {
     "Category": "CAEPedAudioEntity",
     "Name": "HandlePedHit",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEPedAudioEntity",
     "Name": "HandlePedJacked",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEPedAudioEntity",
@@ -35657,7 +35657,7 @@
   {
     "Category": "CAEPedAudioEntity",
     "Name": "Service",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEPedlessSpeechAudioEntity",

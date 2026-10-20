@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 14:02:43 UTC
-(Triggered by commit [822e6e39](https://github.com/TheCrazy17/gta-reversed/commit/822e6e3974332bbae6548ae6d2b5f6382b0f9b3d))
+Last update was at Oct 20, 2026 at 14:37:03 UTC
+(Triggered by commit [4d35bc0a](https://github.com/TheCrazy17/gta-reversed/commit/4d35bc0a7f96b6cbe4c3c75fcd83467a5352a767))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8237 out of 8344 functions done in 720 categories)
+## Stats (8241 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (683/720) [95%]
+#### Completely reversed categories (685/720) [95%]
 
 <details>
 <summary>See list of categories</summary>
@@ -188,6 +188,7 @@ Last update was at Oct 20, 2026 at 14:02:43 UTC
 - CPlaneTrail (3)<br />
 - CPlaneTrails (4)<br />
 - CPickup (12)<br />
+- CPickups (37)<br />
 - CPedIK (9)<br />
 - CCustomBuildingPipeline (7)<br />
 - CCustomBuildingRenderer (7)<br />
@@ -651,6 +652,7 @@ Last update was at Oct 20, 2026 at 14:02:43 UTC
 - CAEExplosionAudioEntity (3)<br />
 - CAEFireAudioEntity (7)<br />
 - CAEGlobalWeaponAudioEntity (6)<br />
+- CAEPedAudioEntity (20)<br />
 - CAEPedlessSpeechAudioEntity (11)<br />
 - CAEPedSpeechAudioEntity (58)<br />
 - CAEWeaponAudioEntity (20)<br />
@@ -701,7 +703,7 @@ Last update was at Oct 20, 2026 at 14:02:43 UTC
 
 </details>
 
-#### Partially reversed categories (36/720) [5%]
+#### Partially reversed categories (34/720) [5%]
 
 <details>
 <summary>See list of categories</summary>
@@ -723,7 +725,6 @@ Last update was at Oct 20, 2026 at 14:02:43 UTC
 - CCarEnterExit (29/32) [91%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CRadar (64/65) [98%]<br />
-- CPickups (36/37) [97%]<br />
 - CProjectileInfo (11/12) [92%]<br />
 - CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (6/9) [67%]<br />
@@ -736,7 +737,6 @@ Last update was at Oct 20, 2026 at 14:02:43 UTC
 - CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
-- CAEPedAudioEntity (17/20) [85%]<br />
 - CAEScriptAudioEntity (17/19) [89%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
 - Interior_c (50/52) [96%]<br />
