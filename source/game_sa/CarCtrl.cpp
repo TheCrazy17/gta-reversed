@@ -83,7 +83,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SlowCarOnRailsDownForTrafficAndLights, 0x434790);
     RH_ScopedInstall(FindMaxSteerAngle, 0x427FE0);
     RH_ScopedInstall(GenerateRandomCars, 0x4341C0);
-    RH_ScopedInstall(ChooseModel, 0x424CE0, { .Reversed = false });
+    RH_ScopedInstall(ChooseModel, 0x424CE0);
     RH_ScopedInstall(ClearInterestingVehicleList, 0x423F00);
     RH_ScopedInstall(ClitargetOrientationToLink, 0x422760, { .Reversed = false });
     RH_ScopedInstall(CreateConvoy, 0x42C740, { .Reversed = false });
@@ -253,8 +253,83 @@ eModelID CCarCtrl::ChooseGangCarModel(eGangID loadedCarGroupId) {
 }
 
 // 0x424CE0
-int32 CCarCtrl::ChooseModel(int32* arg1) {
-    return plugin::CallAndReturn<int32, 0x424CE0, int32*>(arg1);
+int32 CCarCtrl::ChooseModel(int32* outZoneType) {
+    const auto numTotalCars = (int32)(CPopCycle::m_NumOther_Cars + CPopCycle::m_NumCops_Cars + CPopCycle::m_NumGangs_Cars + CPopCycle::m_NumDealers_Cars);
+    if (numTotalCars <= 0) {
+        return MODEL_INVALID;
+    }
+
+    if (CCheat::IsActive(CHEAT_REDUCED_TRAFFIC)) {
+        if ((int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * (1.f / 32768.f) * 100.f) != 0) {
+            return MODEL_INVALID;
+        }
+    }
+
+    const auto roll           = (float)CGeneral::GetRandomNumber() * 0.000030518509447574615f;
+    const auto total          = (float)numTotalCars;
+    const auto gangsOwnStreet = CCheat::IsActive(CHEAT_GANGS_CONTROLS_THE_STREETS);
+
+    if (CPopCycle::m_NumDealers_Cars / total > roll && !gangsOwnStreet) {
+        *outZoneType = 25;
+        const auto model = CPopulation::m_CarGroups[POPCYCLE_CARGROUP_DEALERS][0];
+        return CStreaming::IsModelLoaded(model) ? model : MODEL_INVALID;
+    }
+
+    if ((CPopCycle::m_NumGangs_Cars + CPopCycle::m_NumDealers_Cars) / total > roll || gangsOwnStreet) {
+        if (CPopulation::m_bDontCreateRandomGangMembers) {
+            return MODEL_INVALID;
+        }
+
+        const auto* const zoneInfo = CPopCycle::m_pCurrZoneInfo;
+        const auto        sum      = (int32)zoneInfo->GetSumOfGangDensity();
+        if (sum <= 0) {
+            return MODEL_INVALID;
+        }
+
+        // Pick a gang, weighted by how much of the zone it owns
+        auto pick = (int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * (1.f / 32768.f) * (float)sum);
+        auto gang = 0;
+        if (zoneInfo->GangStrength[0] < pick) {
+            auto strength = (int32)zoneInfo->GangStrength[0];
+            do {
+                pick -= strength;
+                strength = zoneInfo->GangStrength[++gang];
+            } while (strength < pick);
+        }
+        if (gangsOwnStreet) {
+            gang = CGeneral::GetRandomNumberInRange(0, 9);
+        }
+
+        *outZoneType = gang + 14;
+        if (CPopulation::PickGangCar((eGangID)gang) < 0) { // No model of this gang is loaded
+            return MODEL_INVALID;
+        }
+
+        for (auto tries = 0; tries < 10; tries++) {
+            int16 model;
+            do {
+                model = CPopulation::m_CarGroups[POPCYCLE_CARGROUP_BALLAS + gang][(int32)((float)(CGeneral::GetRandomNumber() & 0xFFFF) * (1.f / 32768.f) * 23.f)];
+            } while (model == 2000); // Unused entry
+            if (CStreaming::IsModelLoaded(model)) {
+                return model;
+            }
+        }
+        return MODEL_INVALID;
+    }
+
+    if ((CPopCycle::m_NumCops_Cars + CPopCycle::m_NumGangs_Cars + CPopCycle::m_NumDealers_Cars) / total > roll) {
+        if (CGangWars::GangWarFightingGoingOn() || CPopulation::m_bDontCreateRandomCops) {
+            return MODEL_INVALID;
+        }
+        *outZoneType = 13;
+        return ChoosePoliceCarModel(0);
+    }
+
+    *outZoneType = 0;
+    if (CTheScripts::ForceRandomCarModel != -1) {
+        return CTheScripts::ForceRandomCarModel;
+    }
+    return CPopulation::m_AppropriateLoadedCars.PickRandomCar(true, false);
 }
 
 int32 CCarCtrl::ChoosePoliceCarModel(uint32 ignoreLvpd1Model) {
