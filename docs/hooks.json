@@ -2162,7 +2162,7 @@
   {
     "Category": "CRope",
     "Name": "UpdateWeightInRope",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRope",
@@ -8422,7 +8422,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "DealWithBend_Racing",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8432,7 +8432,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "FindAngleToWeaveThroughTraffic",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8452,7 +8452,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "FindNodesThisCarIsNearestTo",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8492,17 +8492,17 @@
   {
     "Category": "CCarCtrl",
     "Name": "FlyAIHeliInCertainDirection",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "FlyAIHeliToTarget_FixedOrientation",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "FlyAIPlaneInCertainDirection",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8572,22 +8572,22 @@
   {
     "Category": "CCarCtrl",
     "Name": "PickNextNodeRandomly",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "PickNextNodeToChaseCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "PickNextNodeToFollowPath",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "PossiblyRemoveVehicle",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8607,7 +8607,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SetCoordsOfScriptCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8617,7 +8617,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8627,12 +8627,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "SlowCarDownForOtherCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8667,27 +8667,27 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarTowardsPointInEscort",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysics",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsFollowPath",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsFollowPath_Racing",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsFollowPreRecordedPath",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8697,7 +8697,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysicsTryingToBlockTarget",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8707,7 +8707,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "SteerAICarWithPhysics_OnlyMission",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8807,7 +8807,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "UpdateCarOnRails",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8822,7 +8822,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "WeaveForOtherCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -10642,7 +10642,7 @@
   {
     "Category": "CFont",
     "Name": "RenderFontBuffer",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CFont",
@@ -10657,7 +10657,7 @@
   {
     "Category": "CFont",
     "Name": "ProcessCurrentString",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CFont",
@@ -18267,7 +18267,7 @@
   {
     "Category": "FxEmitterBP_c",
     "Name": "UpdateParticle",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "FxEmitterBP_c",
@@ -18527,7 +18527,7 @@
   {
     "Category": "CPed",
     "Name": "DoFootLanded",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -18542,7 +18542,7 @@
   {
     "Category": "CPed",
     "Name": "CalculateNewVelocity",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -18572,7 +18572,7 @@
   {
     "Category": "CPed",
     "Name": "UpdatePosition",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -40782,7 +40782,7 @@
   {
     "Category": "Interior_c",
     "Name": "CalcExitPts",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "Interior_c",
@@ -40792,7 +40792,7 @@
   {
     "Category": "Interior_c",
     "Name": "PlaceFurniture",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "Interior_c",

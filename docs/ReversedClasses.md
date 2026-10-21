@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 20, 2026 at 19:54:23 UTC
-(Triggered by commit [a42a28ce](https://github.com/TheCrazy17/gta-reversed/commit/a42a28ceafb618439cd691d99450badabc0856c2))
+Last update was at Oct 21, 2026 at 11:51:30 UTC
+(Triggered by commit [3466cf4c](https://github.com/TheCrazy17/gta-reversed/commit/3466cf4c8f131830998bb93ddf610001a26bfa59))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8251 out of 8344 functions done in 720 categories)
+## Stats (8283 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (691/720) [96%]
+#### Completely reversed categories (693/720) [96%]
 
 <details>
 <summary>See list of categories</summary>
@@ -124,6 +124,7 @@ Last update was at Oct 20, 2026 at 19:54:23 UTC
 - CGarages (28)<br />
 - CIniFile (1)<br />
 - CStencilShadowObject (3)<br />
+- CFont (36)<br />
 - CGameLogic (27)<br />
 - CStuckCarCheck (8)<br />
 - CUpsideDownCarCheck (5)<br />
@@ -700,6 +701,7 @@ Last update was at Oct 20, 2026 at 19:54:23 UTC
 - FurnitureGroup_c (6)<br />
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
+- Interior_c (52)<br />
 - InteriorManager_c (21)<br />
 - CRunningScript (39)<br />
 - CTheScripts (69)<br />
@@ -709,26 +711,25 @@ Last update was at Oct 20, 2026 at 19:54:23 UTC
 
 </details>
 
-#### Partially reversed categories (28/720) [4%]
+#### Partially reversed categories (26/720) [4%]
 
 <details>
 <summary>See list of categories</summary>
 - CPedGroupPlacer (1/4) [25%]<br />
 - CWeaponEffects (8/9) [89%]<br />
-- CRope (5/7) [71%]<br />
+- CRope (6/7) [86%]<br />
 - CFileLoader (47/48) [98%]<br />
 - CPopulation (65/66) [98%]<br />
 - CWeapon (36/41) [88%]<br />
 - CStats (50/51) [98%]<br />
-- CCarCtrl (83/111) [75%]<br />
+- CCarCtrl (106/111) [95%]<br />
 - CPostEffects (36/38) [95%]<br />
 - CStencilShadows (9/13) [69%]<br />
-- CFont (34/36) [94%]<br />
 - CGangWars (33/35) [94%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CShadows (27/31) [87%]<br />
-- FxEmitterBP_c (6/9) [67%]<br />
-- CPed (138/145) [95%]<br />
+- FxEmitterBP_c (7/9) [78%]<br />
+- CPed (141/145) [97%]<br />
 - CEventHandler (69/72) [96%]<br />
 - CTaskComplexGangFollower (6/7) [86%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
@@ -739,7 +740,6 @@ Last update was at Oct 20, 2026 at 19:54:23 UTC
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEScriptAudioEntity (17/19) [89%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
-- Interior_c (50/52) [96%]<br />
 - InteriorGroup_c (23/24) [96%]<br />
 
 </details>
