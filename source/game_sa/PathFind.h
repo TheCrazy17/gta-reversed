@@ -99,15 +99,16 @@ public:
         return (float)m_nPathNodeWidth;
     }
 
+    // 0x44DB00
     float OneWayLaneOffset() const {
-        if (m_numOppositeDirLanes) {
-            return 0.5f - (float)m_numSameDirLanes / 2.f;
-        }        
-        if (m_numSameDirLanes) {
-            // 0.011574074 = 1 / 16.f / 5.4f
-            return 0.5f - GetNodePathWidth() / 5.4f / 2.f;
+        if (!m_numOppositeDirLanes) {
+            return 0.5f - (float)m_numSameDirLanes * 0.5f;
         }
-        return 0.5f - (float)m_numOppositeDirLanes / 2.f;
+        if (!m_numSameDirLanes) {
+            return 0.5f - (float)m_numOppositeDirLanes * 0.5f;
+        }
+        // Lanes going both ways, the width of the road is used (0.011574074 = 1 / 16.f / 5.4f)
+        return (float)reinterpret_cast<const uint8&>(m_nPathNodeWidth) * 0.011574074f + 0.5f;
     }
 
     /// Get uncompressed world position

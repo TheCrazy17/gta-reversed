@@ -6,6 +6,7 @@
 */
 
 #include "StdInc.h"
+#include "Curves.h"
 
 #include "CarCtrl.h"
 #include "Tasks/TaskTypes/TaskComplexLeaveAnyCar.h"
@@ -165,7 +166,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ThisVehicleShouldTryNotToTurn, 0x421FE0);
     RH_ScopedInstall(TriggerDogFightMoves, 0x429300);
     RH_ScopedInstall(UpdateCarCount, 0x424000);
-    RH_ScopedInstall(UpdateCarOnRails, 0x436540, { .Reversed = false });
+    RH_ScopedInstall(UpdateCarOnRails, 0x436540);
     RH_ScopedInstall(WeaveForObject, 0x426BC0);
     RH_ScopedInstall(WeaveForPed, 0x426970);
     RH_ScopedInstall(WeaveForOtherCar, 0x426350);
@@ -3199,7 +3200,94 @@ void CCarCtrl::UpdateCarCount(CVehicle* vehicle, uint8 bDecrease) {
 
 // 0x436540
 void CCarCtrl::UpdateCarOnRails(CVehicle* vehicle) {
-    plugin::Call<0x436540, CVehicle*>(vehicle);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, field_C) == 0x39C);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nTimeToStartMission) == 0x3AC);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, _smthCurr) == 0x3B5);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    StopCarIfNodesAreInvalid(vehicle);
+    if (autoPilot.movementFlags.bIsStopped) {
+        return;
+    }
+
+    switch (autoPilot.m_nTempAction) {
+    case TEMPACT_STUCKINTRAFFIC:
+        vehicle->m_vecMoveSpeed = CVector{};
+        autoPilot.ModifySpeed(0.0f);
+        return;
+    case TEMPACT_WAIT:
+    case TEMPACT_BRAKE:
+        vehicle->m_vecMoveSpeed = CVector{};
+        autoPilot.ModifySpeed(0.0f);
+        if (autoPilot.m_nTempActionTime < CTimer::GetTimeInMS()) {
+            autoPilot.m_nTempAction              = TEMPACT_NONE;
+            autoPilot.m_nTimeToStartMission      = CTimer::GetTimeInMS();
+            autoPilot.m_nTimeSwitchedToRealPhysics = CTimer::GetTimeInMS();
+        }
+        return;
+    default:
+        break;
+    }
+
+    SlowCarOnRailsDownForTrafficAndLights(vehicle);
+
+    // The time on this link is over, go to the next one
+    const uint32 endTime = autoPilot.field_C + autoPilot.m_nSpeedScaleFactor;
+    if ((int32)endTime < 0 || endTime <= CTimer::GetTimeInMS()) {
+        PickNextNodeAccordingStrategy(vehicle);
+    }
+
+    if (vehicle->GetStatus() == STATUS_PHYSICS) {
+        return;
+    }
+
+    const auto elapsed = (float)(uint32)(CTimer::GetTimeInMS() - autoPilot.field_C);
+    const auto time    = elapsed / (float)(int32)autoPilot.m_nSpeedScaleFactor;
+
+    const auto& currentLink = ThePaths.GetCarPathLink(autoPilot.m_nCurrentPathNodeInfo);
+    const auto& nextLink    = ThePaths.GetCarPathLink(autoPilot.m_nNextPathNodeInfo);
+
+    // The direction of the links as they are driven
+    const auto currentDir = CVector2D{ (float)currentLink.m_dir.x, (float)currentLink.m_dir.y } * (float)autoPilot._smthCurr;
+    const auto nextDir    = CVector2D{ (float)nextLink.m_dir.x, (float)nextLink.m_dir.y } * (float)autoPilot._smthNext;
+
+    // How far from the middle of the road the lane is
+    auto currentOffset = (currentLink.OneWayLaneOffset() + (float)autoPilot.m_nCurrentLane) * 5.4f;
+    auto nextOffset    = (nextLink.OneWayLaneOffset() + (float)autoPilot.m_nNextLane) * 5.4f;
+    if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+        currentOffset += 1.458f;
+        nextOffset    += 1.458f;
+    }
+
+    // Every vehicle takes the curve a bit different
+    const auto seed     = (int32)vehicle->m_nRandomSeed;
+    const auto Jitter   = [](int32 value) { return (float)((value & 7) - 3) * 0.009f; };
+    const auto currentJ = seed + (int32)reinterpret_cast<const uint16&>(autoPilot.m_nCurrentPathNodeInfo);
+    const auto nextJ    = seed + (int32)reinterpret_cast<const uint16&>(autoPilot.m_nNextPathNodeInfo);
+
+    CVector startDir{ Jitter(currentJ) + currentDir.x, Jitter(currentJ >> 3) + currentDir.y, 0.0f };
+    CVector endDir{ Jitter(nextJ) + nextDir.x, Jitter(nextJ >> 3) + nextDir.y, 0.0f };
+    startDir.Normalise();
+    endDir.Normalise();
+
+    // Where the curve starts and ends, in the lane
+    const auto currentPos = currentLink.GetNodeCoors();
+    const auto nextPos    = nextLink.GetNodeCoors();
+    const CVector startPos{ currentOffset * currentDir.y + currentPos.x, currentPos.y - currentOffset * currentDir.x, 0.0f };
+    const CVector endPos{ nextOffset * nextDir.y + nextPos.x, nextPos.y - nextOffset * nextDir.x, 0.0f };
+
+    CVector resultPos{};
+    CVector resultSpeed{};
+    CCurves::CalcCurvePoint(startPos, endPos, startDir, endDir, time, (int32)autoPilot.m_nSpeedScaleFactor, resultPos, resultSpeed);
+
+    resultPos.z = 15.0f;
+    DragCarToPoint(vehicle, &resultPos);
+
+    if (reinterpret_cast<const uint16&>(autoPilot.m_nCurrentPathNodeInfo) == reinterpret_cast<const uint16&>(autoPilot.m_nNextPathNodeInfo)) {
+        return;
+    }
+    vehicle->m_vecMoveSpeed = resultSpeed * 0.016666668f;
 }
 
 
