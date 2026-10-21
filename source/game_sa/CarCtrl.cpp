@@ -7,6 +7,7 @@
 
 #include "StdInc.h"
 #include "Curves.h"
+#include "Events/EventPotentialGetRunOver.h"
 #include "Garages.h"
 #include "Weather.h"
 #include "VehicleRecording.h"
@@ -134,7 +135,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420);
     RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0);
     RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0);
-    RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
+    RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440);
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0);
     RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090);
     RH_ScopedInstall(SteerAIBoatWithPhysicsHeadingForTarget, 0x428BE0);
@@ -3265,7 +3266,140 @@ void CCarCtrl::SlowCarDownForOtherCar(CEntity* car1, CVehicle* car2, float* arg3
 // 0x425440
 template<typename PtrListType>
 void CCarCtrl::SlowCarDownForPedsSectorList(PtrListType& PtrList, CVehicle* vehicle, float arg3, float arg4, float arg5, float arg6, float* arg7, float arg8) {
-    plugin::Call<0x425440, PtrListType&, CVehicle*, float, float, float, float, float*, float>(PtrList, vehicle, arg3, arg4, arg5, arg6, arg7, arg8);
+    static_assert(offsetof(CVehicle, m_HornCounter) == 0x514);
+    static_assert(offsetof(CPlayerInfo, m_pLastTargetVehicle) == 0xD8);
+
+    // arg3 to arg6 are the area that is looked at (min x, min y, max x and max y), arg7 is the speed that is lowered and arg8 the cruise speed
+    auto&       autoPilot  = vehicle->m_autoPilot;
+    const auto& vehMat     = vehicle->GetMatrix();
+    const auto& vehPos     = vehicle->GetPosition();
+    const auto& colBox     = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox();
+    auto        halfWidth  = colBox.m_vecMax.x;
+    const auto  halfLength = colBox.m_vecMax.y;
+
+    // How fast the vehicle goes forward, the peds are looked at that far ahead
+    const auto speedForward = vehMat.GetForward().x * vehicle->m_vecMoveSpeed.x + vehMat.GetForward().y * vehicle->m_vecMoveSpeed.y + vehMat.GetForward().z * vehicle->m_vecMoveSpeed.z;
+    const auto lookAhead    = speedForward * 200.0f;
+    const auto lookAheadNear = std::abs(speedForward) * 50.0f;
+
+    // Vehicles that are driven by the player, are not cars or drive fast also warn the peds in front of them
+    const auto warnsPeds = vehicle == FindPlayerVehicle(-1, false)
+        || vehicle->m_nVehicleType == VEHICLE_TYPE_TRAIN
+        || vehicle->m_nVehicleType == VEHICLE_TYPE_PLANE
+        || vehicle->m_nVehicleType == VEHICLE_TYPE_HELI
+        || (autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_STOP_FOR_CARS && autoPilot.m_nCarDrivingStyle != DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS)
+        || vehicle->GetStatus() == STATUS_PHYSICS;
+
+    for (typename PtrListType::NodeType *node = PtrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        auto* const entity = static_cast<CPhysical*>(node->Item);
+        if (entity->IsScanCodeCurrent() || !entity->m_bUsesCollision) {
+            continue;
+        }
+        entity->SetCurrentScanCode();
+
+        const auto pedPos = entity->GetPosition();
+        if (!(arg3 < pedPos.x && pedPos.x < arg5 && arg4 < pedPos.y && pedPos.y < arg6)) {
+            continue;
+        }
+        if (!(std::abs(pedPos.z - vehPos.z) < 6.0f)) {
+            continue;
+        }
+
+        // Is it on the way the vehicle is going, also in height
+        const auto forward = vehicle->GetForward();
+        const auto along   = CCollision::DistAlongLine2D(vehPos.x, vehPos.y, vehMat.GetForward().x, vehMat.GetForward().y, pedPos.x, pedPos.y);
+        if (!(std::abs(pedPos.z - (along * forward.z + vehPos.z)) < 3.0f)) {
+            continue;
+        }
+
+        const auto dx = pedPos.x - vehPos.x;
+        const auto dy = pedPos.y - vehPos.y;
+        const auto dz = pedPos.z - vehPos.z;
+
+        // How far ahead and to the side of the vehicle it is
+        const auto ahead = dy * vehMat.GetForward().y + dz * vehMat.GetForward().z + dx * vehMat.GetForward().x;
+        const auto SideDistance = [&] { return std::abs(dy * vehMat.GetRight().y + dz * vehMat.GetRight().z + dx * vehMat.GetRight().x); };
+
+        switch (autoPilot.m_nCarDrivingStyle) {
+        case DRIVING_STYLE_STOP_FOR_CARS:
+        case DRIVING_STYLE_STOP_FOR_CARS_IGNORE_LIGHTS:
+        case DRIVING_STYLE_SLOW_DOWN_FOR_CARS:
+        case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS: {
+            // The player does not make it stop when they are trying to get into it
+            if (entity == FindPlayerPed(-1) && CWorld::Players[CWorld::PlayerInFocus].m_pLastTargetVehicle == vehicle) {
+                break;
+            }
+            if (!(ahead > halfLength)) {
+                break;
+            }
+            const auto gap = ahead - halfLength;
+            if (!(gap < lookAhead)) {
+                break;
+            }
+
+            // Bikes need more room to the side
+            const auto side = SideDistance();
+            if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+                halfWidth *= 1.6f;
+            }
+            if (!(side <= halfWidth + 0.5f) || !(gap < 13.0f)) {
+                break;
+            }
+
+            // The closer the ped is the slower it goes, but not slower than 1
+            const auto Wanted = [&] { return std::max(std::max(gap - 1.0f, 0.0f) * 0.07692308f * arg8, 1.0f); };
+            *arg7 = std::min(Wanted(), *arg7);
+
+            autoPilot.carCtrlFlags.bHonkAtPed = true;
+            if (gap < 4.0f) {
+                autoPilot.m_nTempAction     = TEMPACT_WAIT;
+                autoPilot.m_nTempActionTime = CTimer::GetTimeInMS() + 4000;
+            }
+            if (gap < 2.5f) {
+                autoPilot.m_nTempAction     = TEMPACT_BRAKE;
+                autoPilot.m_nTempActionTime = CTimer::GetTimeInMS() + 4000;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+        if (!entity->GetIsTypePed()) {
+            continue;
+        }
+        auto* const ped = static_cast<CPed*>(entity);
+
+        // The peds close to the vehicle of the player get a warning when it is honking
+        if (vehicle == FindPlayerVehicle(-1, false) && vehicle->m_HornCounter != 0) {
+            if ((pedPos - vehPos).SquaredMagnitude() < 49.0f) {
+                CEventPotentialGetRunOver event{ vehicle };
+                ped->GetEventGroup().Add(&event, false);
+            }
+        }
+
+        // Peds that are in the way of a vehicle that is going that way and fast enough get a warning too
+        if (warnsPeds && speedForward != 0.0f) {
+            if ((ahead >= 0.0f) != (speedForward >= 0.0f)) {
+                continue;
+            }
+            const auto aheadAbs = std::abs(ahead);
+            if (!(aheadAbs > halfLength) || !(std::abs(speedForward) > 0.05f) || !(aheadAbs - halfLength < lookAheadNear)) {
+                continue;
+            }
+            if (!(SideDistance() <= halfWidth + 0.35f)) {
+                continue;
+            }
+
+            CEventPotentialGetRunOver event{ vehicle };
+            ped->GetEventGroup().Add(&event, false);
+            if (vehicle->m_pDriver && vehicle->m_pDriver->IsPlayer()) {
+                plugin::CallMethod<0x421050, CPedIntelligence*, int32>(ped->GetIntelligence(), 2);
+            }
+        }
+    }
 }
 
 // 0x434790
