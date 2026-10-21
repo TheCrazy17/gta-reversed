@@ -104,7 +104,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindGhostRoadHeight, 0x422370);
     RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270);
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70, { .Reversed = false });
-    RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940, { .Reversed = false });
+    RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940);
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
@@ -859,7 +859,62 @@ void CCarCtrl::FlyAIHeliInCertainDirection(CHeli* heli, float arg2, float arg3, 
 
 // 0x423940
 void CCarCtrl::FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float Orientation, CVector posn, bool arg4) {
-    plugin::Call<0x423940, CHeli*, float, CVector, bool>(heli, Orientation, posn, arg4);
+    static_assert(offsetof(CHeli, m_fLeftRightSkid) == 0x98C && offsetof(CHeli, m_fAccelerationBreakStatus) == 0x998 && offsetof(CHeli, m_fMaxAltitude) == 0x9A8 && offsetof(CHeli, field_9AC) == 0x9AC && offsetof(CHeli, m_fMinAltitude) == 0x9B0);
+
+    // Orientation is the heading the heli has to end up with, posn where it has to go. m_fLeftRightSkid is the yaw control here, m_fSteeringUpDown the pitch and m_fSteeringLeftRight the roll
+    const auto Clamp = [](float value, float min, float max) {
+        return value < min ? min : (value >= max ? max : value);
+    };
+
+    const auto& heliMat = heli->GetMatrix();
+    const auto& heliPos = heli->GetPosition();
+    const auto& vel     = heli->m_vecMoveSpeed;
+
+    // Every so often looks at how high the ground ahead is, to not hit it
+    if ((CTimer::GetTimeInMS() + heli->m_nRandomSeed) % 500 < (CTimer::GetPreviousTimeInMS() + heli->m_nRandomSeed) % 500) {
+        heli->field_9AC = heli->m_fMaxAltitude;
+
+        const CVector origin = vel * 50.0f + heliPos;
+        CVector       dir{ std::cos(Orientation), std::sin(Orientation), -1.0f };
+        dir.Normalise();
+        const CVector target = dir * 60.0f + origin;
+
+        CColPoint colPoint;
+        CEntity*  hitEntity{};
+        if (CWorld::ProcessLineOfSight(origin, target, colPoint, hitEntity, true, false, false, false, false, false, false, true)) {
+            heli->field_9AC = std::max(colPoint.m_vecPoint.z + heli->m_fMinAltitude, heli->field_9AC);
+        }
+    }
+
+    const auto heading = CGeneral::GetATanOfXY(heliMat.GetForward().x, heliMat.GetForward().y);
+
+    // Up and down, the wanted height is reached in a smooth way
+    heli->m_fAccelerationBreakStatus = 0.0f;
+    auto height = heli->field_9AC - (vel.z * 100.0f + heliPos.z);
+    height *= height <= 0.0f ? 0.2f : 0.1f;
+    heli->m_fAccelerationBreakStatus = height;
+    heli->m_fAccelerationBreakStatus = Clamp(((float)(CGeneral::GetRandomNumber() & 0xF) - 7.0f) * 0.002f + heli->m_fAccelerationBreakStatus, -0.3f, 1.0f);
+
+    // Turns towards the orientation by the shortest way
+    auto turn = Orientation - heading;
+    while (turn > PI) {
+        turn -= TWO_PI;
+    }
+    while (turn < -PI) {
+        turn += TWO_PI;
+    }
+    heli->m_fLeftRightSkid = Clamp(turn * -0.5f, -1.0f, 1.0f);
+
+    // How far it is to the target and how fast it goes to it, along the right and the front of the heli
+    const auto dx = posn.x - heliPos.x;
+    const auto dy = posn.y - heliPos.y;
+    const auto speedRight   = vel.z * heliMat.GetRight().z + vel.y * heliMat.GetRight().y + vel.x * heliMat.GetRight().x;
+    const auto speedForward = vel.z * heliMat.GetForward().z + vel.y * heliMat.GetForward().y + vel.x * heliMat.GetForward().x;
+    const auto errorRight   = dx * heliMat.GetRight().x + dy * heliMat.GetRight().y + heliMat.GetRight().z * 0.0f + speedRight * 80.0f;
+    const auto errorForward = dx * heliMat.GetForward().x + dy * heliMat.GetForward().y + heliMat.GetForward().z * 0.0f + speedForward * 80.0f;
+
+    heli->m_fSteeringLeftRight = Clamp(std::abs(errorRight) >= 5.0f ? errorRight * -0.02f : speedRight, -0.75f, 0.75f);
+    heli->m_fSteeringUpDown    = Clamp(std::abs(errorForward) >= 5.0f ? errorForward * -0.015f : speedForward, -0.5f, 0.5f);
 }
 
 // 0x423000
