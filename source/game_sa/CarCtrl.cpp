@@ -105,7 +105,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270);
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70);
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940);
-    RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
+    RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000);
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
     RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0);
@@ -1061,7 +1061,155 @@ void CCarCtrl::FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float Orientation
 
 // 0x423000
 void CCarCtrl::FlyAIPlaneInCertainDirection(CPlane* pPlane) {
-    plugin::Call<0x423000, CPlane*>(pPlane);
+    static_assert(offsetof(CPlane, m_fLeftRightSkid) == 0x988 && offsetof(CPlane, m_fSteeringUpDown) == 0x98C);
+    static_assert(offsetof(CPlane, m_fSteeringLeftRight) == 0x990 && offsetof(CPlane, m_fAccelerationBreakStatus) == 0x994);
+    static_assert(offsetof(CPlane, m_fAccelerationBreakStatusPrev) == 0x998 && offsetof(CPlane, m_fSteeringFactor) == 0x99C);
+    static_assert(offsetof(CPlane, m_planeCreationHeading) == 0x9A4 && offsetof(CPlane, m_maxAltitude) == 0x9A8);
+    static_assert(offsetof(CPlane, m_altitude) == 0x9AC && offsetof(CPlane, m_minAltitude) == 0x9B0);
+    static_assert(offsetof(CPlane, m_planeHeading) == 0x9B4 && offsetof(CPlane, m_planeHeadingPrev) == 0x9B8);
+    static_assert(offsetof(CPlane, m_forwardZ) == 0x9BC && offsetof(CPlane, m_nStartedFlyingTime) == 0x9C0);
+    static_assert(offsetof(CPlane, m_LandingGearAngle) == 0x9CC);
+
+    // m_fLeftRightSkid is the rudder, m_fSteeringUpDown the elevator and m_fSteeringLeftRight the ailerons
+    auto&       plane    = *pPlane;
+    const auto& mat      = plane.GetMatrix();
+    const auto& vel      = plane.m_vecMoveSpeed;
+    const auto  seed     = plane.m_nRandomSeed;
+    const auto  now      = CTimer::GetTimeInMS();
+    const auto  Heading  = [&] { return CGeneral::GetATanOfXY(mat.GetForward().x, mat.GetForward().y); };
+
+    // Once a second looks for the way to take, the heading and the height to fly at
+    if ((seed + now) % 1000 < (CTimer::GetPreviousTimeInMS() + seed) % 1000) {
+        const auto heading = Heading();
+
+        auto target = plane.m_planeHeading;
+        switch (plane.m_autoPilot.m_nTempAction) {
+        case TEMPACT_PLANE_FLY_STRAIGHT:    target = heading;        break;
+        case TEMPACT_PLANE_SHARP_LEFT:       target = heading - 2.0f; break;
+        case TEMPACT_PLANE_SHARP_RIGHT:      target = heading + 2.0f; break;
+        }
+
+        plane.m_altitude        = 2000.0f;
+        plane.m_planeHeadingPrev = plane.m_planeHeading + PI;
+
+        auto diff = heading - target;
+        while (diff > PI) {
+            diff -= TWO_PI;
+        }
+        while (diff < -PI) {
+            diff += TWO_PI;
+        }
+        const auto turnLimit = std::abs(diff) >= 0.5235988f ? diff * 1.5f : 0.0f;
+
+        // First tries the angles that are on the side it has to turn to, then the others
+        for (auto pass = 0; pass < 2; pass++) {
+            for (auto i = 1; i < 20; i++) {
+                const auto angle = (float)(i / 2) * ((i & 1) ? 0.2617994f : -0.2617994f);
+                const auto towardsTurn = (angle < 0.0f && turnLimit < angle) || (angle > 0.0f && angle < turnLimit);
+                if (pass == 0 ? !towardsTurn : towardsTurn) {
+                    continue;
+                }
+
+                const auto clearance = plugin::CallAndReturn<float, 0x422F80, CPlane*, float>(pPlane, angle + target);
+                if (clearance < 150.0f) {
+                    plane.m_planeHeadingPrev = angle * 1.1f + plane.m_planeHeading;
+                    plane.m_altitude         = std::max(clearance + plane.m_minAltitude, plane.m_maxAltitude);
+                    break;
+                }
+            }
+        }
+    }
+
+    const auto minSpeed     = plane.vehicleFlags.bIsRCVehicle ? 7.0f : 32.0f;
+    const auto heading      = Heading();
+    const auto forwardSpeed = (mat.GetForward().y * vel.y + mat.GetForward().x * vel.x) * 60.0f;
+
+    if (rng::any_of(plane.m_fWheelsSuspensionCompression, [](float v) { return v < 1.0f; })) {
+        plane.m_nStartedFlyingTime = now;
+    }
+
+    // While it has recently touched the ground it only rolls on the runway
+    const auto onGround = now - plane.m_nStartedFlyingTime <= 4000;
+    if (onGround) {
+        plane.m_fSteeringUpDown = forwardSpeed >= minSpeed ? 0.4f : 0.0f;
+    } else {
+        if (plane.m_LandingGearAngle != 1.0f) {
+            plane.SetGearUp();
+        }
+
+        const auto pitch = std::asin(mat.GetForward().z);
+        const auto prevPitch = plane.m_forwardZ;
+        plane.m_forwardZ = pitch;
+
+        auto climb = std::clamp((plane.m_altitude - (vel.z * 100.0f + plane.GetPosition().z)) * 0.033333335f, -0.4f, 0.4f);
+        if (forwardSpeed < minSpeed) {
+            climb = std::min(climb, 0.25f);
+        }
+        plane.m_fSteeringUpDown = (climb - ((100.0f / CTimer::GetTimeStep()) * (pitch - prevPitch) + pitch)) * 0.5f;
+    }
+
+    auto headingDiff = plane.m_planeHeadingPrev - heading;
+    while (headingDiff < -PI) {
+        headingDiff += TWO_PI;
+    }
+    while (headingDiff > PI) {
+        headingDiff -= TWO_PI;
+    }
+
+    if (onGround) {
+        plane.m_fLeftRightSkid     = std::clamp(-(plane.m_planeCreationHeading - heading) * 10.0f, -1.0f, 1.0f);
+        plane.m_fSteeringLeftRight = 0.0f;
+    } else {
+        auto rudder = std::clamp(-headingDiff * 1.5f, -0.9f, 0.9f);
+        if (plane.vehicleFlags.bIsRCVehicle) {
+            rudder = std::clamp(rudder, -0.7f, 0.7f);
+        }
+
+        auto bank = 0.0f;
+        if (std::abs(rudder) >= 0.1f) {
+            plane.m_fLeftRightSkid = rudder;
+            bank                   = -rudder;
+        } else {
+            plane.m_fLeftRightSkid = rudder * 4.0f;
+        }
+        if (forwardSpeed < minSpeed * 1.2f) {
+            bank *= std::max(1.0f - (minSpeed * 1.2f - forwardSpeed) / (minSpeed * 0.5f), 0.0f);
+        }
+
+        // How much the plane is rolled to the side right now
+        auto rightLength = std::sqrt(mat.GetRight().y * mat.GetRight().y + mat.GetRight().x * mat.GetRight().x);
+        if (mat.GetUp().z < 0.0f) {
+            rightLength = -rightLength;
+        }
+        const auto roll = std::atan2(mat.GetRight().z, rightLength);
+
+        bank -= (roll - plane.m_fSteeringFactor) * (30.0f / std::max(CTimer::GetTimeStep(), 1.0f)) + roll;
+        while (bank > PI) {
+            bank -= TWO_PI;
+        }
+        while (bank < -PI) {
+            bank += TWO_PI;
+        }
+        plane.m_fSteeringFactor    = roll;
+        plane.m_fSteeringLeftRight = std::clamp(bank * -1.0f, -1.0f, 1.0f);
+
+        // The elevator also helps in the turn
+        const auto elevatorBefore = plane.m_fSteeringUpDown;
+        plane.m_fSteeringUpDown   = std::abs(0.23f * roll) + elevatorBefore;
+        if (elevatorBefore < 0.0f) {
+            plane.m_fSteeringUpDown = std::min(elevatorBefore * 0.5f, plane.m_fSteeringUpDown);
+        }
+    }
+
+    plane.m_fSteeringUpDown              = std::clamp(plane.m_fSteeringUpDown, -1.0f, 1.0f);
+    plane.m_fAccelerationBreakStatus     = plane.m_fAccelerationBreakStatusPrev;
+
+    if (plane.m_autoPilot.m_nTempAction == TEMPACT_PLANE_FLY_UP) {
+        plane.m_fSteeringUpDown = 1.0f;
+        if (forwardSpeed < 20.0f) {
+            plane.m_autoPilot.m_nTempAction = TEMPACT_NONE;
+        }
+    }
 }
 
 // 0x424210
