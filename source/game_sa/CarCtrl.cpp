@@ -7,6 +7,7 @@
 
 #include "StdInc.h"
 #include "Curves.h"
+#include "VehicleRecording.h"
 
 #include "CarCtrl.h"
 #include "Tasks/TaskTypes/TaskComplexLeaveAnyCar.h"
@@ -142,7 +143,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
-    RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0);
     RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280);
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0);
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget_Stop, 0x428990);
@@ -2907,7 +2908,85 @@ void CCarCtrl::SteerAICarWithPhysicsFollowPath_Racing(CVehicle* vehicle, float* 
 
 // 0x432DD0
 void CCarCtrl::SteerAICarWithPhysicsFollowPreRecordedPath(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x432DD0, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    // arg2 is the steering, arg3 the gas, arg4 the brake and arg5 the handbrake
+    const auto StopCar = [&] {
+        *arg4 = 0.0f;
+        *arg3 = 0.0f;
+        *arg2 = 0.0f;
+        *arg5 = false;
+        vehicle->m_autoPilot.m_nCarMission = MISSION_STOP_FOREVER;
+    };
+
+    const auto recordId = vehicle->m_autoPilot.m_vehicleRecordingId;
+    if (recordId < 0 || !CVehicleRecording::pPlaybackBuffer[recordId]) {
+        StopCar();
+        return;
+    }
+
+    if (CVehicleRecording::bPlaybackPaused[recordId]) {
+        *arg3 = 0.0f;
+        *arg2 = 0.0f;
+        *arg4 = 0.5f;
+        *arg5 = false;
+        return;
+    }
+
+    const auto Frame = [&](size_t offset) -> const CVehicleStateEachFrame& {
+        return *reinterpret_cast<const CVehicleStateEachFrame*>(reinterpret_cast<const uint8*>(CVehicleRecording::pPlaybackBuffer[recordId]) + offset);
+    };
+    auto& playbackIndex = CVehicleRecording::PlaybackIndex[recordId];
+
+    // The frame the car was in when it came here is the one that gets used afterwards, even if it advances to the next ones
+    const auto& startFrame = Frame(playbackIndex);
+    const auto  pos        = vehicle->GetPosition();
+
+    // Goes forward in the recording until the car is at least a bit away from the frame and it is closer to it than to the next one
+    for (;;) {
+        const auto toCurrent = (pos - Frame(playbackIndex).m_vecPosn).Magnitude();
+        const auto toNext    = (pos - Frame(playbackIndex + sizeof(CVehicleStateEachFrame)).m_vecPosn).Magnitude();
+        if (toCurrent >= 10.0f && toCurrent <= toNext) {
+            break;
+        }
+
+        playbackIndex += sizeof(CVehicleStateEachFrame);
+        if ((uint32)playbackIndex >= (uint32)(CVehicleRecording::PlaybackBufferSize[recordId] - (int32)sizeof(CVehicleStateEachFrame))) {
+            CVehicleRecording::StopPlaybackWithIndex(recordId);
+            vehicle->m_autoPilot.m_vehicleRecordingId = -1;
+            StopCar();
+            return;
+        }
+    }
+
+    const auto  heading         = CGeneral::GetATanOfXY(vehicle->GetMatrix().GetForward().x, vehicle->GetMatrix().GetForward().y);
+    const auto  headingToFrame  = CGeneral::GetATanOfXY(startFrame.m_vecPosn.x - pos.x, startFrame.m_vecPosn.y - pos.y);
+    auto        steer           = FindAngleToWeaveThroughTraffic(vehicle, nullptr, headingToFrame, heading, 2.0f) - heading;
+    while (steer < -PI) {
+        steer += TWO_PI;
+    }
+    while (steer > PI) {
+        steer -= TWO_PI;
+    }
+    const auto maxSteer = FindMaxSteerAngle(vehicle);
+    steer = std::clamp(steer, -maxSteer, maxSteer);
+
+    // Speed the car had when it was recorded, it never goes slower than 5 in the first part of the recording
+    auto wantedSpeed = CVector2D{ startFrame.m_sVelocity.x, startFrame.m_sVelocity.y }.Magnitude() * CVehicleRecording::PlaybackSpeed[recordId] * 60.0f;
+    if ((uint32)playbackIndex <= 0x320 && wantedSpeed <= 5.0f) {
+        wantedSpeed = 5.0f;
+    }
+
+    *arg4 = 0.0f;
+    const auto speed     = CVector2D{ vehicle->m_vecMoveSpeed }.Magnitude() * 60.0f;
+    const auto speedDiff = wantedSpeed - speed;
+    if (speedDiff <= 0.0f) {
+        *arg3 = 0.0f;
+        *arg4 = std::min(speedDiff * -0.05f, 0.5f);
+    } else {
+        *arg3 = std::min(speedDiff * (speed >= 2.0f ? 0.125f : 0.25f), 1.0f);
+    }
+
+    *arg2 = steer;
+    *arg5 = false;
 }
 
 // 0x433280
