@@ -50,7 +50,7 @@ void CHud::InjectHooks() {
     RH_ScopedInstall(DrawSubtitles, 0x58C250);
     RH_ScopedInstall(DrawSuccessFailedMessage, 0x58C6A0);
     RH_ScopedInstall(DrawVehicleName, 0x58AEA0);
-    RH_ScopedInstall(DrawVitalStats, 0x589650, { .Reversed = false });
+    RH_ScopedInstall(DrawVitalStats, 0x589650);
     RH_ScopedInstall(DrawAmmo, 0x5893B0);
     RH_ScopedInstall(DrawPlayerInfo, 0x58EAF0, { .Reversed = false });
     RH_ScopedInstall(DrawTripSkip, 0x58A160);
@@ -1612,7 +1612,122 @@ void CHud::DrawVehicleName() {
 
 // 0x589650
 void CHud::DrawVitalStats() {
-    plugin::Call<0x589650>();
+    ZoneScoped;
+
+    if (CReplay::Mode == MODE_PLAYBACK || TheCamera.m_bWideScreenOn) {
+        return;
+    }
+
+    auto weaponType = FindPlayerPed(-1)->GetActiveWeapon().m_Type;
+    if (weaponType == WEAPON_TEC9) { // It uses the skill of the uzi
+        weaponType = WEAPON_MICRO_UZI;
+    }
+
+    CFont::SetBackground(false, false);
+    CFont::SetColor({ 225, 225, 225, 255 });
+    CFont::SetWrapx(SCREEN_STRETCH_X(640.0f));
+    CFont::SetRightJustifyWrap(0.0f);
+    CFont::SetProportional(true);
+
+    // The layout is a chain of floats that are truncated to integers, so the order of the operations is kept
+    const auto unitX = (double)RsGlobal.maximumWidth * (double)(1.0f / 640.0f);
+    const auto unitY = (double)RsGlobal.maximumHeight * (double)(1.0f / 448.0f);
+
+    const auto labelX = (int16)(int32)(unitX * 10.0 + 40.0);
+    const auto barX   = (int16)(int32)(unitX * 90.0 + 40.0);
+    const auto barDY  = (int16)(int32)(unitY * 5.0);
+
+    // The window is taller when there is a row for the lung capacity or the weapon skill
+    const auto isSwimming   = CWorld::Players[CWorld::PlayerInFocus].m_pPed->GetIntelligence()->GetTaskSwim() != nullptr;
+    const auto hasExtraRow  = isSwimming || (weaponType >= WEAPON_PISTOL && weaponType <= WEAPON_TEC9);
+    const auto windowTop    = (double)RsGlobal.maximumHeight - unitY * 140.0;
+    const auto windowBottom = unitY * 127.0 + windowTop;
+    FrontEndMenuManager.DrawWindow(
+        CRect{
+            40.0f,
+            (float)(hasExtraRow ? windowTop : unitY * 15.0 + windowTop),
+            (float)(unitX * 170.0 + 40.0),
+            (float)windowBottom
+        },
+        "FEH_STA",
+        0,
+        { 0, 0, 0, 190 },
+        false,
+        true
+    );
+    auto rowY = (int16)(int32)(unitY * 15.0 + windowTop);
+
+    CFont::SetFontStyle(FONT_SUBTITLES);
+    CFont::SetOrientation(eFontAlignment::ALIGN_LEFT);
+    CFont::SetScale(SCREEN_STRETCH_X(0.35f), SCREEN_STRETCH_Y(0.9f));
+    CFont::SetColor({ 225, 225, 225, 255 });
+    CFont::SetEdge(0);
+
+    const auto barWidth  = (uint16)(int32)(unitX * 70.0);
+    const auto barHeight = (uint8)(int32)(unitY * 10.0);
+
+    // A row is the name of the stat and a bar with how far it is, the next row is below
+    const auto DrawRow = [&](const char* gxtKey, float progress) {
+        CFont::PrintString((float)labelX, (float)rowY, TheText.Get(gxtKey));
+        CSprite2d::DrawBarChart(
+            (float)barX,
+            (float)(barDY + rowY),
+            barWidth,
+            barHeight,
+            progress,
+            0,
+            0,
+            1,
+            { 200, 200, 200, 255 },
+            { 0, 0, 0, 0 }
+        );
+    };
+    const auto NextRowY = [&] {
+        return (int16)(int32)(unitY * 15.0 + (double)(float)rowY);
+    };
+    const auto StatProgress = [](eStats stat) {
+        return (float)((double)CStats::GetStatValue(stat) * (double)0.001f * 100.0);
+    };
+
+    DrawRow("STAT068", StatProgress(STAT_TOTAL_RESPECT));
+    rowY = NextRowY();
+
+    if (isSwimming) {
+        DrawRow("STAT225", StatProgress(STAT_LUNG_CAPACITY));
+        rowY = NextRowY();
+    } else if (weaponType >= WEAPON_PISTOL && weaponType <= WEAPON_TEC9) {
+        // How far the skill is into the current level of the weapon
+        const auto skillStat = CWeaponInfo::GetSkillStatIndex(weaponType);
+        const auto levelSize = CStats::StatReactionValue[skillStat - 23];
+        const auto levelStep = CStats::StatReactionValue[skillStat - 57];
+        const auto levelSpan = levelSize * levelStep;
+        const auto skill     = CStats::GetStatValue(skillStat);
+        const auto progress  = skill <= 999.0f
+            ? (float)(std::floor((double)(float)(((double)levelStep * (double)0.1f + (double)skill) / (double)levelSpan)) * (double)levelSpan * (double)0.001f)
+            : 1.0f;
+        DrawRow("CURWSKL", (float)((double)progress * 100.0));
+        rowY = NextRowY();
+    }
+
+    DrawRow("STAT022", StatProgress(STAT_STAMINA));
+    rowY = NextRowY();
+    DrawRow("STAT023", StatProgress(STAT_MUSCLE));
+    rowY = NextRowY();
+    DrawRow("STAT021", StatProgress(STAT_FAT));
+    rowY = NextRowY();
+    DrawRow("STAT025", StatProgress(STAT_SEX_APPEAL));
+
+    const auto dayY = (int16)(int32)(unitY * 15.0 + unitY * 3.0 + (double)(float)rowY);
+
+    CFont::SetFontStyle(FONT_PRICEDOWN);
+    CFont::SetOrientation(eFontAlignment::ALIGN_RIGHT);
+    CFont::SetScale(SCREEN_STRETCH_X(0.7f), SCREEN_STRETCH_Y(0.7f));
+    CFont::SetEdge(1);
+    CFont::SetColor({ 200, 200, 200, 255 });
+    CFont::SetDropColor({ 0, 0, 0, 255 });
+
+    sprintf_s(gString, "DAY_%d", CClock::CurrentDay);
+    CFont::PrintString((float)(unitX * 160.0 + 40.0), (float)dayY, TheText.Get(gString));
 }
 
 // 0x588A50
