@@ -138,7 +138,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarBlockingPlayerForwardAndBack, 0x422B20);
     RH_ScopedInstall(SteerAICarParkParallel, 0x433BA0);
     RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0);
-    RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0);
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
@@ -2750,7 +2750,81 @@ void CCarCtrl::SteerAICarParkPerpendicular(CVehicle* vehicle, float* arg2, float
 
 // 0x4336D0
 void CCarCtrl::SteerAICarTowardsPointInEscort(CVehicle* vehicle1, CVehicle* vehicle2, float arg3, float arg4, float* arg5, float* arg6, float* arg7, bool* arg8) {
-    plugin::Call<0x4336D0, CVehicle*, CVehicle*, float, float, float*, float*, float*, bool*>(vehicle1, vehicle2, arg3, arg4, arg5, arg6, arg7, arg8);
+    // vehicle1 is the escorting car and vehicle2 the one that is escorted, arg3 and arg4 are the place beside the escorted car
+    // arg5 is the steering, arg6 the gas and arg7 the brake
+    const auto  escortedPoint = vehicle2->GetMatrix().TransformPoint({ arg3, arg4, 0.0f });
+    const auto  targetX       = escortedPoint.x + vehicle2->m_vecMoveSpeed.x;
+    const auto  targetY       = escortedPoint.y + vehicle2->m_vecMoveSpeed.y;
+    const auto& pos           = vehicle1->GetPosition();
+    *arg8 = false;
+
+    auto fwdX = vehicle1->GetMatrix().GetForward().x;
+    auto fwdY = vehicle1->GetMatrix().GetForward().y;
+    const auto fwdLength = std::sqrt(fwdX * fwdX + fwdY * fwdY);
+    if (fwdLength == 0.0f) {
+        fwdX = 1.0f;
+    } else {
+        fwdX *= 1.0f / fwdLength;
+        fwdY *= 1.0f / fwdLength;
+    }
+
+    // Aims a bit ahead of the escorted car
+    const auto headingToTarget = CGeneral::GetATanOfXY(
+        vehicle2->GetMatrix().GetForward().x * 3.0f + targetX - pos.x,
+        vehicle2->GetMatrix().GetForward().y * 3.0f + targetY - pos.y
+    );
+    const auto heading = CGeneral::GetATanOfXY(fwdX, fwdY);
+
+    auto steer = FindAngleToWeaveThroughTraffic(vehicle1, nullptr, headingToTarget, heading, 1.0f) - heading;
+    while (steer < -PI) {
+        steer += TWO_PI;
+    }
+    while (steer > PI) {
+        steer -= TWO_PI;
+    }
+    const auto maxSteer = FindMaxSteerAngle(vehicle1);
+    steer = std::clamp(steer, -maxSteer, maxSteer);
+
+    // How far ahead of the escorting car the point is, and how far away
+    const auto toTargetX  = targetX - pos.x;
+    const auto toTargetY  = targetY - pos.y;
+    const auto ahead      = toTargetX * fwdX + toTargetY * fwdY;
+    const auto distance   = std::sqrt(toTargetX * toTargetX + toTargetY * toTargetY);
+
+    float wantedSpeed;
+    if (ahead <= 0.5f) {
+        if (distance < 15.0f) {
+            // Too close to bother, only brakes more when the point is behind
+            *arg5 = 0.0f;
+            *arg6 = 0.0f;
+            *arg7 = ahead < -3.0f ? 1.0f : 0.1f;
+            return;
+        }
+        wantedSpeed = 8.0f;
+    } else {
+        const auto escortedSpeed = vehicle2->m_vecMoveSpeed.Magnitude() * 60.0f;
+        if (distance >= 15.0f) {
+            wantedSpeed = 300.0f;
+        } else {
+            const auto catchUp = std::min((ahead - 0.5f) - 0.1f, 4.0f);
+            wantedSpeed = distance * 3.5f;
+            if (wantedSpeed < escortedSpeed + catchUp) {
+                wantedSpeed = escortedSpeed + catchUp;
+            }
+        }
+        wantedSpeed = std::min(wantedSpeed, escortedSpeed + 10.0f);
+    }
+
+    const auto speed = vehicle1->m_vecMoveSpeed.Magnitude() * 60.0f;
+    *arg7 = 0.0f;
+    const auto speedDiff = wantedSpeed - speed;
+    if (speedDiff > 0.0f) {
+        *arg6 = speed < 25.0f ? std::min(speedDiff * 0.1f, 1.0f) : 1.0f;
+    } else {
+        *arg6 = 0.0f;
+        *arg7 = std::min(speedDiff * -0.05f, 0.5f);
+    }
+    *arg5 = steer;
 }
 
 // 0x437C20
