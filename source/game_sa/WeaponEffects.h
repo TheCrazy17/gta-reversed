@@ -23,8 +23,8 @@ public:
     CVector m_vecPosn;
     CRGBA   m_color;
     float   m_fSize;
-    int32   field_1C;
-    int32   field_20;
+    float   m_fSpin;  // Angle the marker of the target is turned by
+    float   m_fPulse; // How far the ring of the lock on is from the target
     float   m_fRotation;
     bool    m_bClearImmediately;
 
