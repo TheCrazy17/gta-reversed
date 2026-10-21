@@ -33,7 +33,7 @@ void CShadows::InjectHooks() {
     RH_ScopedInstall(RenderExtraPlayerShadows, 0x707FA0);
     RH_ScopedInstall(RenderStaticShadows, 0x708300);
     RH_ScopedInstall(CastShadowEntityXY, 0x7086B0, { .Reversed = false });
-    RH_ScopedInstall(CastShadowEntityXYZ, 0x70A040, { .Reversed = false });
+    RH_ScopedInstall(CastShadowEntityXYZ, 0x70A040);
     RH_ScopedInstall(CastPlayerShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A470);
     RH_ScopedInstall(CastShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A630);
     RH_ScopedInstall(CastRealTimeShadowSectorList<CPtrListSingleLink<CPhysical*>>, 0x70A7E0);
@@ -774,7 +774,84 @@ void CShadows::CastShadowEntityXY(CEntity* entity, float conrerAX, float cornerA
 
 // 0x70A040
 void CShadows::CastShadowEntityXYZ(CEntity* entity, CVector* posn, float frontX, float frontY, float sideX, float sideY, int16 intensity, uint8 red, uint8 green, uint8 blue, float zDistance, float scale, CPolyBunch** ppPolyBunch, CRealTimeShadow* realTimeShadow) {
-    ((void(__cdecl*)(CEntity*, CVector*, float, float, float, float, int16, uint8, uint8, uint8, float, float, CPolyBunch**, CRealTimeShadow*))0x70A040)(entity, posn, frontX, frontY, sideX, sideY, intensity, red, green, blue, zDistance, scale, ppPolyBunch, realTimeShadow);
+    if (!realTimeShadow) {
+        return;
+    }
+
+    auto* const colData = CModelInfo::GetModelInfo(entity->m_nModelIndex)->GetColModel()->m_pColData;
+    if (!colData) {
+        return;
+    }
+    CCollision::CalculateTrianglePlanes(CModelInfo::GetModelInfo(entity->m_nModelIndex)->GetColModel());
+
+    // Matrix of the light of the shadow, turned down 45 degrees
+    RwMatrix lightMatrix = *RwFrameGetMatrix(RwCameraGetFrame(realTimeShadow->m_camera.m_pRwCamera));
+    const RwV3d xAxis{ 1.0f, 0.0f, 0.0f };
+    RwMatrixRotate(&lightMatrix, &xAxis, -45.0f, rwCOMBINEPRECONCAT);
+
+    _ProjectionParam param{};
+    param.at = lightMatrix.at;
+
+    const auto EnsureEntityMatrix = [&] {
+        if (!entity->m_matrix) {
+            entity->AllocateMatrix();
+            entity->m_placement.UpdateMatrix(entity->m_matrix);
+        }
+    };
+
+    EnsureEntityMatrix();
+    entity->m_matrix->CopyToRwMatrix(&param.entityMatrix);
+
+    // Takes what is in the world into the space of the shadow camera
+    const auto viewWindow = RwCameraGetViewWindow(realTimeShadow->m_camera.m_pRwCamera)->x;
+    RwMatrixInvert(&param.invMatrix, &lightMatrix);
+    const RwV3d invScale{ -0.5f / (viewWindow * 0.9f), -0.5f / (viewWindow * 0.9f), 1.0f / (viewWindow * 0.8f) };
+    RwMatrixScale(&param.invMatrix, &invScale, rwCOMBINEPOSTCONCAT);
+    const RwV3d invOffset{ 0.5f, 0.0f, 0.0f };
+    RwMatrixTranslate(&param.invMatrix, &invOffset, rwCOMBINEPOSTCONCAT);
+
+    param.fade        = false;
+    param.shadowValue = (RwUInt8)intensity;
+
+    // The triangles close to the shadow are searched in the space of the entity
+    EnsureEntityMatrix();
+    RwMatrix entityMatrix;
+    entity->m_matrix->CopyToRwMatrix(&entityMatrix);
+    RwMatrix invEntityMatrix;
+    RwMatrixInvert(&invEntityMatrix, &entityMatrix);
+
+    const auto& center = realTimeShadow->m_baseSphere.m_vecCenter;
+    const RwV3d worldPos{ frontX * -1.1f + center.x, center.y + frontY * -1.1f, center.z - 0.5f };
+    RwV3d       localPos;
+    RwV3dTransformPoints(&localPos, &worldPos, 1, &invEntityMatrix);
+
+    CColSphere sphere;
+    sphere.Set(2.0f, CVector{ localPos }, (eSurfaceType)0, 0, tColLighting{ 0xFF });
+
+    for (auto i = 0; i < (int16)colData->m_nNumTriangles; i++) {
+        const auto& tri   = colData->m_pTriangles[i];
+        const auto& plane = colData->m_pTrianglePlanes[i];
+
+        CVector points[3];
+        colData->GetTrianglePoint(points[0], tri.vA);
+        colData->GetTrianglePoint(points[1], tri.vB);
+        colData->GetTrianglePoint(points[2], tri.vC);
+
+        if (!CCollision::TestSphereTriangle(sphere, colData->m_pVertices, tri, plane)) {
+            continue;
+        }
+
+        // Raised a bit over the surface to not fight with it
+        auto       normal = plane.GetNormal();
+        const auto offset = normal * 0.028f;
+        for (auto& point : points) {
+            point += offset;
+        }
+
+        if (!ShadowRenderTriangleCB(&normal, points, &param)) {
+            return;
+        }
+    }
 }
 
 // 0x70A470
