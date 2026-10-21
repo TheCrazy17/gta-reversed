@@ -76,7 +76,7 @@ public:
     static void FlyAIHeliInCertainDirection(CHeli* heli, float arg2, float arg3, bool arg4);
     static void FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float fOrientation, CVector posn, bool arg4);
     static void FlyAIPlaneInCertainDirection(CPlane* pPlane);
-    static bool GenerateCarCreationCoors2(CVector posn, float dirX, float dirY, float minDot, bool inDirection, float minDist, float maxDist, CVector* outPos, CNodeAddress* outNode1, CNodeAddress* outNode2, float* outLerp, bool lowTraffic, bool noNearbyStart);
+    static bool GenerateCarCreationCoors2(CVector posn, float dirX, float dirY, float minDot, bool inDirection, float farDist, float nearDist, CVector* outPos, CNodeAddress* outNode1, CNodeAddress* outNode2, float* outLerp, bool lowTraffic, bool noNearbyStart);
     static void GenerateEmergencyServicesCar();
     static CAutomobile* GenerateOneEmergencyServicesCar(uint32 modelID, CVector posn);
     static void GenerateOneRandomCar();
