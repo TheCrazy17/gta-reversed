@@ -1569,7 +1569,7 @@ void CWeapon::CheckForShootingVehicleOccupant(CEntity** pCarEntity, CColPoint* c
         const auto  dy     = target.y - origin.y;
         const auto  dz     = target.z - origin.z;
         if (dy * matrix.GetForward().y + dz * matrix.GetForward().z + dx * matrix.GetForward().x < 0.0f
-            && (dy * matrix.GetUp().y + dz * matrix.GetUp().z + dx * matrix.GetUp().x <= 0.0f || vehicle->vehicleFlags.bIsVan)) {
+            && (dy * matrix.GetUp().y + dz * matrix.GetUp().z + dx * matrix.GetUp().x <= 0.0f || vehicle->vehicleFlags.bIsBig)) {
             auto* const colModel = vehicle->GetColModel();
             auto* const colData  = colModel->m_pColData;
             if ((int16)colData->m_nNumTriangles > 0) {
