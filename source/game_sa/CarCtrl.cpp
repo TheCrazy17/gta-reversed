@@ -142,7 +142,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarParkPerpendicular, 0x433EA0);
     RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0);
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
-    RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900);
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0);
     RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280);
@@ -3428,7 +3428,257 @@ void CCarCtrl::SteerAICarWithPhysics(CVehicle* vehicle) {
 
 // 0x434900
 void CCarCtrl::SteerAICarWithPhysicsFollowPath(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x434900, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    static_assert(offsetof(CBmx, m_fControlPedaling) == 0x818);
+
+    // arg2 is the steering, arg3 the gas, arg4 the brake and arg5 the handbrake
+    if (StopCarIfNodesAreInvalid(vehicle)) {
+        return;
+    }
+
+    auto&       autoPilot = vehicle->m_autoPilot;
+    const auto& mat       = vehicle->GetMatrix();
+    const auto  pos       = vehicle->GetPosition();
+
+    CVector2D forward{ mat.GetForward().x, mat.GetForward().y };
+    if (const auto length = forward.Magnitude(); length == 0.0f) {
+        forward.x = 1.0f;
+    } else {
+        forward.x *= 1.0f / length;
+        forward.y *= 1.0f / length;
+    }
+
+    const auto StopCar = [&] {
+        *arg4 = 1.0f;
+        *arg3 = 0.0f;
+        *arg2 = 0.0f;
+        *arg5 = false;
+    };
+    const auto LinksLoaded = [&] {
+        return ThePaths.m_pPathNodes[autoPilot.m_nCurrentPathNodeInfo.m_wAreaId] && ThePaths.m_pPathNodes[autoPilot.m_nNextPathNodeInfo.m_wAreaId];
+    };
+    const auto CurrentLink = [&]() -> const CCarPathLink& { return ThePaths.GetCarPathLink(autoPilot.m_nCurrentPathNodeInfo); };
+    const auto NextLink    = [&]() -> const CCarPathLink& { return ThePaths.GetCarPathLink(autoPilot.m_nNextPathNodeInfo); };
+    const auto LinkDir     = [](const CCarPathLink& link, int8 sign) { return CVector2D{ (float)link.m_dir.x, (float)link.m_dir.y } * (float)sign; };
+    const auto LaneOffset  = [](const CCarPathLink& link, int8 lane) { return (link.OneWayLaneOffset() + (float)lane) * 5.4f; };
+
+    if (!LinksLoaded()) {
+        StopCar();
+        return;
+    }
+
+    // The direction of the links as they are driven, and how far from the middle of the road the lanes are
+    auto currentDir = LinkDir(CurrentLink(), autoPilot._smthCurr);
+    auto nextDir    = LinkDir(NextLink(), autoPilot._smthNext);
+
+    auto currentOffset = LaneOffset(CurrentLink(), autoPilot.m_nCurrentLane);
+    auto nextOffset    = LaneOffset(NextLink(), autoPilot.m_nNextLane);
+    if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX) {
+        currentOffset += 1.458f;
+        nextOffset    += 1.458f;
+    }
+
+    // Where the lane starts and where it goes to, and how far the vehicle is from the start
+    const auto currentPos = CurrentLink().GetNodeCoors();
+    const auto nextPos    = NextLink().GetNodeCoors();
+    const CVector2D laneStart{ currentOffset * currentDir.y + currentPos.x, currentPos.y - currentOffset * currentDir.x };
+    const CVector2D laneEnd{ nextOffset * nextDir.y + nextPos.x, nextPos.y - nextOffset * nextDir.x };
+
+    const auto toStart  = CVector2D{ pos } - laneStart;
+    auto       distance = toStart.Magnitude();
+    const auto laneDiff = laneEnd - laneStart;
+    const auto along    = laneDiff.x * toStart.x + laneDiff.y * toStart.y;
+
+    // Keeps the nodes it has when it is still far enough from the lane start and moving away from it
+    const auto keepNodes = distance >= 5.0f
+        && (along <= 0.0f || distance >= 8.0f)
+        && !(along / (laneDiff.Magnitude() * distance) > 0.7f)
+        && reinterpret_cast<const uint16&>(autoPilot.m_nCurrentPathNodeInfo) != reinterpret_cast<const uint16&>(autoPilot.m_nNextPathNodeInfo);
+
+    if (!keepNodes) {
+        if (PickNextNodeAccordingStrategy(vehicle)) {
+            // The route is over, the mission goes on with the target in sight
+            const auto SteerTowards = [&](float x, float y) {
+                SteerAICarWithPhysicsHeadingForTarget(vehicle, nullptr, x, y, arg2, arg3, arg4, arg5);
+            };
+            const auto SteerTowardsPlayer = [&] {
+                const auto playerPos = FindPlayerCoors(-1);
+                SteerTowards(playerPos.x, playerPos.y);
+            };
+            const auto SteerTowardsTarget = [&] {
+                const auto& targetPos = autoPilot.m_TargetEntity->GetPosition();
+                SteerTowards(targetPos.x, targetPos.y);
+            };
+            const auto mission = autoPilot.m_nCarMission;
+            switch (mission) {
+            case MISSION_RAMPLAYER_FARAWAY:
+                autoPilot.m_nCarMission = MISSION_RAMPLAYER_CLOSE;
+                SteerTowardsPlayer();
+                return;
+            case MISSION_BLOCKPLAYER_FARAWAY:
+                autoPilot.m_nCarMission = MISSION_BLOCKPLAYER_CLOSE;
+                SteerTowardsPlayer();
+                return;
+            case MISSION_APPROACHPLAYER_FARAWAY:
+                autoPilot.m_nCarMission = MISSION_APPROACHPLAYER_CLOSE;
+                SteerTowardsPlayer();
+                return;
+            case MISSION_GOTOCOORDINATES:
+                autoPilot.m_nCarMission = MISSION_GOTOCOORDINATES_STRAIGHTLINE;
+                SteerTowards(autoPilot.m_vecDestinationCoors.x, autoPilot.m_vecDestinationCoors.y);
+                return;
+            case MISSION_GOTOCOORDINATES_ACCURATE:
+                autoPilot.m_nCarMission = MISSION_GOTOCOORDINATES_STRAIGHTLINE_ACCURATE;
+                SteerTowards(autoPilot.m_vecDestinationCoors.x, autoPilot.m_vecDestinationCoors.y);
+                return;
+            case MISSION_RAMCAR_FARAWAY:
+                autoPilot.m_nCarMission = MISSION_RAMCAR_CLOSE;
+                SteerTowardsTarget();
+                return;
+            case MISSION_BLOCKCAR_FARAWAY:
+                autoPilot.m_nCarMission = MISSION_BLOCKCAR_CLOSE;
+                SteerTowardsTarget();
+                return;
+            case MISSION_ESCORT_LEFT_FARAWAY:
+            case MISSION_ESCORT_RIGHT_FARAWAY:
+            case MISSION_ESCORT_REAR_FARAWAY:
+            case MISSION_ESCORT_FRONT_FARAWAY:
+                autoPilot.m_nCarMission = (eCarMission)(mission - 0x24);
+                SteerTowardsTarget();
+                return;
+            default:
+                break;
+            }
+        }
+
+        // Looks at the new links, the distance still comes from the directions of the old ones
+        if (!LinksLoaded()) {
+            StopCar();
+            return;
+        }
+        currentOffset = LaneOffset(CurrentLink(), autoPilot.m_nCurrentLane);
+        const auto newCurrentPos = CurrentLink().GetNodeCoors();
+        const CVector2D newLaneStart{ currentOffset * currentDir.y + newCurrentPos.x, newCurrentPos.y - currentOffset * currentDir.x };
+        distance = (newLaneStart - CVector2D{ pos }).Magnitude();
+
+        currentDir = LinkDir(CurrentLink(), autoPilot._smthCurr);
+        nextDir    = LinkDir(NextLink(), autoPilot._smthNext);
+    }
+
+    // The place the vehicle drives to, it is on the lane and further back the closer the vehicle is to it
+    const auto linkPos = CurrentLink().GetNodeCoors();
+    const CVector2D lanePoint{ linkPos.x + currentOffset * currentDir.y, linkPos.y - currentOffset * currentDir.x };
+    CVector2D       target{ lanePoint.x - distance * currentDir.x * 0.35f, lanePoint.y - distance * currentDir.y * 0.35f };
+    if (distance > 40.0f) {
+        target = lanePoint;
+    }
+
+    auto       targetHeading = CGeneral::GetATanOfXY(target.x - pos.x, target.y - pos.y);
+    const auto heading       = CGeneral::GetATanOfXY(forward.x, forward.y);
+    const auto drivingStyle  = autoPilot.m_nCarDrivingStyle;
+    if (drivingStyle == DRIVING_STYLE_AVOID_CARS || drivingStyle == DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_OBEYLIGHTS || drivingStyle == DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS) {
+        targetHeading = FindAngleToWeaveThroughTraffic(vehicle, nullptr, targetHeading, heading, 1.0f);
+    }
+
+    auto steer = targetHeading - heading;
+    while (steer < -PI) {
+        steer += TWO_PI;
+    }
+    while (steer > PI) {
+        steer -= TWO_PI;
+    }
+    const auto maxSteer = FindMaxSteerAngle(vehicle);
+    steer = std::clamp(steer, -maxSteer, maxSteer);
+
+    const auto& vel          = vehicle->m_vecMoveSpeed;
+    const auto  forwardSpeed = (vel.z * mat.GetForward().z + vel.y * mat.GetForward().y + vel.x * mat.GetForward().x) * 60.0f;
+
+    // What the traffic and the lights allow
+    auto trafficRatio = 1.0f;
+    switch (drivingStyle) {
+    case DRIVING_STYLE_STOP_FOR_CARS:
+    case DRIVING_STYLE_SLOW_DOWN_FOR_CARS:
+    case DRIVING_STYLE_STOP_FOR_CARS_IGNORE_LIGHTS:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS:
+        trafficRatio = FindMaximumSpeedForThisCarInTraffic(vehicle) / (float)autoPilot.m_nCruiseSpeed;
+        break;
+    default:
+        break;
+    }
+    switch (drivingStyle) {
+    case DRIVING_STYLE_STOP_FOR_CARS:
+    case DRIVING_STYLE_SLOW_DOWN_FOR_CARS:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_OBEYLIGHTS:
+    case DRIVING_STYLE_DRIVINGMODE_AVOIDCARS_STOPFORPEDS_OBEYLIGHTS:
+        if (CTrafficLights::ShouldCarStopForLight(vehicle, false)) {
+            CCarAI::CarHasReasonToStop(vehicle);
+            trafficRatio = 0.0f;
+        }
+        break;
+    default:
+        break;
+    }
+    if (CTrafficLights::ShouldCarStopForBridge(vehicle)) {
+        CCarAI::CarHasReasonToStop(vehicle);
+        trafficRatio = 0.0f;
+    }
+
+    // Slows down for the lane point being off to the side and for the next curve
+    const auto laneOffset  = LaneOffset(CurrentLink(), autoPilot.m_nCurrentLane);
+    const auto sideHeading = CGeneral::GetATanOfXY(
+        (laneOffset * currentDir.y + linkPos.x) - pos.x,
+        (linkPos.y - laneOffset * currentDir.x) - pos.y
+    );
+    const auto sideRatio = FindSpeedMultiplier(sideHeading - heading, 0.4f, 1.2f, 0.4f);
+    const auto curveRatio = FindSpeedMultiplier(CGeneral::GetATanOfXY(currentDir.x, currentDir.y) - CGeneral::GetATanOfXY(nextDir.x, nextDir.y), 0.1f, 1.2f, 0.4f);
+
+    const auto curveFactor = (distance > 40.0f || autoPilot.m_nCruiseSpeed < 12)
+        ? 1.0f
+        : 1.0f - (1.0f - curveRatio) * (1.0f - distance * 0.025f);
+
+    auto ratio = sideRatio;
+    {
+        const auto smaller = sideRatio < curveFactor ? sideRatio : curveFactor;
+        if (trafficRatio <= smaller) {
+            ratio = trafficRatio;
+        } else if (curveFactor <= sideRatio) {
+            ratio = curveFactor;
+        }
+    }
+
+    *arg4 = 0.0f;
+    const auto wantedSpeed = (float)autoPilot.m_nCruiseSpeed * ratio;
+    const auto speedDiff   = wantedSpeed - forwardSpeed;
+    if (wantedSpeed >= 0.05f || speedDiff >= 0.03f) {
+        if (speedDiff <= 0.0f) {
+            *arg3 = 0.0f;
+            *arg4 = std::min(speedDiff * -0.083333336f, 0.5f);
+        } else {
+            *arg3 = std::min(speedDiff * (forwardSpeed >= 2.0f ? 0.125f : 0.25f), 1.0f);
+
+            // Bicycles pedal when they have to speed up a lot
+            if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX && speedDiff > 3.0f) {
+                auto& pedaling = static_cast<CBmx*>(vehicle)->m_fControlPedaling;
+                if (pedaling <= 0.0f) {
+                    pedaling = 10.0f;
+                }
+            }
+        }
+    } else {
+        *arg4 = 1.0f;
+        *arg3 = 0.0f;
+    }
+    *arg2 = steer;
+    *arg5 = false;
+
+    // When it gets to the destination it reverses a bit to line up with it
+    if ((autoPilot.m_nCarMission == MISSION_GOTOCOORDINATES || autoPilot.m_nCarMission == MISSION_GOTOCOORDINATES_ACCURATE) && autoPilot.m_nTempAction == TEMPACT_NONE) {
+        const auto toDest   = pos - autoPilot.m_vecDestinationCoors;
+        const auto distDest = toDest.Magnitude();
+        if (distDest < 8.0f && std::abs(DotProduct(pos, mat.GetForward())) / distDest < 0.2f) {
+            autoPilot.m_nTempAction     = TEMPACT_REVERSE;
+            autoPilot.m_nTempActionTime = CTimer::GetTimeInMS() + 2000;
+        }
+    }
 }
 
 // 0x435830
