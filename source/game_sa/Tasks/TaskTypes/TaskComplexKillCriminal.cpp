@@ -345,7 +345,7 @@ CTask* CTaskComplexKillCriminal::CreateFirstSubTask(CPed* ped) {
     if (!m_Criminal || m_Criminal->IsPlayer()) {
         return nullptr;
     }
-    if (FindPlayerWanted()->m_WantedLevel != 0) { // The cops have the player to deal with
+    if ((int32)FindPlayerWanted()->m_WantedLevel != 0) { // The cops have the player to deal with
         return nullptr;
     }
     if (!g_LoadMonitor.IsAmbientCrimeEnabled()) {
@@ -511,7 +511,7 @@ CTask* CTaskComplexKillCriminal::ControlSubTask(CPed* ped) {
     }
 
     // The cops are needed to chase the player
-    if (FindPlayerWanted()->m_WantedLevel != 0) {
+    if ((int32)FindPlayerWanted()->m_WantedLevel != 0) {
         if (FindPlayerWanted()->CanCopJoinPursuit(static_cast<CCopPed*>(ped)) && m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
             return nullptr;
         }

@@ -486,7 +486,7 @@ bool CTaskSimpleCarDrive::ProcessPed(CPed* ped) {
                     return true;
                 }
 
-                auto* const rollDoorAnim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_CAR_ROLLDOOR);
+                auto* const rollDoorAnim = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), ANIM_ID_CAR_ROLLDOOR);
                 if (!(pedVeh->m_nGettingOutFlags & 1) && !(pedVeh->m_nGettingInFlags & 1) && !rollDoorAnim) {
                     if (IsPadIdle()) {
                         pedVeh->SetGettingOutFlags(1);
@@ -513,7 +513,7 @@ bool CTaskSimpleCarDrive::ProcessPed(CPed* ped) {
             }
             if (!m_b08 && !m_b10) {
                 if (auto* const rideData = m_pVehicle->GetRideAnimData()) {
-                    CAnimManager::BlendAnimation(ped->m_pRwClump, rideData->AnimGroup, ANIM_ID_BIKE_PASSENGER, 8.0f);
+                    CAnimManager::BlendAnimation(ped->GetRpClump(), rideData->AnimGroup, ANIM_ID_BIKE_PASSENGER, 8.0f);
                 }
                 m_b10 = true;
             }
@@ -534,13 +534,13 @@ bool CTaskSimpleCarDrive::ProcessPed(CPed* ped) {
     }
 
     // Takes a sip of the cigarette
-    if (auto* const held = ped->GetEntityThatThisPedIsHolding(); held && held->m_nModelIndex == MI_GANG_SMOKE && !g_ikChainMan.IsLooking(ped) && CGeneral::GetRandomNumberInRange(0, 60) == 15) {
+    if (auto* const held = ped->GetEntityThatThisPedIsHolding(); held && held->m_nModelIndex == ModelIndices::MI_GANG_SMOKE && !g_ikChainMan.IsLooking(ped) && CGeneral::GetRandomNumberInRange(0, 60) == 15) {
         if (auto* const holdTask = static_cast<CTaskSimpleHoldEntity*>(ped->GetTaskManager().FindActiveTaskByType(TASK_SIMPLE_HOLD_ENTITY))) {
             holdTask->PlayAnim(m_pVehicle->IsPassenger(ped) ? ANIM_ID_PASS_SMOKE_IN_CAR : ANIM_ID_SMOKE_IN_CAR, (AssocGroupId)0);
         }
     }
 
-    if (!RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_SMOKE_IN_CAR)) {
+    if (!RpAnimBlendClumpGetAssociation(ped->GetRpClump(), ANIM_ID_SMOKE_IN_CAR)) {
         TriggerIK(ped);
     } else {
         if (g_ikChainMan.IsLooking(ped)) {

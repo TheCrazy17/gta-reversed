@@ -134,6 +134,7 @@
 #include "Events/EventPedToFlee.h"
 #include "Events/EventPlayerCollisionWithPed.h"
 #include "Events/EventPedCollisionWithPed.h"
+#include "Events/EventLeaderExitedCarAsDriver.h"
 #include "Events/EventPedCollisionWithPlayer.h"
 #include "Events/EventPotentialWalkIntoPed.h"
 #include "Events/EventHealthReallyLow.h"
@@ -1543,7 +1544,7 @@ void CEventHandler::ComputeKnockOffBikeResponse(CEvent* e, CTask* tactive, CTask
     // The one who knocked the ped off takes the bike, if there is one
     const auto FinishWithCarjacker = [&] {
         if (ko->m_ped) {
-            CEventDraggedOutCar draggedOut{ veh, ko->m_ped, ko->m_isVictimDriver };
+            CEventDraggedOutCar draggedOut{ veh, ko->m_ped, ko->m_isVictimDriver != 0 };
             ped->GetIntelligence()->GetEventGroup().Add(&draggedOut, true);
             if (isBike) {
                 veh->AsBike()->bikeFlags.bOnSideStand = true;

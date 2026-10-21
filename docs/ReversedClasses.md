@@ -1,17 +1,16 @@
-# Reimplementation progress (*): 99%
+# Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 21, 2026 at 13:03:43 UTC
-(Triggered by commit [ef45f167](https://github.com/TheCrazy17/gta-reversed/commit/ef45f1674d22f1f2c87d228b6c1ed19779e220b7))
+Last update was at Oct 21, 2026 at 14:45:22 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8295 out of 8344 functions done in 720 categories)
+## Stats (8311 out of 8346 functions done in 720 categories)
 
-#### Completely reversed categories (694/720) [96%]
+#### Completely reversed categories (702/720) [98%]
 
 <details>
 <summary>See list of categories</summary>
@@ -19,7 +18,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CControllerConfigManager (58)<br />
 - CFormation (9)<br />
 - CHandShaker (3)<br />
-- CCutsceneMgr (35)<br />
+- CCutsceneMgr (36)<br />
 - CFileMgr (17)<br />
 - CLoadedCarGroup (8)<br />
 - RenderBuffer (4)<br />
@@ -38,6 +37,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - IKChain_c (20)<br />
 - CCheckpoint (1)<br />
 - CCheckpoints (8)<br />
+- CWeaponEffects (9)<br />
 - CPedList (8)<br />
 - CBouncingPanel (3)<br />
 - CRopes (11)<br />
@@ -52,6 +52,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CWindModifiers (2)<br />
 - CGenericGameStorage (19)<br />
 - C_PcSave (5)<br />
+- CFileLoader (48)<br />
 - CWorld (95)<br />
 - CStreamingInfo (7)<br />
 - CStreaming (94)<br />
@@ -131,6 +132,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CUpsideDownCarCheck (5)<br />
 - CCamera (115)<br />
 - CMessages (28)<br />
+- CGangWars (35)<br />
 - CPlayerPedData (5)<br />
 - CTimeCycle (20)<br />
 - CColourSet (2)<br />
@@ -171,7 +173,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CPedType (13)<br />
 - CAcquaintance (5)<br />
 - CWeather (14)<br />
-- CPathFind (64)<br />
+- CPathFind (65)<br />
 - CPathNode (1)<br />
 - CLoadMonitor (7)<br />
 - CPedStats (5)<br />
@@ -304,6 +306,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CEventEscalator (1)<br />
 - CEventDanger (4)<br />
 - CEventCopCarBeingStolen (2)<br />
+- CEventHandler (72)<br />
 - CEventAcquaintancePedHate (1)<br />
 - CEventAcquaintancePedHateBadlyLit (2)<br />
 - CRect (8)<br />
@@ -383,6 +386,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CTaskComplexFleeShooting (8)<br />
 - CTaskComplexFollowLeaderAnyMeans (8)<br />
 - CTaskComplexFollowPointRoute (13)<br />
+- CTaskComplexGangFollower (7)<br />
 - CTaskComplexGangJoinRespond (7)<br />
 - CTaskComplexGangLeader (13)<br />
 - CTaskComplexGetOnBoatSeat (8)<br />
@@ -399,6 +403,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CTaskComplexInWater (7)<br />
 - CTaskComplexInvestigateDeadPed (9)<br />
 - CTaskComplexInvestigateDisturbance (8)<br />
+- CTaskComplexKillCriminal (11)<br />
 - CTaskComplexKillPedOnFootArmed (11)<br />
 - CTaskComplexKillPedGroupOnFoot (9)<br />
 - CTaskComplexKillPedOnFootMelee (10)<br />
@@ -513,6 +518,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - CTaskComplexLeaveAnyCar (7)<br />
 - CTaskComplexWanderCop (9)<br />
 - CTaskSimpleStandStill (3)<br />
+- CTaskSimpleCarDrive (13)<br />
 - CTaskComplexPartnerChat (1)<br />
 - CTaskComplexObserveTrafficLightsAndAchieveHeading (5)<br />
 - CTaskSimpleInAir (4)<br />
@@ -703,6 +709,7 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
 - Interior_c (52)<br />
+- InteriorGroup_c (24)<br />
 - InteriorManager_c (21)<br />
 - CRunningScript (39)<br />
 - CTheScripts (69)<br />
@@ -712,35 +719,27 @@ Last update was at Oct 21, 2026 at 13:03:43 UTC
 
 </details>
 
-#### Partially reversed categories (25/720) [3%]
+#### Partially reversed categories (17/720) [2%]
 
 <details>
 <summary>See list of categories</summary>
 - CPedGroupPlacer (1/4) [25%]<br />
-- CWeaponEffects (8/9) [89%]<br />
 - CRope (6/7) [86%]<br />
-- CFileLoader (47/48) [98%]<br />
 - CPopulation (65/66) [98%]<br />
 - CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
 - CPostEffects (36/38) [95%]<br />
 - CStencilShadows (9/13) [69%]<br />
-- CGangWars (33/35) [94%]<br />
-- CPedGeometryAnalyser (36/38) [95%]<br />
+- CPedGeometryAnalyser (37/38) [97%]<br />
 - CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
-- CPed (143/145) [99%]<br />
-- CEventHandler (69/72) [96%]<br />
-- CTaskComplexGangFollower (6/7) [86%]<br />
-- CTaskComplexKillCriminal (9/11) [82%]<br />
-- CTaskSimpleCarDrive (12/13) [92%]<br />
+- CPed (144/145) [99%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (4/5) [80%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEScriptAudioEntity (17/19) [89%]<br />
 - CAEAmbienceTrackManager (6/7) [86%]<br />
-- InteriorGroup_c (23/24) [96%]<br />
 
 </details>
 

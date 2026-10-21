@@ -381,6 +381,11 @@
   },
   {
     "Category": "CCutsceneMgr",
+    "Name": "FindCutsceneAudioTrackId",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCutsceneMgr",
     "Name": "SetCutsceneAnim",
     "IsReversed": true
   },
@@ -2092,7 +2097,7 @@
   {
     "Category": "CWeaponEffects",
     "Name": "Render",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedList",
@@ -2772,7 +2777,7 @@
   {
     "Category": "CFileLoader",
     "Name": "Load2dEffect",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWorld",
@@ -11662,7 +11667,7 @@
   {
     "Category": "CGangWars",
     "Name": "CreateAttackWave",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CGangWars",
@@ -11777,7 +11782,7 @@
   {
     "Category": "CGangWars",
     "Name": "Update",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CGangWars",
@@ -14176,6 +14181,11 @@
   },
   {
     "Category": "CPathFind",
+    "Name": "RemoveInteriorLinks",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPathFind",
     "Name": "MarkRegionsForCoors",
     "IsReversed": true
   },
@@ -14937,7 +14947,7 @@
   {
     "Category": "CPedGeometryAnalyser",
     "Name": "ComputeEntityBoundingBoxCornersUncached",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGeometryAnalyser",
@@ -18522,7 +18532,7 @@
   {
     "Category": "CPed",
     "Name": "PlayFootSteps",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -21712,7 +21722,7 @@
   {
     "Category": "CEventHandler",
     "Name": "ComputeKnockOffBikeResponse",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CEventHandler",
@@ -21752,12 +21762,12 @@
   {
     "Category": "CEventHandler",
     "Name": "ComputePedCollisionWithPedResponse",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CEventHandler",
     "Name": "ComputePedCollisionWithPlayerResponse",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CEventHandler",
@@ -24897,7 +24907,7 @@
   {
     "Category": "CTaskComplexGangFollower",
     "Name": "ControlSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexGangJoinRespond",
@@ -25557,12 +25567,12 @@
   {
     "Category": "CTaskComplexKillCriminal",
     "Name": "CreateFirstSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexKillCriminal",
     "Name": "ControlSubTask",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskComplexKillPedOnFootArmed",
@@ -29472,7 +29482,7 @@
   {
     "Category": "CTaskSimpleCarDrive",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskSimpleCarDrive",
@@ -40842,7 +40852,7 @@
   {
     "Category": "InteriorGroup_c",
     "Name": "SetupPaths",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "InteriorGroup_c",

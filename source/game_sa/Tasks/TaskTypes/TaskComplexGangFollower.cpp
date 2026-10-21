@@ -2,6 +2,7 @@
 
 #include "TaskComplexGangFollower.h"
 #include "Audio/Enums/PedSpeechContexts.h"
+#include "ModelIndices.h"
 #include "TaskSimplePause.h"
 #include "TaskComplexTurnToFaceEntityOrCoord.h"
 #include "TaskComplexSignalAtPed.h"
@@ -214,7 +215,7 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
         return m_pSubTask;
     }
 
-    auto* const walkAnim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_WALK);
+    auto* const walkAnim = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), ANIM_ID_WALK);
 
     const auto leaderMoveState = m_Leader->GetIntelligence()->GetMoveStateFromGoToTask();
     const auto leaderIsMoving  = leaderMoveState == PEDMOVE_WALK || leaderMoveState == PEDMOVE_RUN || leaderMoveState == PEDMOVE_SPRINT;
@@ -287,7 +288,7 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
         }
     } else if (CTaskComplexGangLeader::ShouldLoadGangAnims()) {
         const auto blockIdx = CAnimManager::GetAnimationBlockIndex("gangs");
-        if (CAnimManager::ms_aAnimBlocks[blockIdx].IsLoaded) {
+        if (CAnimManager::GetAnimationBlock("gangs")->IsLoaded) {
             CAnimManager::AddAnimBlockRef(blockIdx);
             m_Flags |= 1;
         } else {
@@ -300,7 +301,7 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
     }
 
     if (m_ExhaleTimer.m_bStarted && m_ExhaleTimer.IsOutOfTime()) {
-        if (const auto clump = ped->m_pRwClump; clump && RpClumpGetFrame(clump)) {
+        if (const auto clump = ped->GetRpClump(); clump && RpClumpGetFrame(clump)) {
             if (auto* const fx = g_fxMan.CreateFxSystem("exhale", CVector{ 0.0f, 0.1f, 0.0f }, RwFrameGetMatrix(RpClumpGetFrame(clump)), false)) {
                 fx->AttachToBone(ped, BONE_HEAD);
                 fx->PlayAndKill();
@@ -330,10 +331,10 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
     }
 
     if (auto* const held = ped->GetEntityThatThisPedIsHolding()) {
-        const auto* const animA = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12B);
-        const auto* const animB = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12C);
-        const auto* const animC = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12D);
-        const auto* const animD = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12E);
+        const auto* const animA = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), 0x12B);
+        const auto* const animB = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), 0x12C);
+        const auto* const animC = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), 0x12D);
+        const auto* const animD = RpAnimBlendClumpGetAssociation(ped->GetRpClump(), 0x12E);
         const auto        usingHeldObject = animA || animB || animC || animD;
 
         if (usingHeldObject) {
@@ -360,13 +361,13 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
                 return m_pSubTask;
             }
 
-            if (held->m_nModelIndex == MI_GANG_DRINK) {
+            if (held->m_nModelIndex == ModelIndices::MI_GANG_DRINK) {
                 if (CGeneral::GetRandomNumberInRange(0, 500) < 250) {
                     friendPed->Say(CTX_GLOBAL_BOOZE_REQUEST);
                 } else {
                     ped->Say(CTX_GLOBAL_BOOZE_RECEIVE, 1500);
                 }
-            } else if (held->m_nModelIndex == MI_GANG_SMOKE) {
+            } else if (held->m_nModelIndex == ModelIndices::MI_GANG_SMOKE) {
                 if (CGeneral::GetRandomNumberInRange(0, 500) < 250) {
                     friendPed->Say(CTX_GLOBAL_SPLIFF_REQUEST);
                 } else {
