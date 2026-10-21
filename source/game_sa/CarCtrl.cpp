@@ -129,7 +129,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SetUpDriverAndPassengersForVehicle, 0x4217C0);
     RH_ScopedInstall(SlowCarDownForCarsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x432420);
     RH_ScopedInstall(SlowCarDownForObjectsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x42D4F0);
-    RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0, { .Reversed = false });
+    RH_ScopedInstall(SlowCarDownForOtherCar, 0x42D0E0);
     RH_ScopedInstall(SlowCarDownForPedsSectorList<CPtrListDoubleLink<CPhysical*>>, 0x425440, { .Reversed = false });
     RH_ScopedInstall(SteerAIBoatWithPhysicsAttackingPlayer, 0x428DE0);
     RH_ScopedInstall(SteerAIBoatWithPhysicsCirclingPlayer, 0x429090);
@@ -2020,7 +2020,78 @@ void CCarCtrl::SlowCarDownForObjectsSectorList(PtrListType& ptrList, CVehicle* v
 
 // 0x42D0E0
 void CCarCtrl::SlowCarDownForOtherCar(CEntity* car1, CVehicle* car2, float* arg3, float arg4) {
-    plugin::Call<0x42D0E0, CEntity*, CVehicle*, float*, float>(car1, car2, arg3, arg4);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nTimeSwitchedToRealPhysics) == 0x3B0);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nCarCtrlFlags) == 0x3DB);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_ObstructingEntity) == 0x420);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_nTempActionTime) == 0x3BC);
+
+    // car1 is the one that might be in the way of car2, arg3 is the speed to go at (it only gets lowered), arg4 the speed it wants to go at
+    auto* const other   = static_cast<CVehicle*>(car1);
+    auto* const vehicle = car2;
+
+    // The directions they go to, without the height
+    const auto Flat = [](const CVector& dir) {
+        const auto length = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+        if (length == 0.0f) {
+            return CVector{ 1.0f, dir.y, 0.0f };
+        }
+        return CVector{ dir.x * (1.0f / length), dir.y * (1.0f / length), 0.0f };
+    };
+    auto vehDir = Flat(vehicle->GetMatrix().GetForward());
+
+    // Not if it is behind
+    const auto& vehPos   = vehicle->GetPosition();
+    const auto& otherPos = other->GetPosition();
+    if ((otherPos.x - vehPos.x) * vehDir.x + (otherPos.y - vehPos.y) * vehDir.y < 0.0f) {
+        return;
+    }
+
+    // How far they move in a second, relative to each other
+    const auto relX = other->m_vecMoveSpeed.x * 60.0f - vehDir.x * arg4;
+    const auto relY = other->m_vecMoveSpeed.y * 60.0f - vehDir.y * arg4;
+    auto       otherDir = Flat(other->GetMatrix().GetForward());
+
+    const auto frontTime = TestCollisionBetween2MovingRects_OnlyFrontBumper(other, vehicle, relX, relY, &vehDir, &otherDir);
+    const auto fullTime  = TestCollisionBetween2MovingRects(vehicle, other, -relX, -relY, &otherDir, &vehDir);
+    const auto time      = fullTime <= frontTime ? fullTime : frontTime;
+    if (time < 0.0f) {
+        return;
+    }
+
+    if (time < 1.5f) {
+        vehicle->m_autoPilot.carCtrlFlags.bHonkAtCar = true;
+        vehicle->m_autoPilot.m_ObstructingEntity     = other;
+        CEntity::RegisterReference(vehicle->m_autoPilot.m_ObstructingEntity);
+
+        if (time < 1.0f / arg4) {
+            *arg3 = 0.0f;
+        } else if (time >= (1.0f / arg4) * 3.0f) {
+            const auto allowed = std::max((time - 0.2f) * 0.7692308f, 0.0f) * arg4;
+            *arg3 = std::min(*arg3, allowed);
+        } else {
+            *arg3 = std::min(*arg3, 1.0f);
+        }
+    }
+
+    // Two vehicles that are about to hit head on, the one with the lower address gives way
+    if (time >= 0.0f && time < 0.5f && other->GetIsTypeVehicle()
+        && CTimer::GetTimeInMS() - vehicle->m_autoPilot.m_nTimeSwitchedToRealPhysics > 15000u
+        && CTimer::GetTimeInMS() - other->m_autoPilot.m_nTimeSwitchedToRealPhysics > 15000u
+    ) {
+        const auto& otherForward = other->GetMatrix().GetForward();
+        const auto& vehForward   = vehicle->GetMatrix().GetForward();
+        if (other != FindPlayerVehicle(-1, false)
+            && otherForward.x * vehForward.x + otherForward.y * vehForward.y < -0.5f
+            && vehicle < other
+        ) {
+            *arg3 = std::max(arg4 * 0.2f, *arg3);
+            if (vehicle->GetStatus() == STATUS_SIMPLE) {
+                SwitchVehicleToRealPhysics(vehicle);
+            }
+            vehicle->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+            vehicle->m_autoPilot.m_nTempActionTime  = CTimer::GetTimeInMS() + 1000;
+        }
+    }
 }
 
 // 0x425440
