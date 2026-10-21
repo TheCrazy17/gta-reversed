@@ -121,7 +121,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(JoinCarWithRoadSystem, 0x42F5A0);
     RH_ScopedInstall(JoinCarWithRoadSystemGotoCoors, 0x42F870);
     RH_ScopedInstall(PickNextNodeAccordingStrategy, 0x432B10);
-    RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80, { .Reversed = false });
+    RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80);
     RH_ScopedInstall(PickNextNodeToChaseCar, 0x426EF0);
     RH_ScopedInstall(PickNextNodeToFollowPath, 0x427740);
     RH_ScopedInstall(PossiblyRemoveVehicle, 0x424F80, { .Reversed = false });
@@ -1961,7 +1961,247 @@ void CCarCtrl::InitSequence(int32 numSequenceElements) {
 
 // 0x42DE80
 void CCarCtrl::PickNextNodeRandomly(CVehicle* vehicle) {
-    plugin::Call<0x42DE80, CVehicle*>(vehicle);
+    static_assert(offsetof(CVehicle, m_nForcedRandomRouteSeed) == 0x45E);
+    static_assert(offsetof(CVehicle, m_nCreatedBy) == 0x4A4);
+    static_assert(offsetof(CAutoPilot, m_speed) == 0x38);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    if (vehicle->m_nForcedRandomRouteSeed) {
+        std::srand((unsigned)(int32)vehicle->m_nForcedRandomRouteSeed);
+    }
+
+    const auto original = autoPilot.m_currentAddress;
+    const auto start    = autoPilot.m_startingRouteNode;
+    if (!ThePaths.m_pPathNodes[original.m_wAreaId] || !ThePaths.m_pPathNodes[start.m_wAreaId] || !ThePaths.m_pPathNodes[autoPilot.m_nNextPathNodeInfo.m_wAreaId]) {
+        return;
+    }
+
+    const auto& startNode = ThePaths.m_pPathNodes[start.m_wAreaId][start.m_wNodeId];
+    const auto  base      = startNode.m_wBaseLinkId;
+    const auto  numLinks  = (int32)startNode.m_nNumLinks;
+
+    // The lanes the vehicle can pick the next link from, looking at the link it is on
+    const auto& fromLink = ThePaths.GetCarPathLink(autoPilot.m_nNextPathNodeInfo);
+    const auto  sameWay  = fromLink.m_attachedTo == start;
+    const auto  lanesNow = (int32)(sameWay ? fromLink.m_numOppositeDirLanes : fromLink.m_numSameDirLanes);
+    const auto  noOtherLanes = (sameWay ? fromLink.m_numSameDirLanes : fromLink.m_numOppositeDirLanes) == 0;
+
+    // Which way the vehicle is allowed to turn: 4 left, 2 right and 1 straight
+    uint8 allowedTurns = 0;
+    if (autoPilot.m_nNextLane == 0) {
+        allowedTurns = 4;
+    }
+    if (autoPilot.m_nNextLane == lanesNow - 1) {
+        allowedTurns |= 2;
+    }
+    if (lanesNow < 3 || allowedTurns == 0) {
+        allowedTurns |= 1;
+    }
+
+    autoPilot.m_endingRouteNode = autoPilot.m_currentAddress;
+    autoPilot.m_currentAddress  = autoPilot.m_startingRouteNode;
+
+    if (ThisVehicleShouldTryNotToTurn(vehicle)) {
+        allowedTurns = 1;
+    }
+
+    InitSequence(numLinks);
+
+    // The links are looked at in a different order every time
+    const auto SequenceIndex = [](int32 i) {
+        return bSequenceOtherWay
+            ? (SequenceRandomOffset + i) % SequenceElements
+            : (SequenceElements - i + SequenceRandomOffset) % SequenceElements;
+    };
+
+    CCarPathLinkAddress chosenLink = autoPilot.m_nNextPathNodeInfo;
+
+    // Only the first of the three is sure to leave the vehicle going somewhere new
+    const auto Search = [&](auto&& IsGood) {
+        for (auto i = 0; i < numLinks; i++) {
+            const auto idx       = SequenceIndex(i);
+            const auto candidate = ThePaths.m_pNodeLinks[start.m_wAreaId][base + idx];
+            autoPilot.m_startingRouteNode = candidate;
+            if (!ThePaths.m_pPathNodes[candidate.m_wAreaId]) {
+                continue;
+            }
+            if (IsGood(candidate, idx, chosenLink)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // How many lanes the link has when going from the start node to the candidate
+    const auto LinkLanes = [&](CCarPathLinkAddress link) {
+        const auto& l = ThePaths.GetCarPathLink(link);
+        struct { bool noLanesTowards, noLanesBack; } res{};
+        if (l.m_attachedTo == start) {
+            res.noLanesTowards = l.m_numSameDirLanes == 0;
+            res.noLanesBack    = l.m_numOppositeDirLanes == 0;
+        } else {
+            res.noLanesTowards = l.m_numOppositeDirLanes == 0;
+            res.noLanesBack    = l.m_numSameDirLanes == 0;
+        }
+        return res;
+    };
+
+    auto found = Search([&](CNodeAddress candidate, int32 idx, CCarPathLinkAddress& link) {
+        bool ignore = false;
+        const auto direction = FindPathDirection(original, autoPilot.m_currentAddress, candidate, &ignore);
+        const auto navi      = ThePaths.m_pNaviLinks[start.m_wAreaId][base + idx];
+        if (!ThePaths.m_pPathNodes[navi.m_wAreaId]) {
+            return false;
+        }
+        if (vehicle->GetStatus() == STATUS_SIMPLE && ignore) {
+            return false;
+        }
+        const auto lanes = LinkLanes(navi);
+        if (IsThisAnAppropriateNode(vehicle, original, start, candidate, lanes.noLanesTowards) && (direction & allowedTurns) != 0 && (!noOtherLanes || !lanes.noLanesBack)) {
+            link = navi;
+            return true;
+        }
+        return false;
+    });
+
+    // Then any link that is not a dead end, taking the ones that are not switched off first
+    if (!found) {
+        found = Search([&](CNodeAddress candidate, int32 idx, CCarPathLinkAddress& link) {
+            const auto navi = ThePaths.m_pNaviLinks[start.m_wAreaId][base + idx];
+            if (!ThePaths.m_pPathNodes[navi.m_wAreaId]) {
+                return false;
+            }
+            if (candidate == original || LinkLanes(navi).noLanesTowards) {
+                return false;
+            }
+            const auto& candidateNode = ThePaths.m_pPathNodes[candidate.m_wAreaId][candidate.m_wNodeId];
+            const auto& originalNode  = ThePaths.m_pPathNodes[original.m_wAreaId][original.m_wNodeId];
+            if (!candidateNode.m_isSwitchedOff || originalNode.m_isSwitchedOff) {
+                link = navi;
+                return true;
+            }
+            return false;
+        });
+    }
+    if (!found) {
+        found = Search([&](CNodeAddress candidate, int32 idx, CCarPathLinkAddress& link) {
+            const auto navi = ThePaths.m_pNaviLinks[start.m_wAreaId][base + idx];
+            if (!ThePaths.m_pPathNodes[navi.m_wAreaId]) {
+                return false;
+            }
+            if (candidate != original && !LinkLanes(navi).noLanesTowards) {
+                link = navi;
+                return true;
+            }
+            return false;
+        });
+    }
+    if (!found) {
+        // Nowhere else to go, so it goes back
+        autoPilot.m_startingRouteNode = original;
+        chosenLink                    = autoPilot.m_nNextPathNodeInfo;
+    }
+
+    if (original == autoPilot.m_startingRouteNode && vehicle->GetStatus() != STATUS_PHYSICS) {
+        SwitchVehicleToRealPhysics(vehicle);
+    }
+
+    // Some nodes make the vehicle park, stop or wait
+    const auto now = CTimer::GetTimeInMS();
+    {
+        const auto& node = ThePaths.m_pPathNodes[autoPilot.m_startingRouteNode.m_wAreaId][autoPilot.m_startingRouteNode.m_wNodeId];
+        switch (node.m_nBehaviourType) {
+        case 1:
+            SwitchVehicleToRealPhysics(vehicle);
+            autoPilot.m_nCarMission      = MISSION_PARK_PARALLEL;
+            autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_STOP_FOR_CARS;
+            break;
+        case 2:
+            SwitchVehicleToRealPhysics(vehicle);
+            autoPilot.m_nCarMission      = MISSION_PARK_PERPENDICULAR;
+            autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_STOP_FOR_CARS;
+            break;
+        case 10:
+            autoPilot.m_nTempAction     = TEMPACT_WAIT;
+            autoPilot.m_nTempActionTime = now + 10000;
+            if (vehicle->GetStatus() == STATUS_SIMPLE) {
+                autoPilot.ModifySpeed(0.0f);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    {
+        const auto& node = ThePaths.m_pPathNodes[autoPilot.m_currentAddress.m_wAreaId][autoPilot.m_currentAddress.m_wNodeId];
+        if (node.m_nBehaviourType == 9 && vehicle->m_nCreatedBy != MISSION_VEHICLE) {
+            autoPilot.m_nTempAction     = TEMPACT_WAIT;
+            autoPilot.m_nTempActionTime = now + 4500;
+            if (vehicle->GetStatus() == STATUS_SIMPLE) {
+                autoPilot.ModifySpeed(0.0f);
+            }
+        }
+    }
+
+    // Moves one node forward
+    autoPilot.m_nPreviousPathNodeInfo = autoPilot.m_nCurrentPathNodeInfo;
+    autoPilot.m_nCurrentPathNodeInfo  = autoPilot.m_nNextPathNodeInfo;
+    autoPilot._smthPrev               = autoPilot._smthCurr;
+    autoPilot._smthCurr               = autoPilot._smthNext;
+    autoPilot.field_C                += autoPilot.m_nSpeedScaleFactor;
+    autoPilot.m_nCurrentLane          = autoPilot.m_nNextLane;
+    autoPilot.m_nNextPathNodeInfo     = chosenLink;
+
+    // Nodes are ordered by area first and then by their index in it
+    const auto newStart  = autoPilot.m_startingRouteNode;
+    const auto movesBack = start.m_wAreaId < newStart.m_wAreaId || (start.m_wAreaId == newStart.m_wAreaId && start.m_wNodeId < newStart.m_wNodeId);
+
+    autoPilot._smthNext = movesBack ? -1 : 1;
+    int32 numLanes = 1;
+    if (ThePaths.m_pPathNodes[chosenLink.m_wAreaId]) {
+        const auto& nextLink = ThePaths.GetCarPathLink(chosenLink);
+        numLanes = movesBack ? nextLink.m_numSameDirLanes : nextLink.m_numOppositeDirLanes;
+    }
+
+    // Sometimes changes the lane when the nodes are far apart
+    const auto nodeDiff = ThePaths.m_pPathNodes[newStart.m_wAreaId][newStart.m_wNodeId].GetPosition()
+                        - ThePaths.m_pPathNodes[autoPilot.m_currentAddress.m_wAreaId][autoPilot.m_currentAddress.m_wNodeId].GetPosition();
+    if (CVector2D{ nodeDiff }.SquaredMagnitude() > 256.0f && --autoPilot.field_50 == 0) {
+        autoPilot.field_50 = (char)((std::rand() & 3) + 4);
+        autoPilot.m_nNextLane += std::rand() < 0x3FFF ? 1 : -1;
+    }
+    autoPilot.m_nNextLane = (int8)std::max(std::min((int32)autoPilot.m_nNextLane, numLanes - 1), 0);
+
+    if (autoPilot.carCtrlFlags.bStayInFastLane) {
+        autoPilot.m_nNextLane = 0;
+    } else if (autoPilot.carCtrlFlags.bStayInSlowLane) {
+        autoPilot.m_nNextLane = (int8)std::max(numLanes - 1, 0);
+    }
+
+    if (vehicle->GetStatus() != STATUS_SIMPLE) {
+        return;
+    }
+
+    // How the vehicle drives from one link to the next
+    const auto& currentLink = ThePaths.GetCarPathLink(autoPilot.m_nCurrentPathNodeInfo);
+    const auto& nextLink    = ThePaths.GetCarPathLink(autoPilot.m_nNextPathNodeInfo);
+
+    const auto currentDir = CVector2D{ (float)currentLink.m_dir.x, (float)currentLink.m_dir.y } * (float)autoPilot._smthCurr;
+    const auto nextDir    = CVector2D{ (float)nextLink.m_dir.x, (float)nextLink.m_dir.y } * (float)autoPilot._smthNext;
+
+    const auto currentOffset = (currentLink.OneWayLaneOffset() + (float)autoPilot.m_nCurrentLane) * 5.4f;
+    const auto nextOffset    = (nextLink.OneWayLaneOffset() + (float)autoPilot.m_nNextLane) * 5.4f;
+
+    const auto currentPos = currentLink.GetNodeCoors();
+    const auto nextPos    = nextLink.GetNodeCoors();
+    const CVector startPos{ currentOffset * currentDir.y + currentPos.x, currentPos.y - currentOffset * currentDir.x, 0.0f };
+    const CVector endPos{ nextOffset * nextDir.y + nextPos.x, nextPos.y - nextOffset * nextDir.x, 0.0f };
+
+    // The time it takes to go through the curve depends on the speed of the vehicle
+    const auto scaled = CCurves::CalcSpeedScaleFactor(startPos, endPos, currentDir.x, currentDir.y, nextDir.x, nextDir.y) * (1000.0f / autoPilot.m_speed);
+    const auto time   = std::isfinite(scaled) && scaled > -2147483648.0f && scaled < 2147483648.0f ? (int32)scaled : INT32_MIN;
+    autoPilot.m_nSpeedScaleFactor = (uint32)std::max(10, time);
 }
 
 // 0x426EF0
