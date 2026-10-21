@@ -95,7 +95,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
     RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470);
     RH_ScopedInstall(FindMaximumSpeedForThisCarInTraffic, 0x434400);
-    RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20, { .Reversed = false });
+    RH_ScopedInstall(FindNodesThisCarIsNearestTo, 0x42BD20);
     RH_ScopedInstall(FindPathDirection, 0x422090);
     RH_ScopedInstall(FindPercDependingOnDistToLink, 0x422620);
     RH_ScopedInstall(FindSequenceElement, 0x421770);
@@ -701,7 +701,70 @@ float CCarCtrl::FindMaximumSpeedForThisCarInTraffic(CVehicle* vehicle) {
 
 // 0x42BD20
 void CCarCtrl::FindNodesThisCarIsNearestTo(CVehicle* vehicle, CNodeAddress& nodeAddress1, CNodeAddress& nodeAddress2) {
-    plugin::Call<0x42BD20, CVehicle*, CNodeAddress&, CNodeAddress&>(vehicle, nodeAddress1, nodeAddress2);
+    // The node the car is nearest to goes in nodeAddress1 and the node it is linked to (the one it is heading to) in nodeAddress2
+    const auto pos     = vehicle->GetPosition();
+    const auto regionX = (int32)ThePaths.FindXRegionForCoors(pos.x);
+    const auto regionY = (int32)ThePaths.FindYRegionForCoors(pos.y);
+    const auto insideX = pos.x - ThePaths.FindXCoorsForRegion(regionX);
+    const auto insideY = pos.y - ThePaths.FindYCoorsForRegion(regionY);
+
+    // Also looks at the areas next to it when the car is close to their border
+    const auto minX = std::max(insideX < 200.0f ? regionX - 1 : regionX, 0);
+    const auto minY = std::max(insideY < 200.0f ? regionY - 1 : regionY, 0);
+    const auto maxX = std::min(insideX > 550.0f ? regionX + 1 : regionX, 7);
+    const auto maxY = std::min(insideY > 550.0f ? regionY + 1 : regionY, 7);
+
+    // The height weights three times more than the rest
+    const auto Weighted = [](CVector v) {
+        v.z *= 3.0f;
+        return v;
+    };
+
+    // Nothing found leaves the node id unset
+    CNodeAddress nearestNode{};
+    CNodeAddress nearestLink{};
+    auto         nearestScore = 99999.9f;
+
+    for (auto x = minX; x <= maxX; x++) {
+        for (auto y = minY; y <= maxY; y++) {
+            const auto areaId = (uint16)CPathFind::GetAreaIdFromXY(x, y);
+            if (!ThePaths.IsAreaLoaded(areaId)) {
+                continue;
+            }
+
+            uint16 nodeId = 0;
+            for (const auto& node : ThePaths.GetPathNodesInArea(areaId, PATH_TYPE_VEH)) {
+                const auto nodeIndex = nodeId++;
+                const auto nodePos   = node.GetPosition();
+                if ((nodePos - pos).Magnitude() >= 150.0f) {
+                    continue;
+                }
+
+                for (auto link = 0u; link < node.m_nNumLinks; link++) {
+                    const auto linked = ThePaths.m_pNodeLinks[areaId][node.m_wBaseLinkId + link];
+                    if (!ThePaths.IsAreaLoaded(linked.m_wAreaId)) {
+                        continue;
+                    }
+
+                    const auto linkedPos = ThePaths.m_pPathNodes[linked.m_wAreaId][linked.m_wNodeId].GetPosition();
+                    const auto distance  = CCollision::DistToLine(Weighted(nodePos), Weighted(linkedPos), Weighted(pos));
+
+                    // Prefers the links that go the same way the car does
+                    auto direction = linkedPos - nodePos;
+                    direction.Normalise();
+                    const auto score = (1.0f - DotProduct(direction, vehicle->GetForward())) * 5.0f + distance;
+                    if (score < nearestScore) {
+                        nearestScore = score;
+                        nearestNode  = { areaId, nodeIndex };
+                        nearestLink  = linked;
+                    }
+                }
+            }
+        }
+    }
+
+    nodeAddress1 = nearestNode;
+    nodeAddress2 = nearestLink;
 }
 
 // 0x422090
