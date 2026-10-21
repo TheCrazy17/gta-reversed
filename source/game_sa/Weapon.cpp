@@ -56,7 +56,7 @@ void CWeapon::InjectHooks() {
     RH_ScopedInstall(FireM16_1stPerson, 0x741C00);
     RH_ScopedInstall(Fire, 0x742300);
     RH_ScopedGlobalInstall(DoTankDoomAiming, 0x73D1E0, { .Reversed = false });
-    RH_ScopedGlobalInstall(DoDriveByAutoAiming, 0x73D720, { .Reversed = false });
+    RH_ScopedGlobalInstall(DoDriveByAutoAiming, 0x73D720);
     RH_ScopedGlobalInstall(FindNearestTargetEntityWithScreenCoors, 0x73E240);
     RH_ScopedGlobalInstall(EvaluateTargetForHeatSeekingMissile, 0x73E560);
     RH_ScopedGlobalInstall(CheckForShootingVehicleOccupant, 0x73F480);
@@ -1017,7 +1017,79 @@ void CWeapon::DoTankDoomAiming(CEntity* vehicle, CEntity* owner, CVector* startP
 
 // 0x73D720
 void CWeapon::DoDriveByAutoAiming(CEntity* owner, CVehicle* vehicle, CVector* startPoint, CVector* endPoint, bool canAimVehicles) {
-    plugin::Call<0x73D720, CEntity*, CVehicle*, CVector*, CVector*, bool>(owner, vehicle, startPoint, endPoint, canAimVehicles);
+    if (!owner) {
+        return;
+    }
+
+    const auto& start = *startPoint;
+    auto&       end   = *endPoint;
+
+    const auto Dist3D = [](const CVector& a, const CVector& b) {
+        const auto dx = (double)a.x - (double)b.x;
+        const auto dy = (double)a.y - (double)b.y;
+        const auto dz = (double)a.z - (double)b.z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    // The peds and, if asked, the vehicles that are close to the shot
+    const auto            range = (float)Dist3D(end, start);
+    std::array<CEntity*, 32> entities{};
+    int16                 numPeds{};
+    int16                 numVehicles{};
+    CWorld::FindObjectsInRange(start, range, true, &numPeds, 16, entities.data(), false, false, true, false, false);
+    if (canAimVehicles) {
+        CWorld::FindObjectsInRange(start, range, true, &numVehicles, 16, entities.data() + numPeds, false, true, false, false, false);
+    }
+    const auto total = (int16)(numPeds + numVehicles);
+
+    // The one closest to the line of the shot, and in front of it
+    auto  bestScore = 10000.0f;
+    int16 bestIdx   = 0;
+    for (int16 i = 0; i < total; i++) {
+        auto* const entity = entities[i];
+        if (entity == owner) {
+            continue;
+        }
+        if (entity->GetIsTypePed()) {
+            auto* const ped = entity->AsPed();
+            if (ped->IsStateDying() || ped->m_pAttachedTo == vehicle) {
+                continue;
+            }
+        }
+
+        const auto entityPos = entity->GetPosition();
+        const auto lineDist  = (double)CCollision::DistToLine(start, end, entityPos);
+        double     score;
+        if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE || vehicle->m_nVehicleSubType == VEHICLE_TYPE_HELI) {
+            const auto dist = Dist3D(entityPos, vehicle->GetPosition());
+            score           = lineDist / (dist >= 5.0 ? dist : 5.0);
+        } else {
+            score = Dist3D(entityPos, owner->GetPosition()) * (double)0.15f + lineDist;
+        }
+
+        const auto toEntity = entityPos - start;
+        const auto toEnd    = end - start;
+        if (toEnd.z * toEntity.z + toEnd.y * toEntity.y + toEnd.x * toEntity.x > 0.0f && score < (double)bestScore) {
+            bestScore = (float)score;
+            bestIdx   = i;
+        }
+    }
+
+    // It has to be close enough, then the shot goes to it
+    const auto autoAimAngle = vehicle->GetPlaneGunsAutoAimAngle();
+    const auto limit        = autoAimAngle <= 0.5f ? 2.5 : std::tan((double)autoAimAngle * (double)0.017453292f);
+    if (!((double)bestScore < limit)) {
+        return;
+    }
+
+    const auto targetPos = entities[bestIdx]->GetPosition();
+    const auto ratio     = (float)(Dist3D(start, end) / Dist3D(start, targetPos));
+    const auto ex        = (double)targetPos.x - (double)start.x;
+    const auto ey        = (double)targetPos.y - (double)start.y;
+    const auto ez        = (float)((double)targetPos.z - (double)start.z);
+    end.x = start.x + (float)(ex * ratio);
+    end.y = (float)((double)start.y + ey * ratio);
+    end.z = (float)((double)start.z + (double)ez * ratio);
 }
 
 // 0x73DB40
