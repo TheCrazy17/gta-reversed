@@ -55,7 +55,7 @@ void CWeapon::InjectHooks() {
     RH_ScopedInstall(LaserScopeDot, 0x73A8D0);
     RH_ScopedInstall(FireM16_1stPerson, 0x741C00);
     RH_ScopedInstall(Fire, 0x742300);
-    RH_ScopedGlobalInstall(DoTankDoomAiming, 0x73D1E0, { .Reversed = false });
+    RH_ScopedGlobalInstall(DoTankDoomAiming, 0x73D1E0);
     RH_ScopedGlobalInstall(DoDriveByAutoAiming, 0x73D720);
     RH_ScopedGlobalInstall(FindNearestTargetEntityWithScreenCoors, 0x73E240);
     RH_ScopedGlobalInstall(EvaluateTargetForHeatSeekingMissile, 0x73E560);
@@ -1012,7 +1012,67 @@ void CWeapon::DoDoomAiming(CEntity* owner, CVector* start, CVector* end) {
 
 // 0x73D1E0
 void CWeapon::DoTankDoomAiming(CEntity* vehicle, CEntity* owner, CVector* startPoint, CVector* endPoint) {
-    plugin::Call<0x73D1E0, CEntity*, CEntity*, CVector*, CVector*>(vehicle, owner, startPoint, endPoint);
+    const auto& start = *startPoint;
+    auto&       end   = *endPoint;
+
+    const auto Dist = [](double dx, double dy, double dz) { return std::sqrt(dx * dx + dy * dy + dz * dz); };
+
+    // The shot is looked at from above, only the xy of the line counts
+    const CVector lineStart{ start.x, start.y, 0.0f };
+    const CVector lineEnd{ end.x, end.y, 0.0f };
+
+    // The vehicles that are close to the shot
+    const auto               length = Dist((double)end.x - start.x, (double)end.y - start.y, (double)end.z - start.z);
+    std::array<CEntity*, 16> entities{};
+    int16                    numEntities{};
+    CWorld::FindObjectsInRange(start, (float)length, true, &numEntities, 15, entities.data(), false, true, false, false, false);
+    const auto slope = (float)(((double)end.z - start.z) / length);
+
+    // The one that is closest to the line of the shot
+    auto  bestScore = 10000.0f;
+    int16 bestIdx   = 0;
+    for (int16 i = 0; i < numEntities; i++) {
+        auto* const entity = entities[i];
+        if (entity == vehicle || entity == owner) {
+            continue;
+        }
+        if (entity->GetStatus() == STATUS_TRAIN_MOVING || entity->GetStatus() == STATUS_TRAIN_NOT_MOVING) {
+            continue;
+        }
+        if (entity->GetIsTypeVehicle() && (entity->AsPhysical()->m_nPhysicalFlags & 0x20000000)) {
+            continue;
+        }
+
+        const auto& vehPos    = vehicle->GetPosition();
+        const auto& entityPos = entity->GetPosition();
+        const auto  distXY    = (float)Dist((double)vehPos.x - entityPos.x, (double)vehPos.y - entityPos.y, 0.0);
+        const auto  expected  = distXY * slope;
+        const auto  distZ     = (float)std::abs((double)vehPos.z - ((double)expected + entityPos.z));
+        if (!((double)distZ * 3.0 < (double)distXY)) {
+            continue;
+        }
+
+        const CVector entityPos2D{ entityPos.x, entityPos.y, 0.0f };
+        const auto    radius = CModelInfo::GetModelInfo(entity->m_nModelIndex)->GetColModel()->GetBoundingSphere().m_fRadius;
+        if (!((double)CCollision::DistToLine(lineStart, lineEnd, entityPos2D) < (double)radius * 3.0)) {
+            continue;
+        }
+
+        const auto score = std::sqrt((double)distXY * distXY + (double)distZ * distZ);
+        if (score < (double)bestScore) {
+            bestScore = (float)score;
+            bestIdx   = i;
+        }
+    }
+
+    // Aims at it, a bit above
+    if (!(bestScore < 9000.0f)) {
+        return;
+    }
+    const auto targetPos = entities[bestIdx]->GetPosition();
+    const auto endDist   = Dist((double)end.x - start.x, (double)end.y - start.y, 0.0);
+    const auto targetDist = Dist((double)targetPos.x - start.x, (double)targetPos.y - start.y, 0.0);
+    end.z = (float)((endDist / targetDist) * ((double)targetPos.z + (double)0.3f - (double)start.z) + (double)start.z);
 }
 
 // 0x73D720
