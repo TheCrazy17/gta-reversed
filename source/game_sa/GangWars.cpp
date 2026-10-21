@@ -8,6 +8,7 @@
 
 #include "Garages.h"
 #include "GangWars.h"
+#include "TaskSimpleGangDriveBy.h"
 #include "GangWarsSaveStructure.h"
 #include "ModelIndices.h"
 #include "TaskComplexWander.h"
@@ -408,9 +409,8 @@ bool CGangWars::CreateAttackWave(int32 warFerocity, int32 waveID) {
                     passenger->GiveDelayedWeapon(WEAPON_MICRO_UZI, 1500);
                     passenger->SetCurrentWeapon(WEAPON_MICRO_UZI);
 
-                    // Unnamed task, alternates its flag between the passengers
-                    auto* const task = static_cast<CTask*>(CTask::operator new(0x44));
-                    plugin::CallMethod<0x6217D0, CTask*, CPed*, CVector*, float, int32, int32, bool>(task, FindPlayerPed(-1), nullptr, 100.0f, 50, 8, (~i & 1) != 0);
+                    // The seat side alternates between the passengers
+                    auto* const task = new CTaskSimpleGangDriveBy{ FindPlayerPed(-1), nullptr, 100.0f, 50, eDrivebyStyle::AI_ALL_DIRN, (~i & 1) != 0 };
                     CEventScriptCommand event(TASK_PRIMARY_PRIMARY, task, false);
                     passenger->GetEventGroup().Add(&event);
                 }
