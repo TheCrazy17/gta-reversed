@@ -10502,7 +10502,7 @@
   {
     "Category": "CStencilShadows",
     "Name": "RenderForVehicle",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStencilShadows",

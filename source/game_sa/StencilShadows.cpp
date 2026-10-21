@@ -18,7 +18,7 @@ void CStencilShadows::InjectHooks() {
     RH_ScopedInstall(UpdateHierarchy, 0x710BC0);
     RH_ScopedInstall(RegisterStencilShadows, 0x711760, {.Reversed = false});
     RH_ScopedInstall(RenderStencilShadows, 0x7113B0);
-    RH_ScopedInstall(RenderForVehicle, 0x70FAE0, {.Reversed = false});
+    RH_ScopedInstall(RenderForVehicle, 0x70FAE0);
     RH_ScopedInstall(RenderForObject, 0x710310);
     RH_ScopedInstall(Render, 0x710D50);
     RH_ScopedInstall(RenderBuffer, 0x710B50);
@@ -214,29 +214,11 @@ void CStencilShadows::RenderStencilShadows() {
     RwRenderStateSet(rwRENDERSTATECULLMODE,                 RWRSTATE(rwCULLMODECULLBACK));
 }
 
-// 0x70FAE0
-void CStencilShadows::RenderForVehicle(CStencilShadowObject* object) {
-    plugin::Call<0x70FAE0, CStencilShadowObject*>(object);
-}
-
-// 0x710310
-void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
-    ZoneScoped;
-
-    auto* const entity  = object->m_pOwner;
-    auto* const colData = entity->GetColModel()->m_pColData;
-    if (!colData || (int32)colData->m_nNumShadowTriangles != (int32)object->m_NumShadowFaces) {
-        return;
-    }
-
-    if (!entity->m_matrix) {
-        entity->AllocateMatrix();
-        entity->m_placement.UpdateMatrix(entity->m_matrix);
-    }
-
+// Builds the volume of the shadow, the faces that are not facing the sun, and the sides that go from them away from it
+static void BuildShadowVolume(CStencilShadowObject* object, CCollisionData* colData, CMatrix& matrix, float extrudeLength) {
     // The direction of the sun in the space of the entity
     CMatrix invMatrix;
-    Invert(*entity->m_matrix, invMatrix);
+    Invert(matrix, invMatrix);
     const auto sunDir   = s_SunPosNrm;
     const auto lightDir = invMatrix.TransformPoint(sunDir) - invMatrix.TransformPoint(CVector{});
 
@@ -246,7 +228,7 @@ void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
     for (auto i = 0; i < numVerts; i++) {
         colData->GetShadTrianglePoint(s_ShadowTrianglePoints[i], i);
     }
-    TransformPoints(s_TransformedShadowTrianglePoints, numVerts, *entity->m_matrix, s_ShadowTrianglePoints);
+    TransformPoints(s_TransformedShadowTrianglePoints, numVerts, matrix, s_ShadowTrianglePoints);
 
     // The edges of the faces that are not facing the sun, an edge that shows up twice is not on the outline
     uint16 numEdges = 0;
@@ -273,7 +255,7 @@ void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
     };
 
     // How far the shadow goes
-    const auto extrude = sunDir * 60.0f;
+    const auto extrude = sunDir * extrudeLength;
 
     for (auto i = 0; i < (int32)object->m_NumShadowFaces; i++) {
         const auto& tri = colData->m_pShadowTriangles[i];
@@ -333,6 +315,57 @@ void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
         out[5] = pointA + extrude;
         object->m_SizeOfShadowFacesData += 6;
     }
+}
+
+// 0x710310
+void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
+    ZoneScoped;
+
+    auto* const entity  = object->m_pOwner;
+    auto* const colData = entity->GetColModel()->m_pColData;
+    if (!colData || (int32)colData->m_nNumShadowTriangles != (int32)object->m_NumShadowFaces) {
+        return;
+    }
+
+    if (!entity->m_matrix) {
+        entity->AllocateMatrix();
+        entity->m_placement.UpdateMatrix(entity->m_matrix);
+    }
+
+    BuildShadowVolume(object, colData, *entity->m_matrix, 60.0f);
+}
+
+// 0x70FAE0
+void CStencilShadows::RenderForVehicle(CStencilShadowObject* object) {
+    ZoneScoped;
+
+    auto* const entity = object->m_pOwner;
+
+    // The shadows of the aircraft are much longer
+    const auto vehicle       = entity->GetIsTypeVehicle() ? entity->AsVehicle() : nullptr;
+    const auto extrudeLength = vehicle && (vehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE || vehicle->m_nVehicleSubType == VEHICLE_TYPE_HELI)
+        ? 40.0f
+        : 5.0f;
+
+    auto* const colData = entity->GetColModel()->m_pColData;
+    if (!colData || (int32)colData->m_nNumShadowTriangles != (int32)object->m_NumShadowFaces) {
+        return;
+    }
+
+    if (!entity->m_matrix) {
+        entity->AllocateMatrix();
+        entity->m_placement.UpdateMatrix(entity->m_matrix);
+    }
+
+    // The bikes lean to the sides, and so does the shadow
+    CMatrix* matrix = entity->m_matrix;
+    if (vehicle && vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        auto* const bike = vehicle->AsBike();
+        bike->CalculateLeanMatrix();
+        matrix = &bike->m_mLeanMatrix;
+    }
+
+    BuildShadowVolume(object, colData, *matrix, extrudeLength);
 }
 
 // 0x711D90
