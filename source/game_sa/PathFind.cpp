@@ -19,7 +19,7 @@ auto& ToBeStreamed = StaticRef<std::array<bool, NUM_PATH_MAP_AREAS>>(0x96EFD0);
 auto& XCoorGiven = StaticRef<std::array<float, 64>>(0x96EE80);
 auto& YCoorGiven = StaticRef<std::array<float, 64>>(0x96ED80);
 auto& ZCoorGiven = StaticRef<std::array<float, 64>>(0x96EC80);
-auto& ConnectsToGiven = StaticRef<std::array<std::array<int8, 8>, 64>>(0x96EAC0);
+auto& ConnectsToGiven = StaticRef<std::array<std::array<int8, 6>, 64>>(0x96EAC0);
 
 auto& aInteriorNodeLinkedToExterior = StaticRef<std::array<int32, NUM_PATH_INTERIOR_AREAS>>(0x96EA98);
 auto& aExteriorNodeLinkedTo = StaticRef<std::array<CNodeAddress, NUM_PATH_INTERIOR_AREAS>>(0x977B7C);
@@ -43,6 +43,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(FindXRegionForCoors, 0x44D890);
     RH_ScopedInstall(AddInteriorLinkToExternalNode, 0x44DF30);
     RH_ScopedInstall(AddInteriorLink, 0x44DED0);
+    RH_ScopedInstall(RemoveInteriorLinks, 0x44DF60);
     RH_ScopedInstall(MarkRegionsForCoors, 0x44DB60);
     RH_ScopedOverloadedInstall(FindStartPointOfRegion, "", 0x44D930, void(CPathFind::*)(size_t, size_t, float&, float&));
     RH_ScopedInstall(FindYCoorsForRegion, 0x44D910);
@@ -1527,6 +1528,22 @@ void CPathFind::AddInteriorLinkToExternalNode(int32 interiorNodeIdx, CNodeAddres
     const auto idx = NumLinksToExteriorNodes++;
     aInteriorNodeLinkedToExterior[idx] = interiorNodeIdx;
     aExteriorNodeLinkedTo[idx] = externalNodeAddr;
+}
+
+// 0x44DF60
+void CPathFind::RemoveInteriorLinks(uint32 intIdx) {
+    for (auto i = 0u; i < NumNodesGiven; i++) {
+        for (auto& link : ConnectsToGiven[i]) {
+            if (i == intIdx || link == (int32)intIdx) {
+                link = -1;
+            }
+        }
+    }
+}
+
+// 0x452270
+void CPathFind::CompleteNewInterior(CNodeAddress* outAddress) {
+    plugin::CallMethod<0x452270, CPathFind*, CNodeAddress*>(this, outAddress);
 }
 
 // 0x44E1A0

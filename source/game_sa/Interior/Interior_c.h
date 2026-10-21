@@ -38,13 +38,9 @@ public:
     int32             field_58;             // 0x58
     TList_c<FurnitureEntity_c> m_list;    // 0x5C
     char              m_tiles[30][30];      // 0x68 - tile status grid, indexed [x][y] (see tEffectInterior::m_width/m_depth)
-    int16             field_3EC;            // 0x3EC
-    int16             field_3EE;            // 0x3EE
+    CNodeAddress      m_extNodeAddress;     // 0x3EC - the closest road node outside, set by InteriorGroup_c::SetupPaths
     CNodeAddress      m_nodeAddress;        // 0x3F0
-    int16             field_3F4;            // 0x3F4
-    int16             field_3F6;            // 0x3F6
-    int32             field_3F8;            // 0x3F8
-    int32             field_3FC;            // 0x3FC
+    CVector           m_extNodePos;         // 0x3F4 - where `m_extNodeAddress` is
     CVector           m_position;           // 0x400
     int8              m_gotoPointCount;     // 0x40C - count of valid entries in m_gotoPoints, capped at 16 (see AddGotoPt)
     int8              m_interiorInfosCount; // 0x40D

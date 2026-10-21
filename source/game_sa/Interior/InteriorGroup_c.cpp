@@ -38,7 +38,7 @@ void InteriorGroup_c::InjectHooks() {
     RH_ScopedInstall(SetupPeds, 0x596890);
     RH_ScopedInstall(UpdatePeds, 0x596830);
     RH_ScopedInstall(SetupHousePeds, 0x5965E0);
-    RH_ScopedInstall(SetupPaths, 0x595590, { .Reversed = false });
+    RH_ScopedInstall(SetupPaths, 0x595590);
     RH_ScopedInstall(ArePathsLoaded, 0x595380);
     RH_ScopedInstall(Setup, 0x595320);
     RH_ScopedInstall(Exit, 0x595290);
@@ -200,7 +200,180 @@ void InteriorGroup_c::SetupHousePeds() {
 
 // 0x595590
 int8 InteriorGroup_c::SetupPaths() {
-    return plugin::CallMethodAndReturn<int8, 0x595590, InteriorGroup_c*>(this);
+    ZoneScoped;
+
+    if (!ArePathsLoaded()) {
+        return 0;
+    }
+
+    ThePaths.StartNewInterior((int32)(int8)m_id);
+
+    // The nodes of the goto points of every interior, they come first
+    int32 numGotoPointNodes = 0;
+    int32 nextNodeIdx       = 0;
+    int32 gotoPointsBase[8]{};
+    for (auto i = 0; i < 8; i++) {
+        auto* const interior = m_interiors[i];
+        if (!interior) {
+            continue;
+        }
+
+        const auto base     = numGotoPointNodes;
+        gotoPointsBase[i]   = base;
+        const auto numPoints = (int32)interior->m_gotoPointCount;
+        if (numPoints > 2) {
+            ThePaths.AddNodeToNewInterior(interior->m_gotoPoints[0].Pos.x, interior->m_gotoPoints[0].Pos.y, interior->m_gotoPoints[0].Pos.z, false, -1, -1, -1, -1, -1, -1);
+            ThePaths.AddNodeToNewInterior(interior->m_gotoPoints[1].Pos.x, interior->m_gotoPoints[1].Pos.y, interior->m_gotoPoints[1].Pos.z, false, -1, -1, -1, -1, -1, -1);
+            ThePaths.AddInteriorLink(nextNodeIdx + 1, base);
+            nextNodeIdx += 2;
+            for (auto k = 2; k < numPoints; k++) {
+                const auto& pos = interior->m_gotoPoints[k].Pos;
+                ThePaths.AddNodeToNewInterior(pos.x, pos.y, pos.z, false, -1, -1, -1, -1, -1, -1);
+                ThePaths.AddInteriorLink(nextNodeIdx, base + (k - 2));
+                if (k % 2 != 0) {
+                    ThePaths.AddInteriorLink(nextNodeIdx, base + (k - 1));
+                }
+                nextNodeIdx++;
+            }
+        }
+        numGotoPointNodes += numPoints;
+    }
+
+    // The doors of the interiors come next, every one of them is an inside node with an outside node
+    // The outside ones that have no road node close to them are linked to each other later
+    struct ExternalPoint {
+        CVector pos;
+        int32   nodeIdx;
+        bool    linked;
+    };
+    ExternalPoint externalPoints[32]{};
+    auto          numExternalPoints = 0;
+
+    auto doorNodeIdx = numGotoPointNodes;
+    nextNodeIdx      = numGotoPointNodes - 1;
+    for (auto i = 0; i < 8; i++) {
+        auto* const interior = m_interiors[i];
+        if (!interior) {
+            continue;
+        }
+        const auto* const box = interior->m_box;
+
+        auto doorsAdded = false;
+        int32 innerNodeIdx[4]{};
+
+        // 0 is the main door, the others the ones on the left, top and right
+        const auto AddDoor = [&](int32 door, bool isMainDoor) {
+            auto&      exitPt = interior->m_exitPts[door];
+            const auto inner  = ThePaths.AddNodeToNewInterior(exitPt.inner.x, exitPt.inner.y, exitPt.inner.z, false, -1, -1, -1, -1, -1, -1);
+            if ((isMainDoor ? exitPt.gotoPtA >= 0 : exitPt.gotoPtA != -1)) {
+                ThePaths.AddInteriorLink(doorNodeIdx, exitPt.gotoPtA + gotoPointsBase[i]);
+            }
+            if ((isMainDoor ? exitPt.gotoPtB >= 0 : exitPt.gotoPtB != -1)) {
+                ThePaths.AddInteriorLink(doorNodeIdx, exitPt.gotoPtB + gotoPointsBase[i]);
+            }
+            if (isMainDoor || !doorsAdded) {
+                interior->m_position    = exitPt.inner;
+                interior->m_nodeAddress = inner;
+                doorsAdded              = true;
+            }
+
+            const auto outerIdx = doorNodeIdx + 1;
+            nextNodeIdx++;
+            innerNodeIdx[door] = doorNodeIdx;
+            ThePaths.AddNodeToNewInterior(exitPt.outer.x, exitPt.outer.y, exitPt.outer.z, isMainDoor && m_groupType != 0, -1, -1, -1, -1, -1, -1);
+            ThePaths.AddInteriorLink(outerIdx, nextNodeIdx);
+
+            const auto nearest = ThePaths.FindNearestExteriorNodeToInteriorNode(outerIdx);
+            if (nearest.m_wAreaId == (uint16)-1) {
+                externalPoints[numExternalPoints++] = { exitPt.outer, outerIdx, false };
+            } else {
+                const auto nodePos = ThePaths.GetPathNode(nearest)->GetPosition();
+                interior->m_extNodeAddress = nearest;
+                interior->m_extNodePos     = nodePos;
+                if (m_groupType == 0) {
+                    const auto dx = (double)nodePos.x - (double)exitPt.outer.x;
+                    const auto dy = (double)nodePos.y - (double)exitPt.outer.y;
+                    const auto dz = (double)nodePos.z - (double)exitPt.outer.z;
+                    if ((float)(dx * dx + dy * dy + dz * dz) < 9.0f) {
+                        ThePaths.AddInteriorLinkToExternalNode(outerIdx, nearest);
+                    }
+                }
+            }
+            doorNodeIdx += 2;
+            nextNodeIdx++;
+        };
+
+        if (box->m_door >= 0) {
+            AddDoor(0, true);
+        }
+        if (box->m_lDoorStart != -1) {
+            AddDoor(1, false);
+        }
+        if (box->m_tDoorStart != -1) {
+            AddDoor(2, false);
+        }
+        if (box->m_rDoorStart != -1) {
+            AddDoor(3, false);
+        }
+
+        // Interiors without goto points link their doors to each other
+        if (interior->m_gotoPointCount == 0) {
+            if (box->m_door >= 0) {
+                if (box->m_lDoorStart >= 0) {
+                    ThePaths.AddInteriorLink(innerNodeIdx[0], innerNodeIdx[1]);
+                }
+                if (box->m_tDoorStart >= 0) {
+                    ThePaths.AddInteriorLink(innerNodeIdx[0], innerNodeIdx[2]);
+                }
+                if (box->m_rDoorStart >= 0) {
+                    ThePaths.AddInteriorLink(innerNodeIdx[0], innerNodeIdx[3]);
+                }
+            }
+            if (box->m_tDoorStart >= 0) {
+                if (box->m_lDoorStart >= 0) {
+                    ThePaths.AddInteriorLink(innerNodeIdx[2], innerNodeIdx[1]);
+                }
+                if (box->m_rDoorStart >= 0) {
+                    ThePaths.AddInteriorLink(innerNodeIdx[2], innerNodeIdx[3]);
+                }
+            }
+        }
+    }
+
+    // The outside nodes that are close to each other are linked, the others are left alone
+    for (auto a = 0; a < numExternalPoints; a++) {
+        if (externalPoints[a].linked) {
+            continue;
+        }
+
+        auto closest     = -1;
+        auto closestDist = 1e9f;
+        for (auto b = a + 1; b < numExternalPoints; b++) {
+            if (externalPoints[b].linked) {
+                continue;
+            }
+            const auto dx   = (double)externalPoints[a].pos.x - (double)externalPoints[b].pos.x;
+            const auto dy   = (double)externalPoints[a].pos.y - (double)externalPoints[b].pos.y;
+            const auto dz   = (double)externalPoints[a].pos.z - (double)externalPoints[b].pos.z;
+            const auto dist = (float)(dx * dx + dy * dy + dz * dz);
+            if (dist < closestDist) {
+                closest     = b;
+                closestDist = dist;
+            }
+        }
+
+        if (closestDist >= 3.0f) {
+            ThePaths.RemoveInteriorLinks(externalPoints[a].nodeIdx);
+        } else {
+            externalPoints[a].linked       = true;
+            externalPoints[closest].linked = true;
+            ThePaths.AddInteriorLink(externalPoints[a].nodeIdx, externalPoints[closest].nodeIdx);
+        }
+    }
+
+    ThePaths.CompleteNewInterior(nullptr);
+    m_pathSetupComplete = 1;
+    return 0;
 }
 
 // 0x595380
