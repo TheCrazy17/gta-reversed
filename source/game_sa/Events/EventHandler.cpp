@@ -91,6 +91,7 @@
 #include "Tasks/TaskTypes/TaskComplexArrestPed.h"
 #include "Tasks/TaskTypes/TaskComplexHitPedWithCar.h"
 #include "Tasks/TaskTypes/TaskComplexEvasiveStep.h"
+#include "Tasks/TaskTypes/TaskComplexFollowPointRoute.h"
 #include "Tasks/TaskTypes/TaskComplexWalkRoundCar.h"
 #include "Tasks/TaskTypes/TaskComplexRoadRage.h"
 #include "Tasks/TaskTypes/TaskComplexLeaveAnyCar.h"
@@ -131,6 +132,7 @@
 #include "Events/EventPedToChase.h"
 #include "Events/EventPedToFlee.h"
 #include "Events/EventPlayerCollisionWithPed.h"
+#include "Events/EventPedCollisionWithPed.h"
 #include "Events/EventPotentialWalkIntoPed.h"
 #include "Events/EventHealthReallyLow.h"
 #include "Events/EventRevived.h"
@@ -270,7 +272,7 @@ void CEventHandler::InjectHooks() {
     RH_ScopedInstall(ComputeOnEscalatorResponse, 0x4BC150);
     RH_ScopedInstall(ComputeOnFireResponse, 0x4BAD50);
     RH_ScopedInstall(ComputePassObjectResponse, 0x4BB0C0);
-    RH_ScopedInstall(ComputePedCollisionWithPedResponse, 0x4BDB80, { .Reversed = false });
+    RH_ScopedInstall(ComputePedCollisionWithPedResponse, 0x4BDB80);
     RH_ScopedInstall(ComputePedCollisionWithPlayerResponse, 0x4BE7D0, { .Reversed = false });
     RH_ScopedInstall(ComputePedEnteredVehicleResponse, 0x4C1590);
     RH_ScopedInstall(ComputePedFriendResponse, 0x4B9DD0);
@@ -1696,8 +1698,187 @@ void CEventHandler::ComputePassObjectResponse(CEventPassObject* e, CTask* tactiv
 }
 
 // 0x4BDB80
-void CEventHandler::ComputePedCollisionWithPedResponse(CEvent* e, CTask* tactive, CTask* tsimplest) {
-    plugin::CallMethod<0x4BDB80, CEventHandler*, CEvent*, CTask*, CTask*>(this, e, tactive, tsimplest);
+void CEventHandler::ComputePedCollisionWithPedResponse(CEventPedCollisionWithPed* e, CTask* tactive, CTask* tsimplest) {
+    const auto victim = e->m_victim;
+    if (!victim) {
+        return;
+    }
+
+    const auto pedToVictim        = victim->GetPosition() - m_Ped->GetPosition();
+    const auto victimInFrontOfPed = !(pedToVictim.Dot(m_Ped->GetForward()) < 0.0f);
+    const auto victimFacesPed     = pedToVictim.Dot(victim->GetForward()) <= 0.0f;
+
+    const auto moveState       = e->GetMoveState();
+    const auto victimMoveState = e->GetVictimMoveState();
+
+    const auto Say = [this] {
+        m_SayTask = new CTaskSimpleSay{CTX_GLOBAL_BUMP, -1};
+    };
+    const auto LookAtVictim = [&] {
+        g_ikChainMan.LookAt("CompPedCollPedResp", m_Ped, victim, 2000, BONE_HEAD, nullptr, true, 0.25f, 500, 3, false);
+    };
+    const auto IsRunning = [](eMoveState ms) {
+        return ms == PEDMOVE_RUN || ms == PEDMOVE_SPRINT;
+    };
+
+    // Stronger peds are the ones that stay on their feet
+    const auto PedPushesVictimOver = [&] {
+        const auto pedWeakness    = m_Ped->m_pStats->m_fDefendWeakness;
+        const auto victimWeakness = victim->m_pStats->m_fDefendWeakness;
+        return (pedWeakness <= 1.5f || victimWeakness <= 1.5f)
+            ? pedWeakness > 1.5f
+            : pedWeakness > victimWeakness;
+    };
+
+    // The victim is the one that gets bumped
+    const auto VictimHitSide = [&] {
+        return CPedGeometryAnalyser::ComputeEntityHitSide(*victim, *m_Ped);
+    };
+
+    const auto EvasiveStep = [&]() -> CTask* {
+        const auto& pedFwd = m_Ped->GetForward();
+        CVector     dir{pedFwd.x, -pedFwd.y, 0.0f};
+        dir.Normalise();
+        return new CTaskComplexEvasiveStep{victim, dir};
+    };
+
+    // Goes around the victim when the ped was heading to a point
+    const auto RouteAroundVictim = [&]() -> CTask* {
+        if (!tsimplest || !CTask::IsGoToTask(tsimplest)) {
+            return nullptr;
+        }
+        CPointRoute route{};
+        CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(*m_Ped, *victim, static_cast<CTaskSimpleGoTo*>(tsimplest)->m_vecTargetPoint, route, 0);
+        return new CTaskComplexFollowPointRoute{PEDMOVE_WALK, route, CTaskComplexFollowPointRoute::Mode::ONE_WAY, 0.5f, 5.0f, false, true, true};
+    };
+
+    CTask* result{};
+
+    const auto pedGroup = CPedGroups::GetPedsGroup(m_Ped);
+    if (pedGroup) {
+        const auto victimGroup  = CPedGroups::GetPedsGroup(victim);
+        const auto pedLeader    = pedGroup->GetMembership().GetLeader();
+        const auto victimLeader = victimGroup ? victimGroup->GetMembership().GetLeader() : nullptr;
+        const auto sameGroup    = pedGroup == victimGroup;
+
+        if (sameGroup) { // The leader of the group pushes through the others
+            if (victim == pedLeader) {
+                victim->bPushOtherPeds = true;
+            }
+            if (m_Ped == pedLeader) {
+                m_Ped->bPushOtherPeds = true;
+            }
+        }
+
+        if (victim->IsPlayer()) {
+            Say();
+        } else if (!victimGroup) {
+            if (moveState == PEDMOVE_STILL || victimMoveState == PEDMOVE_STILL) {
+                result = EvasiveStep();
+            }
+        } else if (moveState == PEDMOVE_STILL || victimMoveState == PEDMOVE_STILL) {
+            if (!sameGroup) {
+                if (CGeneral::GetRandomNumberInRange(0.0f, 1.0f) < 0.25f) {
+                    const auto roll = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+                    if (roll < 0.33f) {
+                        LookAtVictim();
+                    } else if (roll < 0.66f) {
+                        Say();
+                    }
+                }
+            }
+
+            // Group members only get out of the way of a leader that is not moving
+            const auto respond = !sameGroup
+                || victim == victimLeader
+                || (pedLeader && pedLeader->GetIntelligence()->GetMoveStateFromGoToTask() == PEDMOVE_STILL);
+            if (respond) {
+                auto& intel = *m_Ped->GetIntelligence();
+
+                auto* const gangFollower = static_cast<CTaskComplexGangFollower*>(intel.FindTaskByType(TASK_COMPLEX_GANG_FOLLOWER));
+                auto* const avoidTask    = static_cast<CTaskComplexAvoidOtherPedWhileWandering*>(intel.m_TaskMgr.FindActiveTaskByType(TASK_COMPLEX_AVOID_OTHER_PED_WHILE_WANDERING));
+                auto* const goToPoint    = static_cast<CTaskSimpleGoTo*>(intel.FindTaskByType(TASK_SIMPLE_GO_TO_POINT));
+                auto* const seekTask     = static_cast<CTaskComplexSeekEntity<>*>(intel.FindTaskByType(TASK_COMPLEX_SEEK_ENTITY));
+
+                if (sameGroup && gangFollower) {
+                    // A follower that is next to its leader keeps its place next to it
+                    if (gangFollower->m_Leader && seekTask && (avoidTask || goToPoint)) {
+                        auto fromLeader = m_Ped->GetPosition() - gangFollower->m_Leader->GetPosition();
+                        fromLeader.z    = 0.0f;
+                        const auto dist = fromLeader.Magnitude();
+
+                        if (avoidTask) {
+                            avoidTask->SetWantsToQuit();
+                        }
+                        if (goToPoint) {
+                            goToPoint->m_fRadius = dist + 0.1f;
+                        }
+                        seekTask->UpdateMaxEntityDist2D(dist + 0.1f);
+
+                        if (dist < 8.0f) {
+                            gangFollower->dword20 = fromLeader;
+                        }
+                    }
+                } else {
+                    result = EvasiveStep();
+                }
+            }
+        }
+    } else if (moveState == PEDMOVE_WALK) {
+        if (victimMoveState == PEDMOVE_NONE || victimMoveState == PEDMOVE_STILL) {
+            if (!victimInFrontOfPed) {
+                LookAtVictim();
+                Say();
+            } else {
+                result = RouteAroundVictim();
+                Say();
+            }
+        } else if (victimMoveState == PEDMOVE_WALK) {
+            if (victimInFrontOfPed) {
+                result = RouteAroundVictim();
+                LookAtVictim();
+                Say();
+            } else if (victimFacesPed) {
+                LookAtVictim();
+                Say();
+            }
+        }
+    } else if (IsRunning(moveState) && IsRunning(victimMoveState)) {
+        if (!victimInFrontOfPed) {
+            if (victimFacesPed) {
+                Say();
+                LookAtVictim();
+            }
+        } else if (!victimFacesPed) {
+            Say();
+            LookAtVictim();
+        } else if (PedPushesVictimOver()) {
+            result = new CTaskComplexFallAndGetUp{VictimHitSide(), 0};
+        } else {
+            Say();
+            LookAtVictim();
+            result = new CTaskComplexHitResponse{(eDirection)VictimHitSide()};
+        }
+    } else if ((moveState == PEDMOVE_NONE || moveState == PEDMOVE_STILL) && (victimMoveState == PEDMOVE_WALK || IsRunning(victimMoveState)) && victimFacesPed) {
+        if (IsRunning(victimMoveState) && PedPushesVictimOver()) {
+            result = new CTaskComplexFallAndGetUp{VictimHitSide(), 0};
+        } else {
+            Say();
+            LookAtVictim();
+            if (victimMoveState != PEDMOVE_WALK) {
+                result = new CTaskComplexHitResponse{(eDirection)VictimHitSide()};
+            }
+        }
+    } else if ((victimMoveState == PEDMOVE_NONE || victimMoveState == PEDMOVE_STILL) && (moveState == PEDMOVE_WALK || IsRunning(moveState)) && victimFacesPed) {
+        Say();
+        LookAtVictim();
+        result = new CTaskComplexHitResponse{(eDirection)VictimHitSide()};
+    }
+
+    m_EventResponseTask = result;
+    if (result && victim->IsPlayer()) {
+        m_Ped->GetIntelligence()->IncrementAngerAtPlayer(1);
+    }
 }
 
 // 0x4BE7D0
@@ -3005,7 +3186,7 @@ void CEventHandler::ComputeEventResponseTask(CEvent* e, CTask* pAbortedTaskEvent
         ComputeVehicleCollisionResponse(static_cast<CEventVehicleCollision*>(e), tactive, tsimplest);
         break;
     case EVENT_PED_COLLISION_WITH_PED:
-        ComputePedCollisionWithPedResponse(e, tactive, tsimplest);
+        ComputePedCollisionWithPedResponse(static_cast<CEventPedCollisionWithPed*>(e), tactive, tsimplest);
         break;
     case EVENT_PED_COLLISION_WITH_PLAYER:
         ComputePedCollisionWithPlayerResponse(e, tactive, tsimplest);
