@@ -97,7 +97,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(CreateConvoy, 0x42C740);
     RH_ScopedInstall(CreatePoliceChase, 0x42C2B0);
     RH_ScopedInstall(DealWithBend_Racing, 0x428040);
-    RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
+    RH_ScopedInstall(DragCarToPoint, 0x42EC90);
     RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0);
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
     RH_ScopedInstall(FindLinksToGoWithTheseNodes, 0x42B470);
@@ -832,7 +832,94 @@ bool CCarCtrl::DealWithBend_Racing(CVehicle* vehicle, CCarPathLinkAddress LinkAd
 
 // 0x42EC90
 void CCarCtrl::DragCarToPoint(CVehicle* vehicle, CVector* pos) {
-    plugin::Call<0x42EC90, CVehicle*, CVector*>(vehicle, pos);
+    static_assert(offsetof(CVehicle, m_fVehicleFrontGroundZ) == 0x4E4 && offsetof(CVehicle, m_fVehicleRearGroundZ) == 0x4E8);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+
+    // How far above and below the car the ground is looked for, a lot more when it has not found any for a while
+    auto tolAbove = 3.0f;
+    auto tolBelow = 3.0f;
+    const auto& colBox = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingBox();
+    const auto  length = (colBox.m_vecMax.y - colBox.m_vecMin.y) * 0.95f;
+    if (autoPilot.field_51 > 16) {
+        tolAbove = 100.0f;
+        tolBelow = 100.0f;
+    }
+
+    const auto oldForward = vehicle->GetMatrix().GetForward();
+    const auto forward    = oldForward;
+    const auto vehPos     = vehicle->GetPosition();
+    const auto target     = CVector2D{ pos->x, pos->y };
+
+    // The rear end of the car is where the car is, minus half of its length
+    const auto rear = CVector2D{ vehPos.x - forward.x * length * 0.5f, vehPos.y - forward.y * length * 0.5f };
+
+    // The point behind the target, where the rear end is dragged to, is looked for with a line from the rear end
+    CColPoint colPoint;
+    auto      touchDist = 1.0f;
+    CVector2D rearTarget;
+    if (CCollision::ProcessLineSphere(
+            CColLine{ CVector{ rear.x, rear.y, 0.0f }, CVector{ forward.x * 1.5f + rear.x, forward.y * 1.5f + rear.y, 0.0f } },
+            CColSphere{ CVector{ target.x, target.y, 0.0f }, length },
+            colPoint,
+            touchDist)) {
+        rearTarget = CVector2D{ colPoint.m_vecPoint.x, colPoint.m_vecPoint.y };
+    } else {
+        const auto scale = length / std::sqrt((target.y - rear.y) * (target.y - rear.y) + (target.x - rear.x) * (target.x - rear.x));
+        rearTarget = CVector2D{ (rear.x - target.x) * scale + target.x, (rear.y - target.y) * scale + target.y };
+    }
+
+    // Looks for the ground at the given place, the one that is stored is used if it is still there
+    const auto FindGroundZ = [&](const CVector2D& at, float centreZ, CStoredCollPoly& poly, float& groundZ) {
+        const auto  upper = centreZ + tolAbove;
+        const auto  lower = centreZ - tolBelow;
+        CVector     origin{ at.x, at.y, upper };
+        if (CCollision::IsStoredPolyStillValidVerticalLine(origin, lower, colPoint, &poly)) {
+            groundZ = colPoint.m_vecPoint.z;
+            return;
+        }
+
+        CEntity* entity{};
+        origin.z = centreZ + 1.5f;
+        if (!CWorld::ProcessVerticalLine(origin, centreZ - 2.0f, colPoint, entity, true, false, false, false, false, false, &poly)) {
+            origin.z = upper;
+            if (!CWorld::ProcessVerticalLine(origin, lower, colPoint, entity, true, false, false, false, false, false, &poly)) {
+                return; // keeps the one it had
+            }
+        }
+        groundZ = colPoint.m_vecPoint.z;
+
+        vehicle->m_pEntityWeAreOn = entity;
+        vehicle->m_bTunnel           = entity->m_bTunnel;
+        vehicle->m_bTunnelTransition = entity->m_bTunnelTransition;
+        autoPilot.field_51 = 0;
+    };
+
+    const auto halfLengthZ = forward.z * length * 0.5f;
+
+    // The front end is over the target
+    autoPilot.field_51++;
+    FindGroundZ(target, vehPos.z + halfLengthZ, vehicle->m_FrontCollPoly, vehicle->m_fVehicleFrontGroundZ);
+    const auto frontZ = vehicle->m_fVehicleFrontGroundZ;
+
+    FindGroundZ(rearTarget, vehPos.z - halfLengthZ, vehicle->m_RearCollPoly, vehicle->m_fVehicleRearGroundZ);
+    const auto rearZ = vehicle->m_fVehicleRearGroundZ;
+
+    // The car looks from the rear end to the front end
+    auto& mat = vehicle->GetMatrix();
+    const auto pitch = std::atan2((frontZ - rearZ) * (1.0f / length), 1.0f);
+    const auto cosPitch = std::cos(pitch);
+    mat.GetRight()   = CVector{ (target.y - rearTarget.y) * (1.0f / length), (-1.0f / length) * (target.x - rearTarget.x), 0.0f };
+    mat.GetForward() = CVector{ -(cosPitch * mat.GetRight().y), cosPitch * mat.GetRight().x, std::sin(pitch) };
+    mat.GetUp()      = CrossProduct(mat.GetRight(), mat.GetForward());
+
+    const auto centre = CVector{ (target.x + rearTarget.x) * 0.5f, (target.y + rearTarget.y) * 0.5f, (frontZ + rearZ) * 0.5f };
+    const auto height = vehicle->GetHeightAboveRoad();
+    vehicle->UpdateLightingFromStoredPolys();
+    vehicle->SetPosn(CVector{ centre.x, centre.y, height + centre.z });
+
+    // And steers the way it turned
+    vehicle->m_fSteerAngle = std::clamp(CrossProduct(mat.GetForward(), oldForward).z * -10.0f, -0.5f, 0.5f);
 }
 
 // 0x4325C0
