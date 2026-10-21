@@ -7,6 +7,8 @@
 
 #include "StdInc.h"
 #include "Curves.h"
+#include "PopCycle.h"
+#include "Events/EventAcquaintancePedHate.h"
 #include "Tasks/TaskTypes/TaskComplexDriveWander.h"
 #include "Events/EventPotentialGetRunOver.h"
 #include "Garages.h"
@@ -93,7 +95,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ClearInterestingVehicleList, 0x423F00);
     RH_ScopedInstall(ClitargetOrientationToLink, 0x422760);
     RH_ScopedInstall(CreateConvoy, 0x42C740);
-    RH_ScopedInstall(CreatePoliceChase, 0x42C2B0, { .Reversed = false });
+    RH_ScopedInstall(CreatePoliceChase, 0x42C2B0);
     RH_ScopedInstall(DealWithBend_Racing, 0x428040);
     RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
     RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0);
@@ -605,7 +607,105 @@ bool CCarCtrl::CreateConvoy(CVehicle* vehicle, int32 arg2) {
 
 // 0x42C2B0
 bool CCarCtrl::CreatePoliceChase(CVehicle* vehicle, int32 arg2, CNodeAddress NodeAddress) {
-    return plugin::CallAndReturn<bool, 0x42C2B0, CVehicle*, int32, CNodeAddress>(vehicle, arg2, NodeAddress);
+    static_assert(offsetof(CVehicle, m_nMaxPassengers) == 0x488);
+
+    // arg2 is the type of the peds in the vehicle that is chased and NodeAddress the place the police vehicle is created at
+    // Most of the time the vehicles of the gangs are not chased
+    if (CPopCycle::m_NumGangs_Cars != 0.0f && (arg2 < 14 || arg2 > 23)) {
+        if ((int32)((float)CGeneral::GetRandomNumber() * 3.0517578125e-05f * 4.0f) != 0) {
+            return false;
+        }
+    }
+
+    const auto modelId = ChoosePoliceCarModel(true);
+    if (modelId <= -1 || !CStreaming::IsModelLoaded(modelId)) {
+        return false;
+    }
+
+    auto* const police = GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+    if (!police) {
+        return false;
+    }
+
+    // The ground has to be close to the node, the one above and the one below are looked at
+    CVector pos = ThePaths.GetPathNode(NodeAddress)->GetPosition();
+    auto      groundZ = 1e9f;
+    CColPoint colPoint;
+    CEntity*  hitEntity{};
+    if (CWorld::ProcessVerticalLine(pos, 1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+        groundZ = colPoint.m_vecPoint.z;
+    }
+    if (CWorld::ProcessVerticalLine(pos, -1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+        if (std::abs(colPoint.m_vecPoint.z - pos.z) < std::abs(groundZ - pos.z)) {
+            groundZ = colPoint.m_vecPoint.z;
+        }
+    }
+    if (groundZ > 1e9f) {
+        delete police;
+        return false;
+    }
+    pos.z = police->GetDistanceFromCentreOfMassToBaseOfModel() + groundZ;
+
+    // It is not created where the player can see it, nor where something is in the way
+    const auto radius = CModelInfo::GetModelInfo(police->m_nModelIndex)->GetColModel()->GetBoundingSphere().m_fRadius;
+    if (!vehicle->GetIsOnScreen() && TheCamera.IsSphereVisible(pos, radius)) {
+        delete police;
+        return false;
+    }
+
+    int16 numColliding{};
+    CWorld::FindObjectsKindaColliding(pos, radius, true, &numColliding, 2, nullptr, false, true, true, false, false);
+    if (numColliding != 0) {
+        delete police;
+        return false;
+    }
+
+    // The vehicle that is chased drives away fast
+    vehicle->SetStatus(STATUS_PHYSICS);
+    vehicle->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+    const auto cruiseSpeed = (uint8)(int32)((float)vehicle->m_autoPilot.m_nCruiseSpeed + 10.0f);
+    vehicle->vehicleFlags.bMadDriver     = true;
+    vehicle->m_autoPilot.m_nCruiseSpeed = cruiseSpeed;
+    vehicle->m_vecMoveSpeed              = vehicle->GetForward() * (float)cruiseSpeed * 0.02f;
+
+    SetUpDriverAndPassengersForVehicle(vehicle, arg2, 2, true, true, 99);
+
+    // The police vehicle starts like the other one, they are going the same way
+    police->GetMatrix() = vehicle->GetMatrix();
+    police->SetPosn(pos);
+    police->m_vecMoveSpeed = vehicle->m_vecMoveSpeed;
+    police->SetStatus(STATUS_PHYSICS);
+    police->vehicleFlags.bCreatedAsPoliceVehicle = true;
+    police->ChangeLawEnforcerState(true);
+    CWorld::Add(police);
+
+    if (police->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        police->AsBike()->PlaceOnRoadProperly();
+    } else {
+        police->AsAutomobile()->PlaceOnRoadProperly();
+    }
+    CCarAI::AddPoliceCarOccupants(police, true);
+
+    // The peds in the vehicle that is chased are wanted
+    if (vehicle->m_pDriver) {
+        vehicle->m_pDriver->bWantedByPolice = true;
+    }
+    for (auto* const passenger : vehicle->GetPassengers()) {
+        if (passenger) {
+            passenger->bWantedByPolice = true;
+        }
+    }
+
+    // And the police goes after them
+    police->m_pDriver->GetTaskManager().SetTask(new CTaskComplexCarDriveWander{ police, DRIVING_STYLE_STOP_FOR_CARS, 10.0f }, TASK_PRIMARY_DEFAULT, false);
+
+    CEventAcquaintancePedHate event{ vehicle->m_pDriver };
+    event.m_TaskId = TASK_COMPLEX_KILL_CRIMINAL;
+    police->m_pDriver->GetEventGroup().Add(&event, false);
+
+    police->vehicleFlags.bNeverUseSmallerRemovalRange = true;
+    police->m_nExtendedRemovalRange                   = 0xFF;
+    return true;
 }
 
 // 0x428040
