@@ -143,7 +143,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(SteerAICarTowardsPointInEscort, 0x4336D0);
     RH_ScopedInstall(SteerAICarWithPhysics, 0x437C20, { .Reversed = false });
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPath, 0x434900);
-    RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830, { .Reversed = false });
+    RH_ScopedInstall(SteerAICarWithPhysicsFollowPath_Racing, 0x435830);
     RH_ScopedInstall(SteerAICarWithPhysicsFollowPreRecordedPath, 0x432DD0);
     RH_ScopedInstall(SteerAICarWithPhysicsHeadingForTarget, 0x433280);
     RH_ScopedInstall(SteerAICarWithPhysicsTryingToBlockTarget, 0x4335E0);
@@ -3683,7 +3683,247 @@ void CCarCtrl::SteerAICarWithPhysicsFollowPath(CVehicle* vehicle, float* arg2, f
 
 // 0x435830
 void CCarCtrl::SteerAICarWithPhysicsFollowPath_Racing(CVehicle* vehicle, float* arg2, float* arg3, float* arg4, bool* arg5) {
-    plugin::Call<0x435830, CVehicle*, float*, float*, float*, bool*>(vehicle, arg2, arg3, arg4, arg5);
+    static_assert(offsetof(CBmx, m_fControlPedaling) == 0x818);
+
+    // arg2 is the steering, arg3 the gas, arg4 the brake and arg5 the handbrake
+    if (StopCarIfNodesAreInvalid(vehicle)) {
+        return;
+    }
+
+    auto&       autoPilot = vehicle->m_autoPilot;
+    const auto& mat       = vehicle->GetMatrix();
+    const auto  pos       = vehicle->GetPosition();
+    const auto& vel       = vehicle->m_vecMoveSpeed;
+
+    const auto forwardSpeed = (vel.x * mat.GetForward().x + vel.y * mat.GetForward().y + vel.z * mat.GetForward().z) * 60.0f;
+
+    CVector2D forward{ mat.GetForward().x, mat.GetForward().y };
+    if (const auto length = forward.Magnitude(); length == 0.0f) {
+        forward.x = 1.0f;
+    } else {
+        forward.x *= 1.0f / length;
+        forward.y *= 1.0f / length;
+    }
+
+    const auto LinksLoaded = [&] {
+        return ThePaths.m_pPathNodes[autoPilot.m_nCurrentPathNodeInfo.m_wAreaId] && ThePaths.m_pPathNodes[autoPilot.m_nNextPathNodeInfo.m_wAreaId];
+    };
+    if (!LinksLoaded()) {
+        *arg4 = 1.0f;
+        *arg3 = 0.0f;
+        *arg2 = 0.0f;
+        *arg5 = false;
+        return;
+    }
+
+    // How far the vehicle is from the start of the link it is on, and how the links go on
+    const auto currentPos = ThePaths.GetCarPathLink(autoPilot.m_nCurrentPathNodeInfo).GetNodeCoors();
+    const auto nextPos    = ThePaths.GetCarPathLink(autoPilot.m_nNextPathNodeInfo).GetNodeCoors();
+    const auto toStart    = CVector2D{ pos } - currentPos;
+    const auto distance   = toStart.Magnitude();
+    const auto linkDiff   = nextPos - currentPos;
+    const auto along      = linkDiff.x * toStart.x + linkDiff.y * toStart.y;
+
+    const auto NodesAreFar = distance >= 8.0f
+        && !(along > 0.0f && distance < 12.0f)
+        && !(along / (linkDiff.Magnitude() * distance) > 0.7f)
+        && reinterpret_cast<const uint16&>(autoPilot.m_nCurrentPathNodeInfo) != reinterpret_cast<const uint16&>(autoPilot.m_nNextPathNodeInfo);
+
+    if (!NodesAreFar) {
+        auto& numNodes = reinterpret_cast<int16&>(autoPilot.m_nPathFindNodesCount);
+
+        // Looks for more of the route when there are only a few nodes left
+        if (numNodes < 4) {
+            // The same global is used as the invalid node, and as the node to avoid
+            static auto& invalidNode = StaticRef<CNodeAddress>(0x8A5F44);
+            constexpr auto MAX_DISTANCE = 999999.875f;
+
+            ThePaths.DoPathSearch(
+                PATH_TYPE_VEH,
+                pos,
+                autoPilot.m_startingRouteNode,
+                autoPilot.m_vecDestinationCoors,
+                autoPilot.m_aPathFindNodesInfo.data(),
+                numNodes,
+                8,
+                nullptr,
+                MAX_DISTANCE,
+                nullptr,
+                MAX_DISTANCE,
+                autoPilot.carCtrlFlags.bCantGoAgainstTraffic,
+                invalidNode,
+                vehicle->m_nModelIndex == MODEL_VORTEX,
+                false
+            );
+            if (numNodes > 0) {
+                autoPilot.RemoveOnePathNode();
+                if (numNodes > 0 && autoPilot.m_startingRouteNode == autoPilot.m_aPathFindNodesInfo[0]) {
+                    autoPilot.RemoveOnePathNode();
+                }
+            }
+            if (numNodes < 1) {
+                autoPilot.m_nCarMission = MISSION_GOTOCOORDINATES_STRAIGHTLINE;
+                SteerAICarWithPhysicsHeadingForTarget(vehicle, nullptr, autoPilot.m_vecDestinationCoors.x, autoPilot.m_vecDestinationCoors.y, arg2, arg3, arg4, arg5);
+                return;
+            }
+        }
+
+        // Moves one node forward
+        const auto previousCurrent    = autoPilot.m_currentAddress;
+        const auto previousStart      = autoPilot.m_startingRouteNode;
+        autoPilot.m_endingRouteNode   = previousCurrent;
+        autoPilot.m_currentAddress    = previousStart;
+        autoPilot.m_startingRouteNode = autoPilot.m_aPathFindNodesInfo[0];
+        autoPilot.RemoveOnePathNode();
+
+        autoPilot.m_nPreviousPathNodeInfo = autoPilot.m_nCurrentPathNodeInfo;
+        autoPilot.m_nCurrentPathNodeInfo  = autoPilot.m_nNextPathNodeInfo;
+        autoPilot._smthPrev               = autoPilot._smthCurr;
+        autoPilot.m_nCurrentLane          = autoPilot.m_nNextLane;
+        autoPilot._smthCurr               = autoPilot._smthNext;
+
+        const auto  current = autoPilot.m_currentAddress;
+        const auto& node    = ThePaths.m_pPathNodes[current.m_wAreaId][current.m_wNodeId];
+        const auto  base    = node.m_wBaseLinkId;
+        int32 linkIdx = 0;
+        do {
+            if (ThePaths.m_pNodeLinks[current.m_wAreaId][base + linkIdx] == autoPilot.m_startingRouteNode) {
+                break;
+            }
+            linkIdx++;
+        } while (linkIdx < 12);
+        autoPilot.m_nNextPathNodeInfo = ThePaths.m_pNaviLinks[current.m_wAreaId][base + linkIdx];
+
+        const auto start = autoPilot.m_startingRouteNode;
+        autoPilot._smthNext = (current.m_wAreaId < start.m_wAreaId || (current.m_wAreaId == start.m_wAreaId && current.m_wNodeId < start.m_wNodeId)) ? -1 : 1;
+    }
+
+    // The links and nodes ahead of the vehicle, the first two are the ones it is on
+    CCarPathLinkAddress links[8]{};
+    CNodeAddress        nodes[8]{};
+    int8                signs[8]{};
+    links[0] = autoPilot.m_nCurrentPathNodeInfo;
+    links[1] = autoPilot.m_nNextPathNodeInfo;
+    nodes[0] = autoPilot.m_currentAddress;
+    nodes[1] = autoPilot.m_startingRouteNode;
+    signs[0] = autoPilot._smthCurr;
+    signs[1] = autoPilot._smthNext;
+
+    const auto numNodes = (int32)reinterpret_cast<int16&>(autoPilot.m_nPathFindNodesCount);
+    for (auto i = 0; i < 4; i++) {
+        if (i < numNodes && autoPilot.m_aPathFindNodesInfo[i].m_wAreaId != UINT16_MAX) {
+            nodes[2 + i] = autoPilot.m_aPathFindNodesInfo[i];
+            links[2 + i] = ThePaths.FindLinkBetweenNodes(nodes[1 + i], nodes[2 + i]);
+            signs[2 + i] = (nodes[1 + i].m_wAreaId < nodes[2 + i].m_wAreaId || (nodes[1 + i].m_wAreaId == nodes[2 + i].m_wAreaId && nodes[1 + i].m_wNodeId < nodes[2 + i].m_wNodeId)) ? -1 : 1;
+        } else {
+            links[2 + i] = CCarPathLinkAddress{};
+            nodes[2 + i].ResetAreaId();
+        }
+    }
+
+    // Looks for a bend in the next links
+    float   targetHeading = 0.0f;
+    float   speedFactor   = 1.0f;
+    float   unused1{}, unused2{};
+    CVector unusedPos{};
+    uint16  bendLink = UINT16_MAX;
+    for (auto i = 0; i < 4; i++) {
+        if (DealWithBend_Racing(vehicle, links[i], links[i + 1], links[i + 2], links[i + 3], signs[i], signs[i + 1], signs[i + 2], signs[i + 3], forwardSpeed, &targetHeading, &speedFactor, &unused1, &unused2, &unusedPos)) {
+            bendLink = reinterpret_cast<const uint16&>(links[i]);
+            break;
+        }
+    }
+
+    const auto heading  = CGeneral::GetATanOfXY(forward.x, forward.y);
+    const auto LinkPos  = [](CCarPathLinkAddress link) { return ThePaths.GetCarPathLink(link).GetNodeCoors(); };
+    const auto Orientate = [&](CCarPathLinkAddress link, int8 sign) {
+        const auto linkPos = LinkPos(link);
+        ClitargetOrientationToLink(vehicle, link, sign, &targetHeading, linkPos.x, linkPos.y);
+    };
+
+    float currentWeight;
+    if (bendLink == UINT16_MAX) {
+        // No bend, the heading goes along the links one after another from the farthest
+        targetHeading = heading;
+        for (auto i = 5; i >= 2; i--) {
+            if (reinterpret_cast<const uint16&>(links[i]) != UINT16_MAX) {
+                Orientate(links[i], signs[i]);
+            }
+        }
+        Orientate(autoPilot.m_nNextPathNodeInfo, autoPilot._smthNext);
+        currentWeight = FindPercDependingOnDistToLink(vehicle, autoPilot.m_nCurrentPathNodeInfo);
+    } else {
+        if (reinterpret_cast<const uint16&>(autoPilot.m_nCurrentPathNodeInfo) != bendLink) {
+            Orientate(autoPilot.m_nNextPathNodeInfo, autoPilot._smthNext);
+        }
+        currentWeight = (FindPercDependingOnDistToLink(vehicle, autoPilot.m_nCurrentPathNodeInfo) + 2.0f) * 0.33333334f;
+    }
+
+    {
+        const auto cur  = LinkPos(autoPilot.m_nCurrentPathNodeInfo);
+        const auto next = LinkPos(autoPilot.m_nNextPathNodeInfo);
+        const CVector2D target{ cur.x * currentWeight + next.x * (1.0f - currentWeight), cur.y * currentWeight + next.y * (1.0f - currentWeight) };
+        ClitargetOrientationToLink(vehicle, autoPilot.m_nCurrentPathNodeInfo, autoPilot._smthCurr, &targetHeading, target.x, target.y);
+    }
+
+    auto steer = FindAngleToWeaveThroughTraffic(vehicle, nullptr, targetHeading, heading, 2.0f) - heading;
+    while (steer < -PI) {
+        steer += TWO_PI;
+    }
+    while (steer > PI) {
+        steer -= TWO_PI;
+    }
+
+    // The steering gets smaller the faster the vehicle goes
+    const auto speed = vel.Magnitude();
+    const auto steerLimit = speed <= 0.7f ? std::min(0.9f - speed, 0.7f) : 0.2f;
+    auto saturated = false;
+    if (steer < -steerLimit) {
+        steer     = -steerLimit;
+        saturated = true;
+    }
+    if (steer > steerLimit) {
+        steer     = steerLimit;
+        saturated = true;
+    }
+
+    auto ratio = 1.0f;
+    if (CTrafficLights::ShouldCarStopForBridge(vehicle)) {
+        CCarAI::CarHasReasonToStop(vehicle);
+        ratio = 0.0f;
+    }
+    if (!(ratio < speedFactor)) {
+        ratio = speedFactor;
+    }
+
+    *arg4 = 0.0f;
+    const auto wantedSpeed = (float)autoPilot.m_nCruiseSpeed * ratio;
+    const auto speedDiff   = wantedSpeed - forwardSpeed;
+    if (wantedSpeed >= 0.05f || speedDiff >= 0.03f) {
+        if (speedDiff <= 0.0f) {
+            *arg3 = 0.0f;
+            *arg4 = vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX
+                ? std::min(speedDiff * -0.06666667f, 1.0f)
+                : std::min(speedDiff * -0.05f, 0.5f);
+        } else if (!saturated || forwardSpeed <= 7.0f) {
+            *arg3 = std::min(speedDiff * (forwardSpeed >= 2.0f ? 0.125f : 0.25f), 1.0f);
+
+            // Bicycles pedal when they have to speed up a lot
+            if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX && speedDiff > 3.0f) {
+                auto& pedaling = static_cast<CBmx*>(vehicle)->m_fControlPedaling;
+                if (pedaling <= 0.0f) {
+                    pedaling = 15.0f;
+                }
+            }
+        } else {
+            *arg3 = 0.0f;
+        }
+    } else {
+        *arg4 = 1.0f;
+        *arg3 = 0.0f;
+    }
+    *arg2 = steer;
+    *arg5 = false;
 }
 
 // 0x432DD0
