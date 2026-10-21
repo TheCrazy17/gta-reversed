@@ -10,10 +10,7 @@ public:
     CVehicle*                     m_pVehicle;
     CAnimBlendAssociation*        m_pAnimCloseDoorRolling;
     CTaskUtilityLineUpPedWithCar* m_pTaskUtilityLineUpPedWithCar;
-    CTaskTimer*                   m_TaskTimer;
-    int32                         field_18;
-    char                          field_1C;
-    char                          field_1D;
+    CTaskTimer                    m_TaskTimer;
     int32                         m_nBoppingStartTime;
     int32                         field_24;
     int32                         m_nBoppingEndTime;  // Seemingly not a tick count, but rather the bopping interval

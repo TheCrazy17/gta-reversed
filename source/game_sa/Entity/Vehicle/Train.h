@@ -139,6 +139,7 @@ private:
 };
 VALIDATE_SIZE(CTrain, 0x6AC);
 VALIDATE_OFFSET(CTrain, m_nTrainFlags, 0x5B8);
+VALIDATE_OFFSET(CTrain, m_aDoors, 0x5D8);
 
 void ProcessTrainAnnouncements();
 void PlayAnnouncement(uint8 arg0, uint8 arg1);

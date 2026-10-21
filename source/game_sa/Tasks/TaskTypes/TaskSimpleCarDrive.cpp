@@ -8,6 +8,25 @@
 #include "Weather.h"
 #include "Entity/Vehicle/Automobile.h"
 #include <numbers>
+#include "TaskSimpleGangDriveBy.h"
+#include "TaskComplexSequence.h"
+#include "TaskComplexLeaveCar.h"
+#include "TaskComplexDriveWander.h"
+#include "TaskSimpleHoldEntity.h"
+#include "Events/EventCarUpsideDown.h"
+#include "Events/EventCopCarBeingStolen.h"
+#include "Events/EventScriptCommand.h"
+#include "PedGroups.h"
+#include "Entity/Vehicle/Train.h"
+#include "Entity/Ped/PlayerPed.h"
+#include "Scripts/TheScripts.h"
+#include "Audio/AudioEngine.h"
+#include "ModelIndices.h"
+#include "RwHelper.h"
+#include "GameLogic.h"
+
+// Unknown flag, the driver of a vehicle can only shoot from it when it is set
+static auto& s_unkDriveByFlag = StaticRef<bool>(0x969179);
 
 void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarDrive, 0x86E904, 9);
@@ -25,7 +44,7 @@ void CTaskSimpleCarDrive::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x63DC20);
     RH_ScopedVMTInstall(GetTaskType, 0x63C450);
     RH_ScopedVMTInstall(MakeAbortable, 0x63C670);
-    RH_ScopedVMTInstall(ProcessPed, 0x644470, { .Reversed = false });
+    RH_ScopedVMTInstall(ProcessPed, 0x644470);
     RH_ScopedVMTInstall(SetPedPosition, 0x63C770);
 }
 
@@ -34,10 +53,6 @@ CTaskSimpleCarDrive::CTaskSimpleCarDrive(CVehicle* vehicle, CTaskUtilityLineUpPe
     m_pVehicle = vehicle;
     m_pAnimCloseDoorRolling = nullptr;
     m_pTaskUtilityLineUpPedWithCar = nullptr;
-    m_TaskTimer = nullptr;
-    field_18 = 0;
-    field_1C = 0;
-    field_1D = 0;
     m_nTimePassedSinceCarUpSideDown = 0;
 
     m_bUpdateCurrentVehicle = updateCurrentVehicle;
@@ -381,10 +396,191 @@ bool CTaskSimpleCarDrive::MakeAbortable(CPed* ped, eAbortPriority priority, CEve
 }
 
 // 0x644470
-
-
 bool CTaskSimpleCarDrive::ProcessPed(CPed* ped) {
-    return plugin::CallMethodAndReturn<bool, 0x644470, CTaskSimpleCarDrive*, CPed*>(this, ped);
+    ZoneScoped;
+
+    const auto radioRetuned = AudioEngine.HasRadioRetuneJustStarted();
+
+    // Follow the vehicle the ped is in now
+    if (m_bUpdateCurrentVehicle && ped->bInVehicle && ped->m_pVehicle && ped->m_pVehicle != m_pVehicle) {
+        CEntity::SafeCleanUpRef(m_pVehicle);
+        m_pVehicle = ped->m_pVehicle;
+        CEntity::SafeRegisterRef(m_pVehicle);
+    }
+
+    if (!m_pVehicle || !ped->bInVehicle) {
+        ped->bInVehicle = false;
+        if (g_ikChainMan.IsLooking(ped)) {
+            g_ikChainMan.AbortLookAt(ped, 250);
+        }
+        return true;
+    }
+
+    auto* const group = CPedGroups::GetPedsGroup(ped);
+
+    // The vehicle being upside down for long enough is an event
+    if (!CTheScripts::UpsideDownCars.IsCarUpsideDown(m_pVehicle)) {
+        m_nTimePassedSinceCarUpSideDown = 0;
+    } else {
+        auto* const player = FindPlayerPed(-1);
+        if (ped != player && player->bInVehicle && player->m_pVehicle == m_pVehicle) {
+            ped->Say(CTX_GLOBAL_CAR_FLIPPED);
+        }
+        if (!group || group->GetMembership().IsLeader(ped)) {
+            m_nTimePassedSinceCarUpSideDown += (int32)((double)CTimer::GetTimeStep() * (double)0.02f * (double)1000.0f);
+            if ((uint32)m_nTimePassedSinceCarUpSideDown > 2000) {
+                CEventCarUpsideDown event{ m_pVehicle };
+                ped->GetIntelligence()->GetEventGroup().Add(&event, false);
+            }
+        }
+    }
+
+    // The cops know about their car being stolen
+    if (ped->IsPlayer() && m_pVehicle->IsLawEnforcementVehicle() && (!m_copCarStolenTimer.m_bStarted || m_copCarStolenTimer.IsOutOfTime())) {
+        m_copCarStolenTimer.Start(2000);
+        CEventCopCarBeingStolen event{ ped, m_pVehicle };
+        GetEventGlobalGroup()->Add(&event, false);
+    }
+
+    if (m_pVehicle->m_nVehicleType == VEHICLE_TYPE_BIKE || m_pVehicle->m_nVehicleSubType == VEHICLE_TYPE_QUAD || m_pVehicle->m_nModelIndex == MODEL_TRACTOR) {
+        ped->bTestForShotInVehicle = true;
+    }
+
+    // Can the ped shoot from the vehicle with the weapon it has
+    const auto CanDriveBy = [ped, this] {
+        const auto& weapon = ped->GetWeaponInSlot((size_t)4);
+        return weapon.m_Type != WEAPON_UNARMED && weapon.m_TotalAmmo > 0 && m_pVehicle->CanPedLeanOut(ped);
+    };
+    const auto StartDriveBy = [ped](bool seatRHS) {
+        auto* const task = new CTaskSimpleGangDriveBy{ nullptr, nullptr, 100.0f, 100, eDrivebyStyle::AI_ALL_DIRN, seatRHS };
+        CEventScriptCommand event{ TASK_PRIMARY_PRIMARY, task, false };
+        ped->GetIntelligence()->GetEventGroup().Add(&event, false);
+    };
+
+    // Returns false when the whole thing is done for this frame
+    const auto ProcessVehicleAnims = [&]() -> bool {
+        if (ped->IsPlayer() && m_pVehicle->m_pDriver == ped) {
+            auto* const pad = static_cast<CPlayerPed*>(ped)->GetPadFromPlayer();
+
+            if (s_unkDriveByFlag && CanDriveBy()) {
+                StartDriveBy(false);
+            }
+
+            const auto IsPadIdle = [pad] {
+                return !pad || (pad->GetAccelerate() == 0 && pad->GetSteeringLeftRight() == 0 && pad->GetBrake() == 0);
+            };
+
+            // Trains open their doors when stopped
+            auto* const pedVeh = ped->m_pVehicle;
+            if (pedVeh->m_nModelIndex != MODEL_STREAKC && pedVeh->m_nVehicleType == VEHICLE_TYPE_TRAIN && !static_cast<CTrain*>(pedVeh)->m_aDoors[2].IsClosed()) {
+                if (IsPadIdle()) {
+                    const auto animGroup = CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)m_pVehicle->m_pHandlingData->m_nAnimGroup, ANIM_ID_CAR_ROLLDOOR);
+                    pedVeh->ProcessOpenDoor(ped, 10, animGroup, ANIM_ID_CAR_ROLLDOOR, 1.0f);
+                }
+                return true;
+            }
+
+            // The driver's door is open, close it when nothing is going on
+            if (pedVeh->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE && static_cast<CAutomobile*>(pedVeh)->m_damageManager.GetDoorStatus(DOOR_LEFT_FRONT) == DAMSTATE_OPENED) {
+                if (pedVeh->IsDoorMissing(DOOR_LEFT_FRONT)) {
+                    return true;
+                }
+
+                auto* const rollDoorAnim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_CAR_ROLLDOOR);
+                if (!(pedVeh->m_nGettingOutFlags & 1) && !(pedVeh->m_nGettingInFlags & 1) && !rollDoorAnim) {
+                    if (IsPadIdle()) {
+                        pedVeh->SetGettingOutFlags(1);
+                        m_b20 = true;
+                        plugin::CallMethod<0x642700, CTaskSimpleCarDrive*, CPed*>(this, ped); // Starts the anim of the door rolling closed
+                        return false;
+                    }
+                } else if (rollDoorAnim) {
+                    const auto animGroup = CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)m_pVehicle->m_pHandlingData->m_nAnimGroup, rollDoorAnim->m_AnimId);
+                    pedVeh->ProcessOpenDoor(ped, 10, animGroup, ANIM_ID_CAR_ROLLDOOR, rollDoorAnim->m_CurrentTime);
+                }
+                ProcessBopping(ped, false);
+                return true;
+            }
+
+            m_pVehicle->ProcessDrivingAnims(ped, radioRetuned);
+            ProcessBopping(ped, true);
+            return true;
+        }
+
+        if (m_pVehicle->m_pDriver != ped) {
+            if (!m_pVehicle->IsPassenger(ped)) {
+                return true;
+            }
+            if (!m_b08 && !m_b10) {
+                if (auto* const rideData = m_pVehicle->GetRideAnimData()) {
+                    CAnimManager::BlendAnimation(ped->m_pRwClump, rideData->AnimGroup, ANIM_ID_BIKE_PASSENGER, 8.0f);
+                }
+                m_b10 = true;
+            }
+            ProcessBopping(ped, true);
+
+            if (ped->IsPlayer() && CGameLogic::IsCoopGameGoingOn() && CanDriveBy() && TheCamera.GetActiveCam().m_nMode == MODE_TWOPLAYER_IN_CAR_AND_SHOOTING) {
+                StartDriveBy(m_pVehicle->m_apPassengers[1] != ped);
+            }
+            return true;
+        }
+
+        m_pVehicle->ProcessDrivingAnims(ped, radioRetuned);
+        ProcessBopping(ped, true);
+        return true;
+    };
+    if (!ProcessVehicleAnims()) {
+        return false;
+    }
+
+    // Takes a sip of the cigarette
+    if (auto* const held = ped->GetEntityThatThisPedIsHolding(); held && held->m_nModelIndex == MI_GANG_SMOKE && !g_ikChainMan.IsLooking(ped) && CGeneral::GetRandomNumberInRange(0, 60) == 15) {
+        if (auto* const holdTask = static_cast<CTaskSimpleHoldEntity*>(ped->GetTaskManager().FindActiveTaskByType(TASK_SIMPLE_HOLD_ENTITY))) {
+            holdTask->PlayAnim(m_pVehicle->IsPassenger(ped) ? ANIM_ID_PASS_SMOKE_IN_CAR : ANIM_ID_SMOKE_IN_CAR, (AssocGroupId)0);
+        }
+    }
+
+    if (!RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_SMOKE_IN_CAR)) {
+        TriggerIK(ped);
+    } else {
+        if (g_ikChainMan.IsLooking(ped)) {
+            g_ikChainMan.AbortLookAt(ped, 250);
+        }
+        if (m_nBoppingStartTime != -1) {
+            m_nBoppingStartTime = -1;
+        }
+    }
+
+    // Peds that are alone in the passenger seat of a vehicle without a driver leave it after a while
+    if (ped->IsCreatedBy(PED_GAME) && !CPedGroups::GetPedsGroup(ped)) {
+        if (!m_pVehicle->m_pDriver && m_pVehicle->m_apPassengers[0] == ped) {
+            m_TaskTimer.StartIfNotAlready(4000);
+            if (m_TaskTimer.IsOutOfTime()) {
+                auto* const sequence = new CTaskComplexSequence{};
+                sequence->AddTask(new CTaskComplexLeaveCar{ m_pVehicle, 0, 0, true, false });
+                sequence->AddTask(new CTaskComplexCarDriveWander{ m_pVehicle, DRIVING_STYLE_STOP_FOR_CARS, 10.0f });
+                CEventScriptCommand event{ TASK_PRIMARY_PRIMARY, sequence, false };
+                ped->GetIntelligence()->GetEventGroup().Add(&event, false);
+            }
+        } else {
+            m_TaskTimer.Stop();
+        }
+    }
+
+    // The driver comments on the way the vehicle moves
+    if ((((uint32)ped->m_nRandomSeed + CTimer::GetFrameCounter()) & 0x3FFF) == 0) {
+        if (auto* const driver = m_pVehicle->m_pDriver; driver && driver != ped && ped->IsPlayer()) {
+            const auto speed = m_pVehicle->m_vecMoveSpeed.Magnitude2D();
+            if (speed > 0.7f) {
+                ped->Say(CTX_GLOBAL_CAR_FAST);
+            }
+            if (m_pVehicle->m_vecMoveSpeed.Magnitude2D() < 0.1f) {
+                ped->Say(CTX_GLOBAL_CAR_SLOW);
+            }
+            ped->Say(CTX_GLOBAL_CAR_SINGALONG);
+        }
+    }
+    return false;
 }
 
 // 0x63C770
