@@ -10507,7 +10507,7 @@
   {
     "Category": "CStencilShadows",
     "Name": "RenderForObject",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStencilShadows",

@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 21, 2026 at 21:14:18 UTC
+Last update was at Oct 21, 2026 at 21:18:19 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8314 out of 8346 functions done in 720 categories)
+## Stats (8315 out of 8346 functions done in 720 categories)
 
 #### Completely reversed categories (702/720) [98%]
 
@@ -729,7 +729,7 @@ Last update was at Oct 21, 2026 at 21:14:18 UTC
 - CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
 - CPostEffects (37/38) [97%]<br />
-- CStencilShadows (10/13) [77%]<br />
+- CStencilShadows (11/13) [85%]<br />
 - CPedGeometryAnalyser (37/38) [97%]<br />
 - CShadows (28/31) [90%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />

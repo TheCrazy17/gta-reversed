@@ -19,7 +19,7 @@ void CStencilShadows::InjectHooks() {
     RH_ScopedInstall(RegisterStencilShadows, 0x711760, {.Reversed = false});
     RH_ScopedInstall(RenderStencilShadows, 0x7113B0);
     RH_ScopedInstall(RenderForVehicle, 0x70FAE0, {.Reversed = false});
-    RH_ScopedInstall(RenderForObject, 0x710310, {.Reversed = false});
+    RH_ScopedInstall(RenderForObject, 0x710310);
     RH_ScopedInstall(Render, 0x710D50);
     RH_ScopedInstall(RenderBuffer, 0x710B50);
     RH_ScopedInstall(SunSetPositionFromEntity, 0x710AF0);
@@ -221,7 +221,118 @@ void CStencilShadows::RenderForVehicle(CStencilShadowObject* object) {
 
 // 0x710310
 void CStencilShadows::RenderForObject(CStencilShadowObject* object) {
-    plugin::Call<0x710310, CStencilShadowObject*>(object);
+    ZoneScoped;
+
+    auto* const entity  = object->m_pOwner;
+    auto* const colData = entity->GetColModel()->m_pColData;
+    if (!colData || (int32)colData->m_nNumShadowTriangles != (int32)object->m_NumShadowFaces) {
+        return;
+    }
+
+    if (!entity->m_matrix) {
+        entity->AllocateMatrix();
+        entity->m_placement.UpdateMatrix(entity->m_matrix);
+    }
+
+    // The direction of the sun in the space of the entity
+    CMatrix invMatrix;
+    Invert(*entity->m_matrix, invMatrix);
+    const auto sunDir   = s_SunPosNrm;
+    const auto lightDir = invMatrix.TransformPoint(sunDir) - invMatrix.TransformPoint(CVector{});
+
+    object->m_SizeOfShadowFacesData = 0;
+
+    const auto numVerts = (int32)colData->m_nNumShadowVertices;
+    for (auto i = 0; i < numVerts; i++) {
+        colData->GetShadTrianglePoint(s_ShadowTrianglePoints[i], i);
+    }
+    TransformPoints(s_TransformedShadowTrianglePoints, numVerts, *entity->m_matrix, s_ShadowTrianglePoints);
+
+    // The edges of the faces that are not facing the sun, an edge that shows up twice is not on the outline
+    uint16 numEdges = 0;
+    auto*  edges    = reinterpret_cast<uint16(*)[2]>(s_ShadowTrianglePointsUnk);
+    const auto AddOrRemoveEdge = [&](uint16 from, uint16 to) {
+        for (uint16 i = 0; i < numEdges; i++) {
+            if ((edges[i][0] == from && edges[i][1] == to) || (edges[i][0] == to && edges[i][1] == from)) {
+                if (numEdges > 1) {
+                    edges[i][0] = edges[numEdges - 1][0];
+                    edges[i][1] = edges[numEdges - 1][1];
+                }
+                numEdges--;
+                return;
+            }
+        }
+        edges[numEdges][0] = from;
+        edges[numEdges][1] = to;
+        numEdges++;
+    };
+
+    // The data is as big as the object says it is (Which is kept in `m_FaceID`)
+    const auto HasSpaceFor = [&](uint32 numPoints) {
+        return object->m_FaceID > object->m_SizeOfShadowFacesData + numPoints;
+    };
+
+    // How far the shadow goes
+    const auto extrude = sunDir * 60.0f;
+
+    for (auto i = 0; i < (int32)object->m_NumShadowFaces; i++) {
+        const auto& tri = colData->m_pShadowTriangles[i];
+
+        const auto& local0 = s_ShadowTrianglePoints[tri.vA];
+        const auto& local1 = s_ShadowTrianglePoints[tri.vB];
+        const auto& local2 = s_ShadowTrianglePoints[tri.vC];
+        const auto& world0 = s_TransformedShadowTrianglePoints[tri.vA];
+        const auto& world1 = s_TransformedShadowTrianglePoints[tri.vB];
+        const auto& world2 = s_TransformedShadowTrianglePoints[tri.vC];
+
+        const auto edge1 = local1 - local0;
+        const auto edge2 = local2 - local0;
+        const CVector normal{
+            edge2.z * edge1.y - edge2.y * edge1.z,
+            edge2.x * edge1.z - edge2.z * edge1.x,
+            edge2.y * edge1.x - edge2.x * edge1.y
+        };
+
+        auto* const out = &object->m_ShadowFacesData[object->m_SizeOfShadowFacesData];
+        if (normal.x * lightDir.x + normal.y * lightDir.y + lightDir.z * normal.z < 0.0f) {
+            // Faces the sun, so only the cap that is far from it
+            if (!HasSpaceFor(3)) {
+                break;
+            }
+            out[0] = world0 + extrude;
+            out[1] = world2 + extrude;
+            out[2] = world1 + extrude;
+        } else {
+            AddOrRemoveEdge(tri.vA, tri.vB);
+            AddOrRemoveEdge(tri.vB, tri.vC);
+            AddOrRemoveEdge(tri.vC, tri.vA);
+            if (!HasSpaceFor(3)) {
+                break;
+            }
+            out[0] = world0;
+            out[1] = world2;
+            out[2] = world1;
+        }
+        object->m_SizeOfShadowFacesData += 3;
+    }
+
+    // The sides of the volume are what is left from the outline
+    for (uint16 i = 0; i < numEdges; i++) {
+        const auto& pointA = s_TransformedShadowTrianglePoints[edges[i][0]];
+        const auto& pointB = s_TransformedShadowTrianglePoints[edges[i][1]];
+
+        if (!HasSpaceFor(6)) {
+            break;
+        }
+        auto* const out = &object->m_ShadowFacesData[object->m_SizeOfShadowFacesData];
+        out[0] = pointA;
+        out[1] = pointB;
+        out[2] = pointA + extrude;
+        out[3] = pointB;
+        out[4] = pointB + extrude;
+        out[5] = pointA + extrude;
+        object->m_SizeOfShadowFacesData += 6;
+    }
 }
 
 // 0x711D90
