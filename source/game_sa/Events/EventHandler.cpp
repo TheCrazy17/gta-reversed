@@ -92,6 +92,7 @@
 #include "Tasks/TaskTypes/TaskComplexHitPedWithCar.h"
 #include "Tasks/TaskTypes/TaskComplexEvasiveStep.h"
 #include "Tasks/TaskTypes/TaskComplexFollowPointRoute.h"
+#include "Tasks/TaskTypes/TaskComplexBeInGroup.h"
 #include "Tasks/TaskTypes/TaskComplexWalkRoundCar.h"
 #include "Tasks/TaskTypes/TaskComplexRoadRage.h"
 #include "Tasks/TaskTypes/TaskComplexLeaveAnyCar.h"
@@ -133,6 +134,7 @@
 #include "Events/EventPedToFlee.h"
 #include "Events/EventPlayerCollisionWithPed.h"
 #include "Events/EventPedCollisionWithPed.h"
+#include "Events/EventPedCollisionWithPlayer.h"
 #include "Events/EventPotentialWalkIntoPed.h"
 #include "Events/EventHealthReallyLow.h"
 #include "Events/EventRevived.h"
@@ -273,7 +275,7 @@ void CEventHandler::InjectHooks() {
     RH_ScopedInstall(ComputeOnFireResponse, 0x4BAD50);
     RH_ScopedInstall(ComputePassObjectResponse, 0x4BB0C0);
     RH_ScopedInstall(ComputePedCollisionWithPedResponse, 0x4BDB80);
-    RH_ScopedInstall(ComputePedCollisionWithPlayerResponse, 0x4BE7D0, { .Reversed = false });
+    RH_ScopedInstall(ComputePedCollisionWithPlayerResponse, 0x4BE7D0);
     RH_ScopedInstall(ComputePedEnteredVehicleResponse, 0x4C1590);
     RH_ScopedInstall(ComputePedFriendResponse, 0x4B9DD0);
     RH_ScopedInstall(ComputePedSoundQuietResponse, 0x4B9D40);
@@ -1882,8 +1884,126 @@ void CEventHandler::ComputePedCollisionWithPedResponse(CEventPedCollisionWithPed
 }
 
 // 0x4BE7D0
-void CEventHandler::ComputePedCollisionWithPlayerResponse(CEvent* e, CTask* tactive, CTask* tsimplest) {
-    plugin::CallMethod<0x4BE7D0, CEventHandler*, CEvent*, CTask*, CTask*>(this, e, tactive, tsimplest);
+void CEventHandler::ComputePedCollisionWithPlayerResponse(CEventPedCollisionWithPlayer* e, CTask* tactive, CTask* tsimplest) {
+    const auto victim = e->m_victim;
+    if (!victim) {
+        return;
+    }
+
+    const auto pedToVictim        = victim->GetPosition() - m_Ped->GetPosition();
+    const auto victimInFrontOfPed = !(pedToVictim.Dot(m_Ped->GetForward()) < 0.0f);
+    const auto victimFacesPed     = pedToVictim.Dot(victim->GetForward()) <= 0.0f;
+
+    const auto IsMoving = [](eMoveState ms) {
+        return ms == PEDMOVE_WALK || ms == PEDMOVE_RUN || ms == PEDMOVE_SPRINT;
+    };
+    const auto moveState       = e->GetMoveState();
+    const auto victimIsMoving  = IsMoving(victim->m_nMoveState);
+
+    auto& intel = *m_Ped->GetIntelligence();
+
+    auto* const gangFollower = static_cast<CTaskComplexGangFollower*>(intel.FindTaskByType(TASK_COMPLEX_GANG_FOLLOWER));
+    auto* const avoidTask    = static_cast<CTaskComplexAvoidOtherPedWhileWandering*>(intel.m_TaskMgr.FindActiveTaskByType(TASK_COMPLEX_AVOID_OTHER_PED_WHILE_WANDERING));
+    auto* const goToPoint    = static_cast<CTaskSimpleGoTo*>(intel.FindTaskByType(TASK_SIMPLE_GO_TO_POINT));
+    auto* const seekTask     = static_cast<CTaskComplexSeekEntity<>*>(intel.FindTaskByType(TASK_COMPLEX_SEEK_ENTITY));
+
+    // The ped is in the group of the player, a group that is too small does not bother with this
+    auto inPlayerGroup           = false;
+    auto groupHasEnoughMembers = false;
+    if (const auto* const beInGroup = static_cast<CTaskComplexBeInGroup*>(intel.FindTaskByType(TASK_COMPLEX_BE_IN_GROUP)); beInGroup && beInGroup->GetGroupID() == 0) {
+        inPlayerGroup = true;
+        if (CPedGroups::ms_groups[0].GetMembership().CountMembers() <= 2) {
+            return;
+        }
+        groupHasEnoughMembers = true;
+    }
+
+    m_Ped->Say(CTX_GLOBAL_BUMP);
+
+    CTask* result{};
+
+    const auto Say = [this] {
+        m_SayTask = new CTaskSimpleSay{CTX_GLOBAL_BUMP, -1};
+    };
+    const auto LookAtVictim = [&] {
+        g_ikChainMan.LookAt("CompPedCollPlayerResp", m_Ped, victim, 2000, BONE_HEAD, nullptr, true, 0.25f, 500, 3, false);
+    };
+    const auto EvasiveStep = [&]() -> CTask* {
+        const auto& victimFwd = victim->GetForward();
+        CVector     dir{-victimFwd.y, victimFwd.x, 0.0f};
+        dir.Normalise();
+        return new CTaskComplexEvasiveStep{victim, dir};
+    };
+
+    // A follower next to its leader keeps its place next to it
+    const auto canStayNextToLeader = gangFollower && gangFollower->m_Leader && seekTask && (avoidTask || goToPoint) && inPlayerGroup && !victimIsMoving;
+    const auto StayNextToLeader    = [&] {
+        auto fromLeader = m_Ped->GetPosition() - gangFollower->m_Leader->GetPosition();
+        fromLeader.z    = 0.0f;
+        const auto dist = fromLeader.Magnitude();
+
+        if (avoidTask) {
+            avoidTask->SetWantsToQuit();
+        } else if (goToPoint) {
+            goToPoint->m_fRadius = dist + 0.1f;
+        }
+        seekTask->UpdateMaxEntityDist2D(dist + 0.1f);
+
+        if (dist < 8.0f) {
+            gangFollower->dword20 = fromLeader;
+        }
+    };
+    const auto cantStayNextToLeader = !gangFollower || !inPlayerGroup || victimIsMoving;
+
+    if (tactive && tactive->GetTaskType() == TASK_COMPLEX_FOLLOW_LEADER_IN_FORMATION) {
+        if (victim->IsPlayer()) {
+            Say();
+        } else if (const auto* const victimTask = victim->GetIntelligence()->m_TaskMgr.GetActiveTask(); victimTask && victimTask->GetTaskType() == TASK_COMPLEX_FOLLOW_LEADER_IN_FORMATION) {
+            if (CGeneral::GetRandomNumberInRange(0.0f, 1.0f) < 0.25f) {
+                const auto roll = CGeneral::GetRandomNumberInRange(0.0f, 1.0f);
+                if (roll < 0.33f) {
+                    LookAtVictim();
+                } else if (roll < 0.66) {
+                    Say();
+                }
+            }
+        }
+        if (!(victimFacesPed && victim == static_cast<CTaskComplexFollowLeaderInFormation*>(tactive)->GetLeader()) && !groupHasEnoughMembers) {
+            m_EventResponseTask = result;
+            return;
+        }
+    } else {
+        if (victimInFrontOfPed && IsMoving(moveState)) {
+            if (canStayNextToLeader) {
+                StayNextToLeader();
+            } else if (cantStayNextToLeader && tsimplest && CTask::IsGoToTask(tsimplest)) { // Goes around the player instead
+                CPointRoute route{};
+                CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(*m_Ped, *victim, static_cast<CTaskSimpleGoTo*>(tsimplest)->m_vecTargetPoint, route, 0);
+                result                = new CTaskComplexFollowPointRoute{PEDMOVE_WALK, route, CTaskComplexFollowPointRoute::Mode::ONE_WAY, 0.5f, 5.0f, false, true, true};
+                groupHasEnoughMembers = false;
+            }
+            Say();
+            LookAtVictim();
+        } else if (victimInFrontOfPed || victimFacesPed) {
+            Say();
+            LookAtVictim();
+            if (!groupHasEnoughMembers) {
+                result = EvasiveStep();
+            }
+        }
+
+        if (!groupHasEnoughMembers) {
+            m_EventResponseTask = result;
+            return;
+        }
+    }
+
+    if (canStayNextToLeader) {
+        StayNextToLeader();
+    } else if (cantStayNextToLeader) {
+        result = EvasiveStep();
+    }
+    m_EventResponseTask = result;
 }
 
 // 0x4C1590
@@ -3189,7 +3309,7 @@ void CEventHandler::ComputeEventResponseTask(CEvent* e, CTask* pAbortedTaskEvent
         ComputePedCollisionWithPedResponse(static_cast<CEventPedCollisionWithPed*>(e), tactive, tsimplest);
         break;
     case EVENT_PED_COLLISION_WITH_PLAYER:
-        ComputePedCollisionWithPlayerResponse(e, tactive, tsimplest);
+        ComputePedCollisionWithPlayerResponse(static_cast<CEventPedCollisionWithPlayer*>(e), tactive, tsimplest);
         break;
     case EVENT_PLAYER_COLLISION_WITH_PED:
         ComputePlayerCollisionWithPedResponse(static_cast<CEventPlayerCollisionWithPed*>(e), tactive, tsimplest);
