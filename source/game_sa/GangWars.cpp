@@ -29,7 +29,7 @@ void CGangWars::InjectHooks() {
     RH_ScopedInstall(CheerVictory, 0x444040);
     RH_ScopedInstall(ClearSpecificZonesToTriggerGangWar, 0x443FF0);
     RH_ScopedInstall(ClearTheStreets, 0x4444B0);
-    RH_ScopedInstall(CreateAttackWave, 0x444810, { .Reversed = false });                   //
+    RH_ScopedInstall(CreateAttackWave, 0x444810);
     RH_ScopedInstall(CreateDefendingGroup, 0x4453D0);
     RH_ScopedInstall(DoesPlayerControlThisZone, 0x443AE0);
     RH_ScopedInstall(DoStuffWhenPlayerVictorious, 0x446400);
@@ -52,7 +52,7 @@ void CGangWars::InjectHooks() {
     RH_ScopedInstall(SwitchGangWarsActive, 0x4465F0);
     RH_ScopedInstall(TellGangMembersTo, 0x444530);                     // ?
     RH_ScopedInstall(TellStreamingWhichGangsAreNeeded, 0x443D50);
-    RH_ScopedInstall(Update, 0x446610);                             //
+    RH_ScopedInstall(Update, 0x446610);
     RH_ScopedInstall(UpdateTerritoryUnderControlPercentage, 0x443DE0); //
     RH_ScopedInstall(Load, 0x5D3EB0);
     RH_ScopedInstall(Save, 0x5D5530);
@@ -203,7 +203,229 @@ void CGangWars::ClearTheStreets() {
 
 // 0x444810
 bool CGangWars::CreateAttackWave(int32 warFerocity, int32 waveID) {
-    return plugin::CallAndReturn<bool, 0x444810, int32, int32>(warFerocity, waveID);
+    ZoneScoped;
+
+    const auto playerPos = FindPlayerCoors(-1);
+    auto* const player   = FindPlayerPed(-1);
+
+    if (CGame::currArea != AREA_CODE_NORMAL_WORLD || playerPos.z > 950.0f) {
+        return false;
+    }
+    if (!ThePaths.AreNodesLoadedForArea(playerPos.x - 20.0f, playerPos.x + 20.0f, playerPos.y - 20.0f, playerPos.y + 20.0f)) {
+        return false;
+    }
+
+    // The gangs have to be streamed in before anything can be created
+    if (!PedStreamedInForThisGang(Gang1)) {
+        CStreaming::RequestModel(CPopulation::GetPedGroupModelId(CPopulation::GetGangGroupId(Gang1), 0), STREAMING_KEEP_IN_MEMORY);
+    }
+    if (Gang1 != Gang2 && !PedStreamedInForThisGang(static_cast<eGangID>(Gang2))) {
+        CStreaming::RequestModel(CPopulation::GetPedGroupModelId(CPopulation::GetGangGroupId(static_cast<eGangID>(Gang2)), 0), STREAMING_KEEP_IN_MEMORY);
+    }
+
+    // The two weapons (and their models) the gang members get, the second one is for the higher difficulty
+    int32 weaponA, weaponB, modelA, modelB;
+    switch (warFerocity) {
+    case 0:  weaponA = WEAPON_BASEBALLBAT; weaponB = WEAPON_PISTOL;     modelA = 0x150; modelB = 0x15A; break;
+    case 1:  weaponA = WEAPON_PISTOL;      weaponB = WEAPON_MICRO_UZI;  modelA = 0x15A; modelB = 0x160; break;
+    case 2:  weaponA = WEAPON_MICRO_UZI;   weaponB = WEAPON_MP5;        modelA = 0x160; modelB = 0x161; break;
+    case 3:  weaponA = WEAPON_MP5;         weaponB = WEAPON_AK47;       modelA = 0x161; modelB = 0x163; break;
+    case 4:  weaponA = WEAPON_AK47;        weaponB = WEAPON_AK47;       modelA = 0x163; modelB = 0x163; break;
+    case 5:  weaponA = WEAPON_DESERT_EAGLE; weaponB = WEAPON_AK47;      modelA = 0x15C; modelB = 0x163; break;
+    default: return false; // The original reads the model info with a garbage index here
+    }
+    if (bTrainingMission) {
+        switch (warFerocity) {
+        case 0:  weaponA = weaponB = WEAPON_BASEBALLBAT; modelA = modelB = 0x150; break;
+        case 1:  weaponA = weaponB = WEAPON_PISTOL;      modelA = modelB = 0x15A; break;
+        default: weaponA = weaponB = WEAPON_TEC9;        modelA = modelB = 0x174; break;
+        }
+    }
+
+    if (!CStreaming::GetInfo(modelA).IsLoaded() || !CStreaming::GetInfo(modelB).IsLoaded()) {
+        CStreaming::RequestModel(modelA, 0);
+        CStreaming::RequestModel(modelB, 0);
+        return false;
+    }
+    if (!PedStreamedInForThisGang(Gang1) || !PedStreamedInForThisGang(static_cast<eGangID>(Gang2))) {
+        return false;
+    }
+
+    CVector lastSpawnPos{ 999999.9f, 999999.9f, 999999.9f };
+    bool    anyPedCreated = false;
+    int32   gang          = Gang1;
+
+    for (auto pass = 0; pass < 2; pass++) {
+        gang = (pass == 0) ? Gang1 : Gang2;
+
+        // Look for a spot close to the player, preferably out of sight and away from the last one
+        CVector spawnPos{};
+        bool    found = false;
+        for (auto attempt = 0; attempt < 20; attempt++) {
+            CVector      candidate;
+            CNodeAddress node1, node2;
+            float        lerp;
+            if (!CCarCtrl::GenerateCarCreationCoors2(playerPos, 1.0f, 0.0f, -1.0f, true, 50.0f, 50.0f, &candidate, &node1, &node2, &lerp, false, true)) {
+                continue;
+            }
+            if (TheCamera.IsSphereVisible(candidate, 7.0f)) {
+                if (!found) {
+                    spawnPos = candidate;
+                    found    = true;
+                }
+                continue;
+            }
+            spawnPos = candidate;
+            found    = true;
+            if ((lastSpawnPos - candidate).Magnitude() > 15.0f) {
+                break;
+            }
+        }
+
+        if (found) {
+            // The members are lined up along the direction across from the player
+            CVector lineDir{ playerPos.y - spawnPos.y, spawnPos.x - playerPos.x, 0.0f };
+            lastSpawnPos = spawnPos;
+            lineDir.Normalise();
+            lineDir *= 1.2f;
+
+            auto numPeds = (int32)(((double)Difficulty * (double)0.3f + (double)0.7f) * (double)(warFerocity + 3));
+            if (bTrainingMission) {
+                numPeds = 2;
+            }
+            if (warFerocity == 5) {
+                numPeds = 10;
+            }
+
+            for (auto i = 0, step = (numPeds / 2) * -2; i < numPeds; i++, step += 2) {
+                const auto offset = (float)step;
+                CVector    pedPos{
+                    lineDir.x * offset + spawnPos.x,
+                    lineDir.y * offset + spawnPos.y,
+                    lineDir.z * offset + spawnPos.z
+                };
+                pedPos.x += CGeneral::GetRandomNumberInRange(0.0f, 3.0f) - 1.5f;
+                pedPos.y += CGeneral::GetRandomNumberInRange(0.0f, 3.0f) - 1.5f;
+
+                int32 pedModelId;
+                if (!PickStreamedInPedForThisGang(static_cast<eGangID>(gang), pedModelId)) {
+                    continue;
+                }
+
+                pedPos.z = CWorld::FindGroundZFor3DCoord({ pedPos.x, pedPos.y, pedPos.z + 2.0f }, nullptr, nullptr) + 1.3f;
+
+                auto* const ped = new CCivilianPed(static_cast<ePedType>(Gang1 + 7), pedModelId);
+                ped->SetPosn(pedPos);
+                ped->SetCharCreatedBy(PED_MISSION);
+                CWorld::Add(ped);
+
+                auto* const task = new CTaskComplexKillPedOnFoot(player, -1, 0, 0, 0, 2);
+                CEventScriptCommand event(TASK_PRIMARY_PRIMARY, task, false);
+                ped->GetEventGroup().Add(&event);
+
+                const auto weapon = (CGeneral::GetRandomNumberInRange(-0.3f, 1.3f) <= Difficulty) ? weaponB : weaponA;
+                ped->GiveWeapon((eWeaponType)weapon, 5000, false);
+                ped->SetCurrentWeapon((eWeaponType)weapon);
+                ped->SetWeaponAccuracy((uint8)(int32)((double)Difficulty * 25.0 + 70.0));
+                ped->bPartOfAttackWave      = true;
+                ped->bClearRadarBlipOnDeath = true;
+                ped->m_fHealth              = 120.0f;
+                ped->m_fMaxHealth           = 120.0f;
+
+                const auto color = GetGangColor(gang);
+                const auto blip  = CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedRef(ped), color, BLIP_DISPLAY_BLIPONLY);
+                CRadar::ChangeBlipScale(blip, 2);
+                CRadar::ChangeBlipColour(blip, color);
+
+                anyPedCreated = true;
+            }
+
+            // The pickup the player can use during this wave
+            CVector pickupPos{
+                CGeneral::GetRandomNumberInRange(0.0f, 4.0f) + spawnPos.x - 2.0f,
+                CGeneral::GetRandomNumberInRange(0.0f, 4.0f) + spawnPos.y - 2.0f,
+                0.0f
+            };
+            pickupPos.z = CWorld::FindGroundZFor3DCoord({ pickupPos.x, pickupPos.y, spawnPos.z + 1.0f }, nullptr, nullptr) + 0.75f;
+
+            ModelIndex pickupModel = MODEL_INVALID;
+            switch (waveID) {
+            case 0:
+                if (pass == 0) {
+                    pickupModel = ModelIndices::MI_PICKUP_HEALTH;
+                }
+                break;
+            case 1:
+                if (pass == 0) {
+                    pickupModel = ModelIndices::MI_PICKUP_BODYARMOUR;
+                }
+                break;
+            case 2:
+                pickupModel = (pass == 0) ? ModelIndices::MI_PICKUP_HEALTH : ModelIndices::MI_PICKUP_BODYARMOUR;
+                break;
+            default:
+                break;
+            }
+            if (pickupModel != MODEL_INVALID) {
+                CPickups::GenerateNewOne(pickupPos, pickupModel, PICKUP_ONCE_TIMEOUT_SLOW, 0, 0, false, nullptr);
+            }
+        }
+    }
+
+    if (!anyPedCreated) {
+        return false;
+    }
+
+    // The car with the drive by shooters, only one at a time
+    if (!bTrainingMission && !pDriveByCar) {
+        const auto carModel = CPopulation::PickGangCar(Gang1);
+        if (carModel >= 0 && CStreaming::GetInfo(carModel).IsLoaded()) {
+            auto* const car = CCarCtrl::GenerateOneEmergencyServicesCar(carModel, FindPlayerCoors(-1));
+            pDriveByCar     = car;
+            if (car) {
+                car->RegisterReference(reinterpret_cast<CEntity**>(&pDriveByCar));
+                CCarCtrl::JoinCarWithRoadSystemGotoCoors(car, FindPlayerCoors(-1), false, false);
+
+                car->vehicleFlags.bPartOfAttackWave = true;
+                car->m_autoPilot.m_nCarMission      = MISSION_DO_DRIVEBY_FARAWAY;
+                car->m_autoPilot.m_nCruiseSpeed     = 10;
+                car->m_autoPilot.m_TargetEntity     = reinterpret_cast<CVehicle*>(FindPlayerPed(-1));
+                car->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+                car->SetStatus(STATUS_PHYSICS);
+                car->vehicleFlags.bNeverUseSmallerRemovalRange = true;
+                car->m_autoPilot.m_nStraightLineDistance       = 30;
+
+                CCarCtrl::SetUpDriverAndPassengersForVehicle(car, Gang1 + 14, 1, false, false, 1);
+                if (car->m_pDriver) {
+                    car->m_pDriver->GetIntelligence()->SetPedDecisionMakerType(-1);
+                }
+
+                for (auto i = 0u; i < car->m_apPassengers.size(); i++) {
+                    auto* const passenger = car->m_apPassengers[i];
+                    if (!passenger) {
+                        continue;
+                    }
+                    passenger->GiveDelayedWeapon(WEAPON_MICRO_UZI, 1500);
+                    passenger->SetCurrentWeapon(WEAPON_MICRO_UZI);
+
+                    // Unnamed task, alternates its flag between the passengers
+                    auto* const task = static_cast<CTask*>(CTask::operator new(0x44));
+                    plugin::CallMethod<0x6217D0, CTask*, CPed*, CVector*, float, int32, int32, bool>(task, FindPlayerPed(-1), nullptr, 100.0f, 50, 8, (~i & 1) != 0);
+                    CEventScriptCommand event(TASK_PRIMARY_PRIMARY, task, false);
+                    passenger->GetEventGroup().Add(&event);
+                }
+
+                if (auto* const driver = car->m_pDriver) {
+                    const auto color = GetGangColor(gang);
+                    const auto blip  = CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedRef(driver), color, BLIP_DISPLAY_BLIPONLY);
+                    CRadar::ChangeBlipScale(blip, 3);
+                    CRadar::ChangeBlipColour(blip, color);
+                    driver->bClearRadarBlipOnDeath = true;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 // 0x4453D0
