@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TaskComplex.h"
+#include "TaskTimer.h"
 #include "Vector.h"
 
 class CPedGroup;
@@ -15,10 +16,7 @@ public:
     float      dword38;
     uint8      byte3C;
     uint8      m_Flags;
-    int32      dword40;
-    int32      dword44;
-    uint8      byte48;
-    uint8      byte49;
+    CTaskTimer m_ExhaleTimer;
 
 public:
     static constexpr auto Type = eTaskType::TASK_COMPLEX_GANG_FOLLOWER;

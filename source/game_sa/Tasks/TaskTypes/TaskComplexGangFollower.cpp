@@ -10,6 +10,16 @@
 #include "TaskComplexLeaveCar.h"
 #include "TaskSimpleStandStill.h"
 #include "SeekEntity/TaskComplexSeekEntity.h"
+#include "TaskSimpleGoToPoint.h"
+#include "TaskComplexGangLeader.h"
+#include "TaskComplexPassObject.h"
+#include "TaskComplexPlayHandSignalAnim.h"
+#include "TaskSimpleRunAnim.h"
+#include "TaskSimpleHoldEntity.h"
+#include "Events/EventPassObject.h"
+#include "Ragdoll/IKChainManager.h"
+#include "Fx/FxManager.h"
+#include "Fx/FxSystem.h"
 
 void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexGangFollower, 0x86F938, 11);
@@ -22,7 +32,7 @@ void CTaskComplexGangFollower::InjectHooks() {
     RH_ScopedInstall(MakeAbortable, 0x65EC30);
     RH_ScopedInstall(CreateNextSubTask, 0x665E00);
     RH_ScopedInstall(CreateFirstSubTask, 0x666160);
-    RH_ScopedInstall(ControlSubTask, 0x662A10, { .Reversed = false });
+    RH_ScopedInstall(ControlSubTask, 0x662A10);
 }
 
 // 0x65EAA0
@@ -33,11 +43,6 @@ CTaskComplexGangFollower::CTaskComplexGangFollower(CPedGroup* pedGroup, CPed* pe
     dword2C    = pos;
     dword20    = pos;
     dword38    = a6;
-
-    dword40 = 0;
-    dword44 = 0;
-    byte48  = 0;
-    byte49  = 0;
 
     m_Flags |= 0x14;
 
@@ -194,5 +199,225 @@ CTask* CTaskComplexGangFollower::CreateFirstSubTask(CPed* ped) {
 
 // 0x662A10
 CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x662A10, CTaskComplexGangFollower*, CPed*>(this, ped);
+    ZoneScoped;
+
+    ped->bDontAcceptIKLookAts = false;
+
+    if (!m_Leader) {
+        if (m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
+            ped->bMoveAnimSpeedHasBeenSetByTask = false;
+            return nullptr;
+        }
+        return m_pSubTask;
+    }
+    if (m_pSubTask->GetTaskType() == TASK_SIMPLE_CAR_DRIVE) {
+        return m_pSubTask;
+    }
+
+    auto* const walkAnim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, ANIM_ID_WALK);
+
+    const auto leaderMoveState = m_Leader->GetIntelligence()->GetMoveStateFromGoToTask();
+    const auto leaderIsMoving  = leaderMoveState == PEDMOVE_WALK || leaderMoveState == PEDMOVE_RUN || leaderMoveState == PEDMOVE_SPRINT;
+
+    dword20 = CalculateOffsetPosition();
+
+    auto pedToLeader = m_Leader->GetPosition() - ped->GetPosition();
+    pedToLeader.z    = 0.0f;
+    const auto pedToLeaderDistSq = pedToLeader.SquaredMagnitude();
+
+    // Keep up with the leader, the pace of the walk is changed for it
+    auto speedAdjusted = false;
+    if (m_pSubTask->GetTaskType() == TASK_COMPLEX_SEEK_ENTITY) {
+        const auto tooManyFollowers = ped->GetIntelligence()->m_AnotherStaticCounter > 8;
+        if (m_Flags & 4) {
+            auto* const seekTask = static_cast<CTaskComplexSeekEntity<CEntitySeekPosCalculatorXYOffset>*>(m_pSubTask);
+            seekTask->GetSeekPosCalculator().SetOffset(dword20);
+            seekTask->SetEntityMinDist2D(2.0f);
+
+            auto* const goToPoint   = static_cast<CTaskSimpleGoToPoint*>(ped->GetIntelligence()->m_TaskMgr.FindActiveTaskByType(TASK_SIMPLE_GO_TO_POINT));
+            auto* const followRoute = ped->GetIntelligence()->m_TaskMgr.FindActiveTaskByType(TASK_COMPLEX_FOLLOW_NODE_ROUTE);
+            if (goToPoint && !followRoute) {
+                auto target   = m_Leader->GetPosition() + dword20;
+                auto toTarget = target - ped->GetPosition();
+                toTarget.z    = 0.0f;
+
+                if (leaderIsMoving) {
+                    // The ped is behind where it should be, the pace is matched to get there
+                    const auto& leaderFwd = m_Leader->GetForward();
+                    if (DotProduct(ped->GetPosition(), leaderFwd) + -DotProduct(target, leaderFwd) < 0.0f) {
+                        const auto radius = goToPoint->m_fRadius;
+                        if (toTarget.SquaredMagnitude() <= (radius + 1.0f) * (radius + 1.0f)) {
+                            target += leaderFwd * 2.0f;
+                            if (walkAnim) {
+                                walkAnim->m_Speed = std::max(0.85f, walkAnim->m_Speed - 0.0125f);
+                                speedAdjusted     = true;
+                            }
+                        } else if (walkAnim) {
+                            const auto oldSpeed = walkAnim->m_Speed;
+                            ped->SetMoveAnimSpeed(walkAnim);
+                            const auto newSpeed = walkAnim->m_Speed;
+                            if (std::abs(oldSpeed - newSpeed) < 0.0130f /* 0x3C54FDF4 */) {
+                                walkAnim->m_Speed = oldSpeed;
+                            } else if (oldSpeed <= newSpeed) {
+                                walkAnim->m_Speed = oldSpeed + 0.0125f;
+                            } else {
+                                walkAnim->m_Speed = oldSpeed - 0.0125f;
+                            }
+                            speedAdjusted = true;
+                        }
+                    }
+                }
+                goToPoint->UpdatePoint(target, 0.5f, false);
+            }
+
+            // Nobody else needs to follow when there are too many, so just stand around
+            if (tooManyFollowers && pedToLeaderDistSq < 64.0f && m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
+                dword20 = pedToLeader;
+                return new CTaskSimpleStandStill{ 500, false, false, 8.0f };
+            }
+        }
+    }
+    ped->bMoveAnimSpeedHasBeenSetByTask = speedAdjusted;
+
+    // The animations of the gang are kept in memory while they are used
+    if (m_Flags & 1) {
+        if (!CTaskComplexGangLeader::ShouldLoadGangAnims()) {
+            CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex("gangs"));
+            m_Flags &= ~1;
+        }
+    } else if (CTaskComplexGangLeader::ShouldLoadGangAnims()) {
+        const auto blockIdx = CAnimManager::GetAnimationBlockIndex("gangs");
+        if (CAnimManager::ms_aAnimBlocks[blockIdx].IsLoaded) {
+            CAnimManager::AddAnimBlockRef(blockIdx);
+            m_Flags |= 1;
+        } else {
+            CStreaming::RequestModel(RESOURCE_ID_IFP + blockIdx, STREAMING_KEEP_IN_MEMORY);
+        }
+    }
+
+    if (!m_PedGroup->m_bIsMissionGroup && !(m_Flags & 8) && m_PedGroup->GetMembership().CountMembers() > 3 && CGeneral::GetRandomNumberInRange(0, 2000) == 500) {
+        m_Flags |= 2;
+    }
+
+    if (m_ExhaleTimer.m_bStarted && m_ExhaleTimer.IsOutOfTime()) {
+        if (const auto clump = ped->m_pRwClump; clump && RpClumpGetFrame(clump)) {
+            if (auto* const fx = g_fxMan.CreateFxSystem("exhale", CVector{ 0.0f, 0.1f, 0.0f }, RwFrameGetMatrix(RpClumpGetFrame(clump)), false)) {
+                fx->AttachToBone(ped, BONE_HEAD);
+                fx->PlayAndKill();
+            }
+            m_ExhaleTimer.m_bStarted = false;
+        }
+    }
+
+    if (!ped->IsVisible()) {
+        return m_pSubTask;
+    }
+
+    // Now and then look at someone from the gang
+    if (!g_ikChainMan.IsLooking(ped) && CGeneral::GetRandomNumberInRange(0, 100) > 95) {
+        const auto lookTime   = CGeneral::GetRandomNumberInRange(3000, 5000);
+        auto*      lookTarget = m_PedGroup->GetMembership().GetMember(CGeneral::GetRandomNumberInRange(0, 8));
+        if (lookTarget == ped) {
+            lookTarget = m_Leader;
+        }
+        if (lookTarget) {
+            g_ikChainMan.LookAt("Task", ped, lookTarget, lookTime, BONE_HEAD, nullptr, true, 0.15f, 500, 3, false);
+        }
+    }
+
+    if (!(m_Flags & 1) || ped->m_nMoveState >= PEDMOVE_RUN) {
+        return m_pSubTask;
+    }
+
+    if (auto* const held = ped->GetEntityThatThisPedIsHolding()) {
+        const auto* const animA = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12B);
+        const auto* const animB = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12C);
+        const auto* const animC = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12D);
+        const auto* const animD = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, 0x12E);
+        const auto        usingHeldObject = animA || animB || animC || animD;
+
+        if (usingHeldObject) {
+            if (g_ikChainMan.IsLooking(ped)) {
+                g_ikChainMan.AbortLookAt(ped, 250);
+            }
+            ped->bDontAcceptIKLookAts = true;
+            if ((animB && animB->m_CurrentTime < 0.5f) || (animD && animD->m_CurrentTime < 0.5f)) {
+                m_ExhaleTimer.StartIfNotAlready(2700);
+            }
+        }
+
+        if (ped->GetIntelligence()->m_TaskMgr.FindActiveTaskByType(TASK_COMPLEX_PASS_OBJECT)) {
+            return m_pSubTask;
+        }
+
+        if (CGeneral::GetRandomNumberInRange(0, 500) == 200) {
+            // Offer what is held to a member of the gang that has nothing
+            if (usingHeldObject) {
+                return m_pSubTask;
+            }
+            auto* const friendPed = CTaskComplexGangLeader::TryToPassObject(ped, m_PedGroup);
+            if (!friendPed || friendPed->GetEntityThatThisPedIsHolding() || friendPed->GetActiveWeapon().m_Type != WEAPON_UNARMED) {
+                return m_pSubTask;
+            }
+
+            if (held->m_nModelIndex == MI_GANG_DRINK) {
+                if (CGeneral::GetRandomNumberInRange(0, 500) < 250) {
+                    friendPed->Say(CTX_GLOBAL_BOOZE_REQUEST);
+                } else {
+                    ped->Say(CTX_GLOBAL_BOOZE_RECEIVE, 1500);
+                }
+            } else if (held->m_nModelIndex == MI_GANG_SMOKE) {
+                if (CGeneral::GetRandomNumberInRange(0, 500) < 250) {
+                    friendPed->Say(CTX_GLOBAL_SPLIFF_REQUEST);
+                } else {
+                    ped->Say(CTX_GLOBAL_SPLIFF_RECEIVE, 1500);
+                }
+            }
+
+            CEventPassObject event{ ped, false };
+            friendPed->GetIntelligence()->GetEventGroup().Add(&event, false);
+            return new CTaskComplexPassObject{ friendPed, true };
+        }
+
+        if (CGeneral::GetRandomNumberInRange(0, 100) == 50) {
+            if (auto* const holdTask = static_cast<CTaskSimpleHoldEntity*>(ped->GetIntelligence()->m_TaskMgr.FindActiveTaskByType(TASK_SIMPLE_HOLD_ENTITY))) {
+                holdTask->PlayAnim(CTaskComplexGangLeader::GetRandomGangAmbientAnim(ped, held), ANIM_GROUP_GANGS);
+            }
+        }
+        return m_pSubTask;
+    }
+
+    // Nothing is held, so gesture or say something
+    if (ped->IsPlayingHandSignal() || ped->GetIntelligence()->m_TaskMgr.GetTaskSecondary(TASK_SECONDARY_PARTIAL_ANIM)) {
+        return m_pSubTask;
+    }
+
+    const auto SaySomething = [ped] {
+        if (ped->m_nMoveState != PEDMOVE_STILL) {
+            return;
+        }
+        const auto roll = CGeneral::GetRandomNumberInRange(0, 10);
+        if (roll <= 2) {
+            ped->Say(CTX_GLOBAL_CHAT);
+        } else if (roll <= 7) {
+            ped->Say(CTX_GLOBAL_PCONV_GREET_MALE);
+        } else if (roll == 8) {
+            ped->Say(CTX_GLOBAL_BOOZE_REQUEST);
+        } else {
+            ped->Say(CTX_GLOBAL_SPLIFF_REQUEST);
+        }
+    };
+
+    const auto roll = CGeneral::GetRandomNumberInRange(0, 500);
+    if (roll > 50 && roll < 56) {
+        const auto animId = (AnimationId)(0x117 + (int32)((double)(rand() & 0xFFFF) * (double)(1.0f / 32768.0f) * 8.0));
+        ped->GetIntelligence()->m_TaskMgr.SetTaskSecondary(new CTaskSimpleRunAnim{ ANIM_GROUP_GANGS, animId, 4.0f, false }, TASK_SECONDARY_PARTIAL_ANIM);
+        SaySomething();
+    } else if (roll == 100) {
+        if (ped->m_nMoveState == PEDMOVE_STILL) {
+            ped->GetIntelligence()->m_TaskMgr.SetTaskSecondary(new CTaskComplexPlayHandSignalAnim{ ANIM_ID_UNDEFINED, 4.0f }, TASK_SECONDARY_PARTIAL_ANIM);
+            SaySomething();
+        }
+    }
+    return m_pSubTask;
 }
