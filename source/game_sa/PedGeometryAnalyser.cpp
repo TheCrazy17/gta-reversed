@@ -1,6 +1,7 @@
 #include "StdInc.h"
 
 #include "PedGeometryAnalyser.h"
+#include "Interior/InteriorManager_c.h"
 
 void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedClass(CPedGeometryAnalyser);
@@ -18,7 +19,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedInstall(ComputeEntityBoundingBoxCentreUncached, 0x5F1600);
     RH_ScopedInstall(ComputeEntityBoundingBoxCentreUncachedAll, 0x5F3B40);
     RH_ScopedInstall(ComputeEntityBoundingBoxCorners, 0x5F3650);
-    RH_ScopedInstall(ComputeEntityBoundingBoxCornersUncached, 0x5F1FA0, { .Reversed = false });
+    RH_ScopedInstall(ComputeEntityBoundingBoxCornersUncached, 0x5F1FA0);
     RH_ScopedInstall(ComputeEntityBoundingBoxPlanes, 0x5F3660);
     RH_ScopedInstall(ComputeEntityBoundingBoxPlanesUncached, 0x5F1670);
     RH_ScopedInstall(ComputeEntityBoundingBoxPlanesUncachedAll, 0x5F2B80);
@@ -295,7 +296,126 @@ void CPedGeometryAnalyser::ComputeEntityBoundingBoxCorners(float zPos, CEntity& 
 
 // 0x5F1FA0
 void CPedGeometryAnalyser::ComputeEntityBoundingBoxCornersUncached(float zPos, CEntity& entity, CVector* corners) {
-    plugin::Call<0x5F1FA0, float, CEntity&, void*>(zPos, entity, corners);
+    ZoneScoped;
+
+    // Furniture of an interior has its own box
+    if (entity.GetIsTypeBuilding() && (entity.m_nFlags & 0x400000) && g_interiorMan.GetBoundingBox(reinterpret_cast<FurnitureEntity_c*>(&entity), corners)) {
+        for (auto i = 0; i < 4; i++) {
+            corners[i].z = zPos;
+        }
+        return;
+    }
+
+    if (!entity.m_matrix) {
+        entity.AllocateMatrix();
+        entity.m_placement.UpdateMatrix(entity.m_matrix);
+    }
+    const CMatrix& mat = *entity.m_matrix;
+
+    auto* const       colModel = CModelInfo::GetModelInfo(entity.m_nModelIndex)->GetColModel();
+    const auto* const colData  = colModel->m_pColData;
+    const auto&       modelBB  = colModel->GetBoundingBox();
+
+    CVector bbMin, bbMax;
+    if (entity.GetIsTypeObject() && colData && modelBB.m_vecMax.z - modelBB.m_vecMin.z > 6.0f && (colData->m_nNumBoxes || colData->m_nNumSpheres)) {
+        // Tall objects only count the parts of their collision that are close to the given height
+        bbMin = CVector{ std::numeric_limits<float>::max() };
+        bbMax = CVector{ -std::numeric_limits<float>::max() };
+
+        const auto zLow  = zPos - 1.0f;
+        const auto zHigh = zPos + 1.0f;
+        const auto IsCloseToHeight = [&](const CVector& lo, const CVector& hi) {
+            const auto a = mat.TransformPoint(lo);
+            const auto b = mat.TransformPoint(hi);
+            return (a.z >= zLow || b.z >= zLow) && (a.z <= zHigh || b.z <= zHigh);
+        };
+
+        for (auto i = 0; i < colData->m_nNumBoxes; i++) {
+            const auto& box = colData->m_pBoxes[i];
+            if (!IsCloseToHeight(box.m_vecMin, box.m_vecMax)) {
+                continue;
+            }
+            bbMin = CVector{ std::min(bbMin.x, box.m_vecMin.x), std::min(bbMin.y, box.m_vecMin.y), std::min(bbMin.z, box.m_vecMin.z) };
+            bbMax = CVector{ std::max(bbMax.x, box.m_vecMax.x), std::max(bbMax.y, box.m_vecMax.y), std::max(bbMax.z, box.m_vecMax.z) };
+        }
+        for (auto i = 0; i < colData->m_nNumSpheres; i++) {
+            const auto& sphere = colData->m_pSpheres[i];
+            const auto  lo     = sphere.m_vecCenter - CVector{ sphere.m_fRadius };
+            const auto  hi     = sphere.m_vecCenter + CVector{ sphere.m_fRadius };
+            if (!IsCloseToHeight(lo, hi)) {
+                continue;
+            }
+            bbMin = CVector{ std::min(bbMin.x, lo.x), std::min(bbMin.y, lo.y), std::min(bbMin.z, lo.z) };
+            bbMax = CVector{ std::max(bbMax.x, hi.x), std::max(bbMax.y, hi.y), std::max(bbMax.z, hi.z) };
+        }
+    } else {
+        bbMin = modelBB.m_vecMin;
+        bbMax = modelBB.m_vecMax;
+    }
+
+    bbMin -= CVector{ ms_BoundingBoxTolerance };
+    bbMax += CVector{ ms_BoundingBoxTolerance };
+
+    const auto& right = mat.GetRight();
+    const auto& fwd   = mat.GetForward();
+    const auto& up    = mat.GetUp();
+
+    const auto lenRight2 = right.x * right.x + right.y * right.y;
+    const auto lenFwd2   = fwd.x * fwd.x + fwd.y * fwd.y;
+    const auto lenUp2    = up.x * up.x + up.y * up.y;
+
+    const auto half   = (bbMax - bbMin) * 0.5f;
+    const auto center = mat.TransformPoint((bbMax + bbMin) * 0.5f);
+
+    // The axis that covers the most on the XY plane is the one the box is lined up with
+    const auto lengthRight = half.x * lenRight2 * 2.0f;
+    const auto lengthFwd   = half.y * lenFwd2 * 2.0f;
+    const auto lengthUp    = half.z * lenUp2 * 2.0f;
+
+    const CVector *mainAxis, *otherAxis1, *otherAxis2;
+    float          mainHalf, otherHalf1, otherHalf2;
+    if (lengthRight > lengthFwd && lengthRight > lengthUp) {
+        mainAxis = &right; mainHalf = half.x;
+        otherAxis1 = &fwd; otherHalf1 = half.y;
+        otherAxis2 = &up;  otherHalf2 = half.z;
+    } else if (lengthFwd > lengthUp) {
+        mainAxis = &fwd;     mainHalf = half.y;
+        otherAxis1 = &right; otherHalf1 = half.x;
+        otherAxis2 = &up;    otherHalf2 = half.z;
+    } else {
+        mainAxis = &up;      mainHalf = half.z;
+        otherAxis1 = &right; otherHalf1 = half.x;
+        otherAxis2 = &fwd;   otherHalf2 = half.y;
+    }
+
+    // The two ends of the main axis, flat on the XY plane
+    const CVector mainDir{ mainAxis->x * mainHalf, mainAxis->y * mainHalf, 0.0f * mainHalf };
+    const auto    endA = center + mainDir;
+    const auto    endB = center - mainDir;
+
+    CVector dir{ mainAxis->x, mainAxis->y, 0.0f };
+    dir.Normalise();
+
+    // How far the other axes reach along and across the main one
+    const auto Dot = [&](const CVector& axis, float axisHalf) {
+        return (dir.x * axis.x + dir.y * axis.y) * axisHalf;
+    };
+    const auto Cross = [&](const CVector& axis, float axisHalf) {
+        return (dir.x * axis.y - dir.y * axis.x) * axisHalf;
+    };
+    const auto reachAlong  = std::abs(Dot(*otherAxis1, otherHalf1)) + std::abs(Dot(*otherAxis2, otherHalf2));
+    const auto reachAcross = std::abs(Cross(*otherAxis1, otherHalf1)) + std::abs(Cross(*otherAxis2, otherHalf2));
+
+    const CVector along{ dir.x * reachAlong, dir.y * reachAlong, 0.0f };
+    const CVector across{ reachAcross * dir.y, -dir.x * reachAcross, 0.0f };
+
+    corners[0] = (endA + along) - across;
+    corners[1] = (endB - along) - across;
+    corners[2] = (endB - along) + across;
+    corners[3] = (endA + along) + across;
+    for (auto i = 0; i < 4; i++) {
+        corners[i].z = zPos;
+    }
 }
 
 // 0x5F3660
