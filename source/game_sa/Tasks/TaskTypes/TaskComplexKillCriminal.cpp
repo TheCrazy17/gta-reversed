@@ -32,7 +32,7 @@ void CTaskComplexKillCriminal::InjectHooks() {
     RH_ScopedVMTInstall(MakeAbortable, 0x68DAD0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x68E4F0);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x68DC60);
-    RH_ScopedVMTInstall(ControlSubTask, 0x68E950, {.Reversed = false});
+    RH_ScopedVMTInstall(ControlSubTask, 0x68E950);
 }
 
 bool NoPedOrNoHp(CPed* ped) {
@@ -496,31 +496,248 @@ CTask* CTaskComplexKillCriminal::CreateFirstSubTask(CPed* ped) {
 
 // 0x68E950
 CTask* CTaskComplexKillCriminal::ControlSubTask(CPed* ped) {
-    /*
-    if (m_criminal && !m_criminal->CanBeCriminal()) {
-        return nullptr;
-    }
+    ZoneScoped;
 
-    if (const auto wanted = FindPlayerWanted(); wanted->m_nWantedLevel) {
-        if (wanted->CanCopJoinPursuit(static_cast<CCopPed*>(ped)) && m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
+    if (m_Criminal) {
+        if (m_Criminal->IsPlayer()
+            || m_Criminal->m_nPedType == PED_TYPE_COP
+            || m_Criminal->m_nPedType == PED_TYPE_MEDIC
+            || m_Criminal->m_nPedType == PED_TYPE_FIREMAN
+            || m_Criminal->m_nPedType >= PED_TYPE_MISSION1
+            || m_Criminal->IsCreatedByMission()
+        ) {
             return nullptr;
         }
     }
 
-    if (!g_LoadMonitor.m_bEnableAmbientCrime) {
+    // The cops are needed to chase the player
+    if (FindPlayerWanted()->m_WantedLevel != 0) {
+        if (FindPlayerWanted()->CanCopJoinPursuit(static_cast<CCopPed*>(ped)) && m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
+            return nullptr;
+        }
+    }
+
+    if (!g_LoadMonitor.IsAmbientCrimeEnabled()) {
         return nullptr;
     }
 
     auto taskToCreate = TASK_NONE;
 
-    const auto cpartner = m_cop->m_pCopPartner;
-    if (!m_cop->m_isTheDriver && IsPedNullOrLowHP(cpartner)) {
-        m_cop->m_isTheDriver = true;
-        m_cop->SetPartner(nullptr);
-        if (m_cop->IsInVehicle()) {
+    // The partner is gone, so the cop drives
+    const auto partner = m_Cop->m_pCopPartner;
+    if (!m_Cop->m_isTheDriver && (!partner || partner->m_fHealth <= 0.0f)) {
+        m_Cop->m_isTheDriver = true;
+        m_Cop->SetPartner(nullptr);
+        if (ped->bInVehicle && ped->m_pVehicle) {
             taskToCreate = TASK_COMPLEX_LEAVE_CAR;
         }
     }
-    */
-    return plugin::CallMethodAndReturn<CTask*, 0x68E950, CTaskComplexKillCriminal*, CPed*>(this, ped); // Good luck!
+
+    const auto GetDistSq = [](const CEntity* a, const CEntity* b) {
+        return (a->GetPosition() - b->GetPosition()).SquaredMagnitude();
+    };
+    const auto GetDist = [](const CEntity* a, const CEntity* b) {
+        return (a->GetPosition() - b->GetPosition()).Magnitude();
+    };
+
+    // Tells the criminal, and who is with them, that the cop is after them
+    const auto AddHateEvents = [&] {
+        CEventAcquaintancePedHate event{ ped };
+        const auto                criminalVeh = m_Criminal->m_pVehicle;
+        event.m_TaskId = criminalVeh->m_fHealth < 250.0f
+            ? TASK_COMPLEX_LEAVE_CAR
+            : TASK_COMPLEX_KILL_PED_AND_REENTER_CAR;
+        m_Criminal->GetIntelligence()->GetEventGroup().Add(&event, false);
+        m_Criminal->SetPedDefaultDecisionMaker();
+
+        if (const auto driver = m_Criminal->m_pVehicle->m_pDriver; driver != m_Criminal && driver && !driver->IsPlayer()) {
+            driver->GetIntelligence()->GetEventGroup().Add(&event, false);
+        }
+        for (auto i = 0u; i < m_Criminal->m_pVehicle->m_nMaxPassengers; i++) {
+            if (const auto passenger = m_Criminal->m_pVehicle->m_apPassengers[i]; passenger && passenger != m_Criminal && !passenger->IsPlayer()) {
+                passenger->GetIntelligence()->GetEventGroup().Add(&event, false);
+                passenger->SetPedDefaultDecisionMaker();
+            }
+        }
+    };
+
+    if (ped->m_fHealth <= 0.0f) {
+        taskToCreate = TASK_FINISHED;
+    } else if (!m_Criminal || m_Criminal->m_fHealth <= 0.0f) {
+        // The criminal is gone, find another one or go back to the vehicle
+        if (m_pSubTask->GetTaskType() != TASK_COMPLEX_KILL_PED_ON_FOOT) {
+            const auto next = FindNextCriminalToKill(ped, true);
+            if (!(next && ChangeTarget(next)) && m_pSubTask->GetTaskType() != TASK_COMPLEX_ENTER_CAR_AS_PASSENGER && m_pSubTask->GetTaskType() != TASK_COMPLEX_ENTER_CAR_AS_DRIVER) {
+                const auto GoBackToVehicle = [&] {
+                    if (ped->m_pVehicle && !ped->bInVehicle && !m_CantGetInCar) {
+                        return m_Cop->m_isTheDriver ? TASK_COMPLEX_ENTER_CAR_AS_DRIVER : TASK_COMPLEX_ENTER_CAR_AS_PASSENGER;
+                    }
+                    if (ped->bInVehicle) {
+                        if (m_pSubTask->GetTaskType() == TASK_SIMPLE_CAR_DRIVE && partner && partner->m_fHealth > 0.0f && !partner->bInVehicle) {
+                            return TASK_NONE; // The partner is on their way
+                        }
+                    }
+                    return TASK_FINISHED;
+                };
+                const auto result = GoBackToVehicle();
+                if (result != TASK_NONE) {
+                    taskToCreate = result;
+                }
+            }
+        }
+    } else if (!m_Cop->m_isTheDriver) {
+        // The cop is the passenger, they follow what the driver does
+        taskToCreate = TASK_COMPLEX_KILL_PED_ON_FOOT;
+        if ((partner->bInVehicle || partner->GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER))
+            && ped->m_pVehicle
+            && !m_CantGetInCar
+        ) {
+            if (!ped->bInVehicle) {
+                taskToCreate = TASK_COMPLEX_ENTER_CAR_AS_PASSENGER;
+            } else if (partner->bInVehicle) {
+                taskToCreate = GetDist(m_Criminal, ped->m_pVehicle) < 60.0f
+                    ? TASK_SIMPLE_GANG_DRIVEBY
+                    : TASK_SIMPLE_CAR_DRIVE;
+            } else {
+                taskToCreate = TASK_SIMPLE_CAR_DRIVE;
+            }
+        }
+    } else {
+        // The cop is the driver
+        if (ped->m_pVehicle && ped->bInVehicle) {
+            ped->m_pVehicle->vehicleFlags.bSirenOrAlarm = true;
+        }
+
+        if (m_Criminal->bInVehicle && m_Criminal->m_pVehicle) {
+            const auto criminalVeh     = m_Criminal->m_pVehicle;
+            const auto criminalVehHurt = criminalVeh->m_fHealth < 250.0f;
+            auto       sendEvents      = false;
+
+            if (ped->bInVehicle && ped->m_pVehicle) {
+                switch (m_pSubTask->GetTaskType()) {
+                case TASK_COMPLEX_CAR_DRIVE_MISSION:
+                case TASK_SIMPLE_GANG_DRIVEBY:
+                    // Get out when the vehicle of the criminal has stopped
+                    if (m_Criminal->m_pVehicle->m_vecMoveSpeed.Magnitude() >= 0.12f) {
+                        m_TimeToGetOutOfCar = 1.0f;
+                    } else {
+                        m_TimeToGetOutOfCar -= CTimer::GetTimeStep() * 0.02f;
+                        if (m_TimeToGetOutOfCar <= 0.0f
+                            && m_Criminal->GetIntelligence()->m_eventHandler.GetCurrentEventType() != EVENT_ACQUAINTANCE_PED_HATE
+                            && GetDistSq(m_Criminal->m_pVehicle, ped->m_pVehicle) < 225.0f
+                        ) {
+                            taskToCreate = TASK_COMPLEX_KILL_PED_ON_FOOT;
+                            if (const auto next = FindNextCriminalToKill(ped, false)) {
+                                ChangeTarget(next);
+                            }
+                        }
+                    }
+                    break;
+                case TASK_SIMPLE_CAR_DRIVE:
+                    if (!partner || partner->m_fHealth <= 0.0f || partner->bInVehicle) {
+                        taskToCreate = TASK_COMPLEX_CAR_DRIVE_MISSION;
+                    }
+                    break;
+                default:
+                    break;
+                }
+            } else {
+                if (criminalVeh->m_vecMoveSpeed.Magnitude() < 0.2f) {
+                    if (GetDistSq(m_Criminal, ped) < 36.0f) {
+                        sendEvents = true;
+                    } else if (partner && !partner->bInVehicle && GetDistSq(m_Criminal, partner) < 36.0f) {
+                        sendEvents = true;
+                    }
+                } else if (ped->m_pVehicle
+                    && !m_CantGetInCar
+                    && m_pSubTask->GetTaskType() != TASK_COMPLEX_ENTER_CAR_AS_DRIVER
+                    && m_pSubTask->GetTaskType() != TASK_COMPLEX_ENTER_CAR_AS_PASSENGER
+                ) {
+                    // The criminal drives away, so the cop gets back in the vehicle
+                    const auto distSq = GetDistSq(m_Criminal->m_pVehicle, ped->m_pVehicle);
+                    if (m_Criminal->m_pVehicle->m_vecMoveSpeed.Magnitude() >= 0.2f || distSq > 400.0f) {
+                        taskToCreate = m_Cop->m_isTheDriver ? TASK_COMPLEX_ENTER_CAR_AS_DRIVER : TASK_COMPLEX_ENTER_CAR_AS_PASSENGER;
+                    }
+                }
+            }
+
+            if (sendEvents || criminalVehHurt) {
+                AddHateEvents();
+            }
+        } else if (ped->bInVehicle && ped->m_pVehicle) {
+            // The criminal is on foot, the cop gets out when they are close enough
+            const auto pedVeh      = ped->m_pVehicle;
+            const auto distSq      = GetDistSq(m_Criminal, pedVeh);
+            const auto partnerFree = !partner || partner->m_fHealth <= 0.0f || partner->bInVehicle;
+            if (distSq <= 225.0f) {
+                const auto maxDistSq = pedVeh->m_nVehicleType == VEHICLE_TYPE_BIKE ? 5.0f : 16.0f;
+                if (pedVeh->m_autoPilot.m_nCarMission == MISSION_KILLPED_CLOSE || pedVeh->m_autoPilot.m_nCarMission == MISSION_KILLPED_FARAWAY) {
+                    if (distSq < maxDistSq) {
+                        taskToCreate = TASK_COMPLEX_KILL_PED_ON_FOOT;
+                    }
+                } else {
+                    taskToCreate = TASK_COMPLEX_KILL_PED_ON_FOOT;
+                }
+            } else if (partnerFree) {
+                taskToCreate = TASK_COMPLEX_CAR_DRIVE_MISSION;
+            }
+        } else if (!m_CantGetInCar && ped->m_pVehicle) {
+            // Both are on foot, so the cop goes after the criminal or a closer one
+            if (GetDistSq(m_Criminal, ped) > 625.0f || GetDistSq(ped->m_pVehicle, ped) > 250.0f) {
+                const auto next = FindNextCriminalToKill(ped, false);
+                if (next && ChangeTarget(next)) {
+                    taskToCreate = TASK_COMPLEX_KILL_PED_ON_FOOT;
+                } else {
+                    taskToCreate = TASK_COMPLEX_ENTER_CAR_AS_DRIVER;
+                }
+            }
+        }
+    }
+
+    // On a bike the cop follows the criminal and shoots
+    if (const auto pedVeh = ped->m_pVehicle; m_Criminal && pedVeh && pedVeh->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        const auto currentTask = m_pSubTask->GetTaskType();
+        auto       doDriveBy   = false;
+        if (currentTask == TASK_COMPLEX_CAR_DRIVE_MISSION && (taskToCreate == TASK_NONE || taskToCreate == currentTask) && GetDist(m_Criminal, pedVeh) < 60.0f) {
+            taskToCreate = TASK_SIMPLE_GANG_DRIVEBY;
+            doDriveBy    = true;
+        } else {
+            doDriveBy = taskToCreate == TASK_SIMPLE_GANG_DRIVEBY || m_pSubTask->GetTaskType() == TASK_SIMPLE_GANG_DRIVEBY;
+        }
+
+        if (doDriveBy) {
+            auto& autoPilot = pedVeh->m_autoPilot;
+            pedVeh->SetStatus(STATUS_PHYSICS);
+            if (m_Criminal->bInVehicle && m_Criminal->m_pVehicle) {
+                autoPilot.m_nCarMission     = MISSION_FOLLOWCAR_CLOSE;
+                autoPilot.m_nCruiseSpeed    = (uint8)(int32)((float)m_Criminal->m_pVehicle->m_autoPilot.m_nCruiseSpeed + 10.0f);
+                autoPilot.m_speed           = (float)autoPilot.m_nCruiseSpeed;
+                autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+                autoPilot.m_TargetEntity    = m_Criminal->m_pVehicle;
+            } else {
+                autoPilot.m_nCarMission     = MISSION_KILLPED_CLOSE;
+                autoPilot.m_nCruiseSpeed    = 20;
+                autoPilot.m_speed           = (float)autoPilot.m_nCruiseSpeed;
+                autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+                autoPilot.m_TargetEntity    = reinterpret_cast<CVehicle*>(m_Criminal.Get());
+            }
+        }
+    }
+
+    // The ones in the vehicle of the criminal shoot at the cops
+    if (m_Criminal && m_Criminal->bInVehicle && m_Criminal->m_pVehicle && m_Criminal->m_pVehicle->m_nNumPassengers > 0) {
+        if (GetDist(m_Criminal->m_pVehicle, ped) < 60.0f) {
+            for (auto i = 0u; i < m_Criminal->m_pVehicle->m_nMaxPassengers; i++) {
+                const auto passenger = m_Criminal->m_pVehicle->m_apPassengers[i];
+                if (passenger && passenger->bInVehicle && !passenger->GetIntelligence()->FindTaskByType(TASK_SIMPLE_GANG_DRIVEBY)) {
+                    passenger->GetIntelligence()->m_TaskMgr.SetTask(new CTaskSimpleGangDriveBy{ ped, nullptr, 70.0f, 70, eDrivebyStyle::AI_ALL_DIRN, false }, TASK_PRIMARY_PRIMARY, false);
+                }
+            }
+        }
+    }
+
+    if (taskToCreate == TASK_NONE || !m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
+        return m_pSubTask;
+    }
+    return CreateSubTask(taskToCreate, ped);
 }
