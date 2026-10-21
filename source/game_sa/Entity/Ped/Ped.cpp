@@ -80,7 +80,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(ClearLookFlag, 0x5E1950);
     RH_ScopedInstall(WorkOutHeadingForMovingFirstPerson, 0x5E1A00);
     RH_ScopedInstall(UpdatePosition, 0x5E1B10);
-    RH_ScopedInstall(MakeTyresMuddySectorList<CPtrListSingleLink<CPhysical*>>, 0x6AE0D0, { .Reversed = false });
+    RH_ScopedInstall(MakeTyresMuddySectorList<CPtrListSingleLink<CPhysical*>>, 0x6AE0D0);
     RH_ScopedInstall(IsPedInControl, 0x5E3960);
     RH_ScopedInstall(RemoveWeaponModel, 0x5E3990);
     RH_ScopedInstall(RemoveWeaponWhenEnteringVehicle, 0x5E6370);
@@ -3945,7 +3945,97 @@ void CPed::KillPedWithCar(CVehicle* car, float fDamageIntensity, bool bPlayDeadA
 template<typename PtrListType>
 void CPed::MakeTyresMuddySectorList(PtrListType& ptrList)
 {
-    ((void(__thiscall *)(CPed*, PtrListType&))0x6AE0D0)(this, ptrList);
+    static_assert(offsetof(CBike, m_aWheelRatios) == 0x710 && offsetof(CBike, m_bWheelBloody) == 0x74C);
+
+    // They are kept from the vehicles that were looked at before
+    CAutomobile* car{};
+    CBike*       bike{};
+
+    for (typename PtrListType::NodeType *node = ptrList.GetNode(), *next{}; node; node = next) {
+        next = node->Next;
+
+        auto* const vehicle = static_cast<CVehicle*>(node->Item);
+        if (vehicle->IsScanCodeCurrent()) {
+            continue;
+        }
+        vehicle->SetCurrentScanCode();
+
+        // Only the close ones
+        const auto& pedPos     = GetPosition();
+        const auto& vehicleXYZ = vehicle->GetPosition();
+        if (!(std::abs(pedPos.x - vehicleXYZ.x) < 10.0f) || !(std::abs(pedPos.y - vehicleXYZ.y) < 10.0f)) {
+            continue;
+        }
+
+        if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+            car  = vehicle->AsAutomobile();
+            bike = nullptr;
+        } else if (vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+            car  = nullptr;
+            bike = vehicle->AsBike();
+        }
+        if (vehicle->m_vecMoveSpeed.y * vehicle->m_vecMoveSpeed.y + vehicle->m_vecMoveSpeed.x * vehicle->m_vecMoveSpeed.x <= 0.05f) {
+            continue;
+        }
+
+        // The wheel of the vehicle that is over the ped gets bloody
+        const auto RunOver = [&](CVehicle* veh, const CVector& wheelLocalPos, float massLimit, bool& bloody, bool isCar) {
+            const auto wheelPos = veh->GetMatrix().TransformPoint(wheelLocalPos);
+            const auto& pos     = GetPosition();
+            if (!(std::abs(wheelPos.z - pos.z) < 2.0f)) {
+                return;
+            }
+            if (!((wheelPos.y - pos.y) * (wheelPos.y - pos.y) + (wheelPos.x - pos.x) * (wheelPos.x - pos.x) < 1.0f)) {
+                return;
+            }
+            if (CLocalisation::Blood()) {
+                bloody = true;
+                veh->m_vehicleAudio.AddAudioEvent(AE_PED_DRIVE_OVER, 0.0f);
+            }
+            if (!(veh->m_fMass > massLimit)) {
+                return;
+            }
+
+            // The bikes are always pushed the same, the cars depend on the ped
+            const auto moveForce = isCar ? std::min(m_fMass * 0.001f, 1.0f) * 50.0f : 10.0f;
+            veh->ApplyMoveForce(0.0f, 0.0f, moveForce);
+            const auto turnForce = isCar ? std::min(m_fTurnMass * 0.0005f, 1.0f) * 50.0f : 10.0f;
+            const auto& vehPos   = veh->GetPosition();
+            veh->ApplyTurnForce(CVector{ 0.0f, 0.0f, turnForce }, CVector{ wheelPos.x - vehPos.x, wheelPos.y - vehPos.y, wheelPos.z - vehPos.z });
+            if (veh == FindPlayerVehicle(-1, false)) {
+                CPad::GetPad(0)->StartShake(300, 70, 0);
+            }
+        };
+
+        if (car) {
+            const auto& box = CModelInfo::GetModelInfo(car->m_nModelIndex)->GetColModel()->GetBoundingBox();
+            for (auto i = 0; i < 4; i++) {
+                if (car->m_wheelSkidmarkBloodState[i] || !(car->m_fWheelsSuspensionCompression[i] < 1.0f)) {
+                    continue;
+                }
+                const auto wheelLocalPos = [&] {
+                    switch (i) {
+                    case 0:  return CVector{ -box.m_vecMax.x, box.m_vecMax.y, 0.0f };
+                    case 1:  return CVector{ -box.m_vecMax.x, box.m_vecMin.y, 0.0f };
+                    case 2:  return CVector{ box.m_vecMax.x, box.m_vecMax.y, 0.0f };
+                    default: return CVector{ box.m_vecMax.x, box.m_vecMin.y, 0.0f };
+                    }
+                }();
+                RunOver(car, wheelLocalPos, 500.0f, car->m_wheelSkidmarkBloodState[i], true);
+            }
+        } else if (bike) {
+            const auto& box = CModelInfo::GetModelInfo(bike->m_nModelIndex)->GetColModel()->GetBoundingBox();
+            for (auto i = 0; i < 2; i++) {
+                if (bike->m_bWheelBloody[i] || !(bike->m_aWheelRatios[i * 2] < 1.0f)) {
+                    continue;
+                }
+                const auto wheelLocalPos = i == 0
+                    ? CVector{ 0.0f, box.m_vecMax.y * 0.8f, 0.0f }
+                    : CVector{ 0.0f, box.m_vecMin.y * 0.8f, 0.0f };
+                RunOver(bike, wheelLocalPos, 100.0f, bike->m_bWheelBloody[i], false);
+            }
+        }
+    }
 }
 
 /*!
