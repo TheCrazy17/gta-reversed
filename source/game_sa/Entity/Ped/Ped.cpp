@@ -28,6 +28,7 @@
 #include "TaskComplexFacial.h"
 #include "WeaponInfo.h"
 #include "Shadows.h"
+#include "PedPlacement.h"
 #include "Fx.h"
 #include "CullZones.h"
 #include "Weather.h"
@@ -118,7 +119,7 @@ void CPed::InjectHooks() {
     RH_ScopedInstall(RemoveWeaponForScriptedCutscene, 0x5E6550);
     RH_ScopedInstall(GiveWeaponAtStartOfFight, 0x5E8AB0);
     RH_ScopedInstall(ProcessBuoyancy, 0x5E1FA0);
-    RH_ScopedInstall(PositionPedOutOfCollision, 0x5E0820, { .Reversed = false });
+    RH_ScopedInstall(PositionPedOutOfCollision, 0x5E0820);
     RH_ScopedInstall(GrantAmmo, 0x5DF220);
     RH_ScopedInstall(GetWeaponSlot, 0x5DF200);
     RH_ScopedInstall(PositionAnyPedOutOfCollision, 0x5E13C0);
@@ -1635,7 +1636,144 @@ bool CPed::CanSeeEntity(CEntity* entity, float limitAngle) {
 */
 bool CPed::PositionPedOutOfCollision(int32 exitDoor, CVehicle* vehicle, bool findClosestNode)
 {
-    return ((bool(__thiscall *)(CPed*, int32, CVehicle*, bool))0x5E0820)(this, exitDoor, vehicle, findClosestNode);
+    if (!vehicle) {
+        vehicle = m_pVehicle;
+        if (!vehicle) {
+            return false;
+        }
+    }
+    if (bDonePositionOutOfCollision) {
+        return true;
+    }
+
+    const auto& box        = vehicle->GetColModel()->GetBoundingBox();
+    const auto  vehPos     = vehicle->GetPosition();
+    const auto  pedPos     = GetPosition();
+    const auto  usedCollision = m_bUsesCollision;
+
+    // The ped is moved around the vehicle, without being affected by anything
+    CWorld::pIgnoreEntity = vehicle;
+    m_vecMoveSpeed        = CVector{ 0.0f, 0.0f, 0.0f };
+    physicalFlags.bForceHitReturnFalse = true;
+    m_bUsesCollision                   = false;
+
+    // Where it was tried last, the closest nodes can use it
+    auto candidate = pedPos;
+
+    // The ped is there if nothing is in the way
+    const auto TryPosition = [&](const CVector& pos) {
+        candidate = pos;
+        SetPosn(pos);
+        return !CheckCollision() && CWorld::GetIsLineOfSightClear(vehPos, candidate, true, false, false, true, false, false, false);
+    };
+
+    auto found = false;
+    if (!vehicle->IsOnItsSide() || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+        if (exitDoor != 0) {
+            found = TryPosition(CCarEnterExit::GetPositionToOpenCarDoor(vehicle, exitDoor));
+            if (!found && vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE && (exitDoor == 10 || exitDoor == 11)) {
+                found = TryPosition(CCarEnterExit::GetPositionToOpenCarDoor(vehicle, exitDoor == 11 ? 9 : 8));
+            }
+        }
+    } else {
+        found = TryPosition(CVector{ vehPos.x, vehPos.y, vehPos.z + box.m_vecMax.x + 1.0f });
+    }
+
+    // How far to the side of the vehicle it goes
+    const auto height = std::max(-box.m_vecMin.z, box.m_vecMax.z);
+    const auto& matrix = vehicle->GetMatrix();
+    auto        side   = std::abs(matrix.GetRight().z) * height + (box.m_vecMin.x - 0.355f);
+    if (exitDoor == 8 || exitDoor == 9) {
+        side = box.m_vecMax.x + 0.355f;
+    }
+
+    if (!found) {
+        // Next to where it was, then along the vehicle, in front and behind it, on the other side and above it
+        const auto  offsetToSide = side - ((pedPos.x - vehPos.x) * matrix.GetRight().x + (pedPos.y - vehPos.y) * matrix.GetRight().y + (pedPos.z - vehPos.z) * matrix.GetRight().z);
+        found = TryPosition(CVector{ offsetToSide * matrix.GetRight().x + pedPos.x, offsetToSide * matrix.GetRight().y + pedPos.y, offsetToSide * matrix.GetRight().z + pedPos.z });
+
+        const auto step = (box.m_vecMax.y - box.m_vecMin.y) * 0.33333334f;
+        for (auto i = 0; !found && i < 4; i++) {
+            const auto along = (float)i * step + box.m_vecMin.y;
+            const CVector sidePos{ side * matrix.GetRight().x + vehPos.x, side * matrix.GetRight().y + vehPos.y, side * matrix.GetRight().z + vehPos.z };
+            found = TryPosition(CVector{ sidePos.x + along * matrix.GetForward().x, sidePos.y + along * matrix.GetForward().y, sidePos.z + along * matrix.GetForward().z });
+        }
+
+        const auto AlongForward = [&](float along) {
+            return CVector{ along * matrix.GetForward().x + vehPos.x, along * matrix.GetForward().y + vehPos.y, along * matrix.GetForward().z + vehPos.z };
+        };
+        const auto OtherSide = [&](float along) {
+            const CVector sidePos{ vehPos.x - side * matrix.GetRight().x, vehPos.y - side * matrix.GetRight().y, vehPos.z - side * matrix.GetRight().z };
+            return CVector{ sidePos.x + along * matrix.GetForward().x, sidePos.y + along * matrix.GetForward().y, sidePos.z + along * matrix.GetForward().z };
+        };
+        found = found || TryPosition(AlongForward(box.m_vecMin.y - 0.355f));
+        found = found || TryPosition(AlongForward(box.m_vecMax.y + 0.355f));
+        found = found || TryPosition(OtherSide(box.m_vecMin.y));
+        found = found || TryPosition(OtherSide(box.m_vecMax.y));
+        if (!found && vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+            found = TryPosition(CVector{ box.m_vecMax.z * matrix.GetUp().x + vehPos.x, box.m_vecMax.z * matrix.GetUp().y + vehPos.y, box.m_vecMax.z * matrix.GetUp().z + vehPos.z + 1.0f });
+        }
+    }
+
+    CWorld::pIgnoreEntity              = nullptr;
+    physicalFlags.bForceHitReturnFalse = false;
+    m_bUsesCollision                   = usedCollision;
+
+    if (found) {
+        const CVector zero{ 0.0f, 0.0f, 0.0f };
+        m_vecMoveSpeed                = zero;
+        bDonePositionOutOfCollision   = true;
+        m_vecTurnSpeed                = zero;
+        if (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE || findClosestNode) {
+            vehicle->m_vecMoveSpeed.x = zero.x;
+            vehicle->m_vecMoveSpeed.y = zero.y;
+            vehicle->m_vecTurnSpeed   = zero;
+            vehicle->m_vecMoveSpeed.z -= 0.05f;
+        }
+        return true;
+    }
+    if (!findClosestNode) {
+        return false;
+    }
+
+    // Nothing worked, so the closest node is used
+    const auto pedNode = ThePaths.FindNodeClosestToCoors(vehPos, PATH_TYPE_PED, 999999.88f, 0, 0, 0, 0, 0);
+    const auto vehNode = ThePaths.FindNodeClosestToCoors(vehPos, PATH_TYPE_VEH, 999999.88f, 0, 0, 0, 0, 0);
+    auto       target  = candidate;
+    if (pedNode.IsAreaValid()) {
+        target = ThePaths.GetPathNode(pedNode)->GetPosition();
+    }
+    if (!vehNode.IsAreaValid()) {
+        if (!pedNode.IsAreaValid()) {
+            return false;
+        }
+    } else {
+        const auto vehNodePos = ThePaths.GetPathNode(vehNode)->GetPosition();
+        if ((CVector2D{ vehNodePos } - CVector2D{ vehPos }).Magnitude() < (CVector2D{ target } - CVector2D{ vehPos }).Magnitude()) {
+            target = vehNodePos;
+        }
+    }
+    target = CPedPlacement::FindZCoorForPed(target).first;
+    SetPosn(target);
+
+    // Looks like the vehicle does
+    const auto heading = vehicle->m_matrix
+        ? std::atan2(-vehicle->m_matrix->GetForward().x, vehicle->m_matrix->GetForward().y)
+        : vehicle->m_placement.m_fHeading;
+    if (m_matrix) {
+        m_matrix->SetRotateZOnly(heading);
+    } else {
+        m_placement.m_fHeading = heading;
+    }
+
+    const CVector zero{ 0.0f, 0.0f, 0.0f };
+    bDonePositionOutOfCollision = true;
+    m_vecMoveSpeed              = zero;
+    m_vecTurnSpeed              = zero;
+    vehicle->m_vecTurnSpeed     = zero;
+    vehicle->m_vecMoveSpeed     = zero;
+    vehicle->m_vecMoveSpeed.z += 0.02f;
+    return true;
 }
 
 /*!
