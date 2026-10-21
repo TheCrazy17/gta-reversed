@@ -47,7 +47,7 @@ void CWeapon::InjectHooks() {
     RH_ScopedInstall(Update, 0x73DB40);
     RH_ScopedInstall(SetUpPelletCol, 0x73C710);
     RH_ScopedInstall(FireAreaEffect, 0x73E800);
-    RH_ScopedInstall(FireInstantHitFromCar, 0x73EC40, { .Reversed = false });
+    RH_ScopedInstall(FireInstantHitFromCar, 0x73EC40);
     RH_ScopedInstall(FireFromCar, 0x73FA20);
     RH_ScopedInstall(FireInstantHit, 0x73FB10, { .Reversed = false });
     RH_ScopedInstall(FireProjectile, 0x741360);
@@ -1452,7 +1452,79 @@ bool CWeapon::FireAreaEffect(CEntity* firingEntity, const CVector& origin, CEnti
 
 // 0x73EC40
 bool CWeapon::FireInstantHitFromCar(CVehicle* vehicle, bool leftSide, bool rightSide) {
-    return plugin::CallMethodAndReturn<bool, 0x73EC40, CWeapon*, CVehicle*, bool, bool>(this, vehicle, leftSide, rightSide);
+    auto* const info      = CWeaponInfo::GetWeaponInfo(m_Type, eWeaponSkill::STD);
+    auto* const modelInfo = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->AsVehicleModelInfoPtr();
+    const auto  range     = info->m_fWeaponRange;
+
+    CVector start;
+    CVector end;
+
+    // Where the shot starts is moved by what the vehicle moves
+    const auto AddVehicleSpeed = [&](CVector& pos) {
+        const auto step = CTimer::GetTimeStep();
+        pos.x           = step * vehicle->m_vecMoveSpeed.x + pos.x;
+        pos.y           = step * vehicle->m_vecMoveSpeed.y + pos.y;
+        pos.z           = step * vehicle->m_vecMoveSpeed.z + pos.z;
+    };
+
+    if (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE || vehicle->m_pDriver) {
+        // From the hand of the driver
+        const auto& offset = info->m_vecFireOffset;
+        if (vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE && rightSide) {
+            start = CVector{ offset.x * 1.8f, offset.y * 1.8f, offset.z * 1.8f - 0.1f };
+        } else {
+            start = offset;
+        }
+
+        auto* const hierarchy = GetAnimHierarchyFromSkinClump(vehicle->m_pDriver->GetRpClump());
+        const auto  index     = RpHAnimIDGetIndex(hierarchy, vehicle->m_pDriver->m_apBones[PED_NODE_RIGHT_HAND]->BoneTag);
+        RwV3dTransformPoints(&start, &start, 1, &RpHAnimHierarchyGetMatrixArray(hierarchy)[index]);
+        AddVehicleSpeed(start);
+
+        // And goes to the side, to the front or to the back of the vehicle
+        const auto& matrix = vehicle->GetMatrix();
+        if (!leftSide) {
+            const auto& dir = rightSide ? matrix.GetRight() : matrix.GetForward();
+            end = CVector{ range * dir.x + start.x, range * dir.y + start.y, range * dir.z + start.z };
+        } else {
+            const auto& dir = matrix.GetRight();
+            end = CVector{ start.x - range * dir.x, start.y - range * dir.y, start.z - range * dir.z };
+        }
+    } else {
+        // Bikes without a driver shoot from the seat
+        const auto& seat   = modelInfo->GetFrontSeatPosn();
+        const auto& box    = vehicle->GetColModel()->GetBoundingBox();
+        const auto  random = (double)(CGeneral::GetRandomNumber() & 0xFF);
+        const auto& matrix = vehicle->GetMatrix();
+
+        CVector startLocal;
+        CVector endLocal;
+        if (leftSide) {
+            startLocal = CVector{ -box.m_vecMax.x - 0.25f, (float)(random * (double)0.001f + ((double)seat.y - (double)0.05f)), seat.z + 0.63f };
+            endLocal   = CVector{ -range, seat.y, seat.z + 0.6f };
+        } else if (rightSide) {
+            startLocal = CVector{ box.m_vecMax.x + 0.25f, (float)(random * (double)0.001f + ((double)seat.y - (double)0.18f)), seat.z + 0.52f };
+            endLocal   = CVector{ range, seat.y, seat.z + 0.5f };
+        } else {
+            startLocal = CVector{ (float)(random * (double)0.001f - (double)0.4f), box.m_vecMax.y + seat.y + 0.2f, seat.z + 0.55f };
+            endLocal   = CVector{ 0.0f, range, seat.z + 0.5f };
+        }
+        start = matrix.TransformPoint(startLocal);
+        AddVehicleSpeed(start);
+        end = matrix.TransformPoint(endLocal);
+    }
+
+    // The aim is not perfect
+    const auto randomY = (double)(CGeneral::GetRandomNumber() & 0xFF);
+    const auto randomX = (double)(CGeneral::GetRandomNumber() & 0xFF);
+    const auto randomZ = (double)(CGeneral::GetRandomNumber() & 0xFF);
+    end.x += (float)(randomX * (double)0.01f - (double)1.28f);
+    end.y += (float)(randomY * (double)0.01f - (double)1.28f);
+    end.z += (float)(randomZ * (double)0.01f - (double)1.28f);
+
+    DoDriveByAutoAiming(FindPlayerPed(-1), vehicle, &start, &end, false);
+    FireInstantHitFromCar2(start, end, vehicle, vehicle->m_pDriver);
+    return true;
 }
 
 // 0x73F480
