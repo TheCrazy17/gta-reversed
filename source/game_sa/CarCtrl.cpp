@@ -7,6 +7,7 @@
 
 #include "StdInc.h"
 #include "Curves.h"
+#include "Garages.h"
 #include "Weather.h"
 #include "VehicleRecording.h"
 
@@ -124,7 +125,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(PickNextNodeRandomly, 0x42DE80);
     RH_ScopedInstall(PickNextNodeToChaseCar, 0x426EF0);
     RH_ScopedInstall(PickNextNodeToFollowPath, 0x427740);
-    RH_ScopedInstall(PossiblyRemoveVehicle, 0x424F80, { .Reversed = false });
+    RH_ScopedInstall(PossiblyRemoveVehicle, 0x424F80);
     RH_ScopedInstall(ReconsiderRoute, 0x42FC40);
     RH_ScopedInstall(RegisterVehicleOfInterest, 0x423DE0);
     RH_ScopedInstall(ScanForPedDanger, 0x42CE40);
@@ -2651,8 +2652,118 @@ void CCarCtrl::PossiblyFireHSMissile(CVehicle* entityLauncher, CEntity* targetEn
 
 // 0x424F80
 void CCarCtrl::PossiblyRemoveVehicle(CVehicle* vehicle) {
-    plugin::Call<0x424F80, CVehicle*>(vehicle);
+    static_assert(offsetof(CVehicle, m_nTimeTillWeNeedThisCar) == 0x4D0 && offsetof(CVehicle, m_nTimeWhenBlowedUp) == 0x4D8);
+    static_assert(offsetof(CCamera, m_fGenerationDistMultiplier) == 0xF4 && offsetof(CCamera, m_mCameraMatrix) == 0x974);
+
+    auto& autoPilot = vehicle->m_autoPilot;
+    const auto now  = CTimer::GetTimeInMS();
+
+    const auto RemoveVehicle = [&] {
+        CWorld::Remove(vehicle);
+        delete vehicle;
+    };
+
+    // Not while someone is getting in, nor when it is part of a convoy with something to follow
+    if (vehicle->m_nNumGettingIn) {
+        return;
+    }
+    if (vehicle->vehicleFlags.bPartOfConvoy && autoPilot.m_TargetEntity) {
+        return;
+    }
+
+    const auto  pos    = vehicle->GetPosition();
+    const auto& centre = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
+
+    if (!vehicle->vehicleFlags.bIsLocked && vehicle->CanBeDeleted() && !CCranes::IsThisCarBeingTargettedByAnyCrane(vehicle)) {
+        if (vehicle->vehicleFlags.bFadeOut && !CVisibilityPlugins::GetClumpAlpha(vehicle->GetRpClump())) {
+            RemoveVehicle();
+            return;
+        }
+
+        const auto distance = (CVector2D{ pos } - CVector2D{ centre }).Magnitude();
+
+        // How far it can be before it is removed, it is a lot less behind the camera
+        auto range = TheCamera.m_fGenerationDistMultiplier * 170.0f;
+        const auto& cam = TheCamera.GetActiveCam();
+        if (!vehicle->GetIsOnScreen()
+            && !cam.m_bLookingLeft && !cam.m_bLookingRight && !cam.m_bLookingBehind
+            && TheCamera.GetLookDirection() != 0
+            && vehicle->m_nCreatedBy != PARKED_VEHICLE
+            && vehicle->m_nModelIndex != MODEL_AMBULAN && vehicle->m_nModelIndex != MODEL_FIRETRUK
+            && !vehicle->vehicleFlags.bIsLawEnforcer
+            && !vehicle->vehicleFlags.bIsCarParkVehicle
+            && now >= vehicle->m_nTimeTillWeNeedThisCar
+            && !vehicle->vehicleFlags.bNeverUseSmallerRemovalRange) {
+            range = 45.0f;
+        }
+        if (TheCamera.m_mCameraMatrix.GetForward().z < -0.9f) {
+            range = 70.0f;
+        }
+
+        if (std::max((float)vehicle->m_nExtendedRemovalRange, 170.0f) * range * 0.0058823529f < distance
+            && autoPilot.m_nCarMission != MISSION_PLANE_ATTACK_PLAYER_POLICE
+            && !CGarages::IsPointWithinHideOutGarage(pos)) {
+            if (IsThisVehicleInteresting(vehicle)) {
+                vehicle->m_nFakePhysics = 10;
+                return;
+            }
+            if (vehicle->GetIsOnScreen()) {
+                vehicle->vehicleFlags.bFadeOut = true;
+                return;
+            }
+            RemoveVehicle();
+            return;
+        }
+
+        // Simple vehicles that are on their side are removed
+        const auto status = vehicle->GetStatus();
+        if (status == STATUS_SIMPLE && std::abs(vehicle->GetMatrix().GetUp().z) < 0.74f) {
+            RemoveVehicle();
+            return;
+        }
+
+        // Aircraft that are stuck are removed
+        if ((status == STATUS_PHYSICS || status == STATUS_WRECKED)
+            && (vehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE || vehicle->m_nVehicleSubType == VEHICLE_TYPE_HELI)
+            && vehicle->GetIsStuck()) {
+            RemoveVehicle();
+            return;
+        }
+    }
+
+    // Vehicles that have been driving for a while without anyone seeing them
+    const auto status = vehicle->GetStatus();
+    if (vehicle->m_nVehicleSubType != VEHICLE_TYPE_HELI && vehicle->m_nVehicleSubType != VEHICLE_TYPE_PLANE
+        && autoPilot.m_nTempAction != TEMPACT_STUCKINTRAFFIC
+        && (status == STATUS_SIMPLE || (status == STATUS_PHYSICS && (autoPilot.m_nCarDrivingStyle == DRIVING_STYLE_STOP_FOR_CARS || autoPilot.m_nCarDrivingStyle == DRIVING_STYLE_STOP_FOR_CARS_IGNORE_LIGHTS)))
+        && now - autoPilot.m_nTimeSwitchedToRealPhysics > 5000
+        && vehicle->m_nTimeTillWeNeedThisCar == 0
+        && now != 0
+        && !vehicle->GetIsOnScreen()) {
+        if ((CVector2D{ pos } - CVector2D{ centre }).Magnitude() > 22.0f
+            && !IsThisVehicleInteresting(vehicle)
+            && !vehicle->vehicleFlags.bIsLocked
+            && vehicle->CanBeDeleted()
+            && !CTrafficLights::ShouldCarStopForLight(vehicle, true)
+            && !CTrafficLights::ShouldCarStopForBridge(vehicle)
+            && !CGarages::IsPointWithinHideOutGarage(pos)) {
+            RemoveVehicle();
+            return;
+        }
+    }
+
+    // Wrecks are removed a while after they blew up
+    if (status == STATUS_WRECKED
+        && vehicle->m_nTimeWhenBlowedUp != 0
+        && now > vehicle->m_nTimeWhenBlowedUp + 60000
+        && now > vehicle->m_nTimeTillWeNeedThisCar
+        && !vehicle->GetIsOnScreen()
+        && (pos - centre).SquaredMagnitude() > 42.25f
+        && !CGarages::IsPointWithinHideOutGarage(pos)) {
+        RemoveVehicle();
+    }
 }
+
 
 // 0x423F10
 void CCarCtrl::PruneVehiclesOfInterest() {
