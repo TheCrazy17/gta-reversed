@@ -7,6 +7,7 @@
 
 #include "StdInc.h"
 #include "Curves.h"
+#include "Tasks/TaskTypes/TaskComplexDriveWander.h"
 #include "Events/EventPotentialGetRunOver.h"
 #include "Garages.h"
 #include "Weather.h"
@@ -91,7 +92,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ChooseModel, 0x424CE0);
     RH_ScopedInstall(ClearInterestingVehicleList, 0x423F00);
     RH_ScopedInstall(ClitargetOrientationToLink, 0x422760);
-    RH_ScopedInstall(CreateConvoy, 0x42C740, { .Reversed = false });
+    RH_ScopedInstall(CreateConvoy, 0x42C740);
     RH_ScopedInstall(CreatePoliceChase, 0x42C2B0, { .Reversed = false });
     RH_ScopedInstall(DealWithBend_Racing, 0x428040);
     RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
@@ -508,7 +509,98 @@ CVehicle* CCarCtrl::CreateCarForScript(int32 modelid, CVector posn, bool doMissi
 
 // 0x42C740
 bool CCarCtrl::CreateConvoy(CVehicle* vehicle, int32 arg2) {
-    return plugin::CallAndReturn<bool, 0x42C740, CVehicle*, int32>(vehicle, arg2);
+    static_assert(offsetof(CVehicle, m_nForcedRandomRouteSeed) == 0x45E);
+
+    // arg2 is the type of the peds that drive the vehicles that are added behind the vehicle
+    auto  created  = false;
+    auto* previous = vehicle;
+
+    // Two vehicles follow it, and sometimes a third one
+    const auto roll         = (int32)((float)CGeneral::GetRandomNumber() * 3.0517578125e-05f * 100.0f);
+    const auto numFollowers = roll > 50 ? 3 : 2;
+
+    const auto radius = CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->GetColModel()->GetBoundingSphere().m_fRadius;
+    vehicle->m_nForcedRandomRouteSeed = vehicle->m_nRandomSeed;
+
+    for (auto i = 0; i < numFollowers; i++) {
+        auto* const follower = GetNewVehicleDependingOnCarModel(vehicle->m_nModelIndex, RANDOM_VEHICLE);
+        if (!follower) {
+            continue;
+        }
+
+        // Where it goes, behind the vehicle with some room between them
+        const auto& forward = vehicle->GetMatrix().GetForward();
+        const auto  step    = (float)(i + 1);
+        const auto  spacing = radius + radius + 2.5f;
+        const auto  vehPos  = vehicle->GetPosition();
+        CVector     pos{ vehPos.x - step * forward.x * spacing, vehPos.y - step * forward.y * spacing, vehPos.z - step * forward.z * spacing };
+
+        // The ground has to be close, the one above and the one below are looked at
+        auto      groundZ = 1e9f;
+        CColPoint colPoint;
+        CEntity*  hitEntity{};
+        if (CWorld::ProcessVerticalLine(pos, 1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+            groundZ = colPoint.m_vecPoint.z;
+        }
+        if (CWorld::ProcessVerticalLine(pos, -1000.0f, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+            if (std::abs(colPoint.m_vecPoint.z - pos.z) < std::abs(groundZ - pos.z)) {
+                groundZ = colPoint.m_vecPoint.z;
+            }
+        }
+        if (groundZ > 1e9f) {
+            delete follower;
+            continue;
+        }
+        pos.z = follower->GetDistanceFromCentreOfMassToBaseOfModel() + groundZ;
+
+        int16 numColliding{};
+        CWorld::FindObjectsKindaColliding(pos, radius, true, &numColliding, 2, nullptr, false, true, true, false, false);
+        if (numColliding != 0) {
+            delete follower;
+            continue;
+        }
+
+        // The first vehicle that gets added makes the vehicle start moving
+        if (!created) {
+            vehicle->SetStatus(STATUS_PHYSICS);
+            vehicle->m_autoPilot.m_nCarDrivingStyle = DRIVING_STYLE_AVOID_CARS;
+            const auto speed = (float)vehicle->m_autoPilot.m_nCruiseSpeed;
+            const auto dir   = vehicle->GetForward();
+            vehicle->m_vecMoveSpeed = CVector{ speed * dir.x * 0.02f, speed * dir.y * 0.02f, speed * dir.z * 0.02f };
+        }
+
+        follower->GetMatrix() = vehicle->GetMatrix();
+        follower->SetPosn(pos);
+        follower->m_vecMoveSpeed = vehicle->m_vecMoveSpeed;
+        follower->SetStatus(vehicle->GetStatus());
+        follower->vehicleFlags.bPartOfConvoy = true;
+        CWorld::Add(follower);
+
+        if (follower->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+            follower->AsBike()->PlaceOnRoadProperly();
+        } else if (follower->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
+            follower->AsAutomobile()->PlaceOnRoadProperly();
+        }
+
+        SetUpDriverAndPassengersForVehicle(follower, arg2, 0, true, false, 99);
+        follower->m_pDriver->GetTaskManager().SetTask(new CTaskComplexCarDriveWander{ follower, DRIVING_STYLE_STOP_FOR_CARS, 10.0f }, TASK_PRIMARY_DEFAULT, false);
+
+        // It drives like the vehicle but slower the farther it is
+        follower->m_autoPilot.m_nCruiseSpeed = vehicle->m_autoPilot.m_nCruiseSpeed;
+        follower->m_autoPilot.m_speed        = std::max(vehicle->m_autoPilot.m_speed - (float)i, 0.0f);
+        follower->m_autoPilot.m_nCarDrivingStyle = vehicle->m_autoPilot.m_nCarDrivingStyle;
+        follower->m_autoPilot.m_nCarMission      = vehicle->m_autoPilot.m_nCarMission;
+        follower->m_nRandomSeed                  = vehicle->m_nRandomSeed;
+        follower->m_nForcedRandomRouteSeed       = vehicle->m_nForcedRandomRouteSeed;
+
+        // And follows the one in front of it
+        follower->m_autoPilot.m_TargetEntity = previous;
+        CEntity::SafeRegisterRef(follower->m_autoPilot.m_TargetEntity);
+
+        created  = true;
+        previous = follower;
+    }
+    return created;
 }
 
 // 0x42C2B0
