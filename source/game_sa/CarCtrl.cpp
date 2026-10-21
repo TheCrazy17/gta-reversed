@@ -113,7 +113,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70);
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940);
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000);
-    RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
+    RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210);
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
     RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0);
     RH_ScopedInstall(GenerateOneRandomCar, 0x430050, { .Reversed = false });
@@ -1676,8 +1676,162 @@ void CCarCtrl::FlyAIPlaneInCertainDirection(CPlane* pPlane) {
 }
 
 // 0x424210
-bool CCarCtrl::GenerateCarCreationCoors2(CVector posn, float radius, float arg3, float arg4, bool arg5, float arg6, float arg7, CVector* pOrigin, CNodeAddress* pNodeAddress1, CNodeAddress* pNodeAddress12, float* arg11, bool arg12, bool arg13) {
-    return plugin::CallAndReturn<bool, 0x424210, CVector, float, float, float, bool, float, float, CVector*, CNodeAddress*, CNodeAddress*, float*, bool, bool>(posn, radius, arg3, arg4, arg5, arg6, arg7, pOrigin, pNodeAddress1, pNodeAddress12, arg11, arg12, arg13);
+bool CCarCtrl::GenerateCarCreationCoors2(CVector posn, float dirX, float dirY, float minDot, bool inDirection, float minDist, float maxDist, CVector* outPos, CNodeAddress* outNode1, CNodeAddress* outNode2, float* outLerp, bool lowTraffic, bool noNearbyStart) {
+    // The nodes around the position are looked for again when it moved enough or after some time
+    static CNodeAddress sNodeA, sNodeB; // for low traffic
+    static CNodeAddress sNodeC, sNodeD;
+    static CVector      sLastPos;
+    static uint32       sNextUpdateTime;
+
+    if ((CVector2D{ posn } - CVector2D{ sLastPos }).Magnitude() > 10.0f || sNextUpdateTime < CTimer::GetTimeInMS()) {
+        plugin::CallMethod<0x452090, CPathFind*, CVector, CNodeAddress*, CNodeAddress*, bool>(&ThePaths, posn, &sNodeA, &sNodeB, true);
+        plugin::CallMethod<0x452090, CPathFind*, CVector, CNodeAddress*, CNodeAddress*, bool>(&ThePaths, posn, &sNodeC, &sNodeD, false);
+        sNextUpdateTime = CTimer::GetTimeInMS() + 5000;
+        sLastPos        = posn;
+
+        // More cars and fewer peds close to the big roads
+        if (sNodeA.IsAreaValid() && ThePaths.IsAreaLoaded(sNodeA.m_wAreaId)) {
+            const auto* const nodeA    = &ThePaths.m_pPathNodes[sNodeA.m_wAreaId][sNodeA.m_wNodeId];
+            const auto        linkAddr = ThePaths.m_pNaviLinks[nodeA->m_wAreaId][nodeA->m_wBaseLinkId];
+            if (ThePaths.IsAreaLoaded(linkAddr.m_wAreaId)) {
+                const auto& link = ThePaths.GetCarPathLink(linkAddr);
+                if ((link.m_numOppositeDirLanes < 2 && link.m_numSameDirLanes < 2)
+                    || (link.GetNodeCoors() - CVector2D{ posn }).Magnitude() >= 40.0f) {
+                    CPopulation::m_bMoreCarsAndFewerPeds = false;
+                } else {
+                    CPopulation::m_bMoreCarsAndFewerPeds = nodeA->m_bHighway;
+                }
+            }
+        }
+    }
+
+    // Where to start walking along the paths, sometimes it is the closest node
+    CNodeAddress start;
+    auto         minDistance = minDist;
+    if ((CGeneral::GetRandomNumber() & 0xF) == 4 && !noNearbyStart) {
+        start = ThePaths.FindNodeClosestToCoors(posn, PATH_TYPE_VEH, 50.0f, 0, 0, 0, 1, 1);
+        minDistance *= 1.5f;
+    } else if ((CGeneral::GetRandomNumber() & 3) == 0) {
+        start = lowTraffic ? sNodeB : sNodeD;
+    } else {
+        start = lowTraffic ? sNodeA : sNodeC;
+    }
+    if (!start.IsAreaValid() || !ThePaths.IsAreaLoaded(start.m_wAreaId)) {
+        return false;
+    }
+
+    CNodeAddress visited[30];
+    visited[0]      = start;
+    auto numVisited = 1;
+    auto cur        = start;
+    auto walked     = 0.0f;
+
+    while (walked < 230.0f) {
+        if (!ThePaths.IsAreaLoaded(cur.m_wAreaId)) {
+            return false;
+        }
+        auto* const curNode  = &ThePaths.m_pPathNodes[cur.m_wAreaId][cur.m_wNodeId];
+        const auto  numLinks = (int32)curNode->m_nNumLinks;
+        if (numLinks == 0) {
+            return false;
+        }
+
+        // The links are looked at in a random order
+        SequenceElements     = numLinks;
+        SequenceRandomOffset = CGeneral::GetRandomNumber() % numLinks;
+        bSequenceOtherWay    = (CGeneral::GetRandomNumber() >> 4) & 1;
+
+        CNodeAddress next;
+        CPathNode*   nextNode{};
+        for (auto i = 0; i < numLinks; i++) {
+            const auto linkIdx   = curNode->m_wBaseLinkId + FindSequenceElement(i);
+            const auto candidate = ThePaths.m_pNodeLinks[cur.m_wAreaId][linkIdx];
+            if (!ThePaths.IsAreaLoaded(candidate.m_wAreaId) || !ThePaths.IsAreaLoaded(ThePaths.m_pNaviLinks[cur.m_wAreaId][linkIdx].m_wAreaId)) {
+                continue;
+            }
+            if (std::find(visited, visited + numVisited, candidate) != visited + numVisited) {
+                continue;
+            }
+            next     = candidate;
+            nextNode = &ThePaths.m_pPathNodes[candidate.m_wAreaId][candidate.m_wNodeId];
+            break;
+        }
+        if (!nextNode) {
+            return false;
+        }
+
+        const auto curPos   = curNode->GetPosition();
+        const auto nextPos  = nextNode->GetPosition();
+        const auto curDist  = (CVector2D{ curPos } - CVector2D{ posn }).Magnitude();
+        const auto nextDist = (CVector2D{ nextPos } - CVector2D{ posn }).Magnitude();
+        const auto linkLen  = (CVector2D{ curPos } - CVector2D{ nextPos }).Magnitude();
+
+        // The point where the way between the nodes is at the distance
+        const auto Crossing = [&](float distance, float& lerp) {
+            const auto dNext = nextDist - distance;
+            const auto dCur  = curDist - distance;
+            if (!(dCur * dNext < 0.0f)) {
+                return false;
+            }
+            const auto wNext = std::abs(dNext);
+            const auto wCur  = std::abs(dCur);
+            const auto inv   = 1.0f / (wNext + wCur);
+            *outPos = CVector{ (nextPos.x * wCur + curPos.x * wNext) * inv, (nextPos.y * wCur + curPos.y * wNext) * inv, (nextPos.z * wCur + curPos.z * wNext) * inv };
+            lerp    = inv * wCur;
+            return true;
+        };
+
+        auto found = false;
+        if (!((nextNode->m_isSwitchedOff || curNode->m_isSwitchedOff) && lowTraffic)) {
+            float lerp{};
+            if (Crossing(minDistance, lerp) && TheCamera.IsSphereVisible(*outPos, 5.0f)) {
+                *outLerp = lerp;
+                found    = true;
+            } else if (Crossing(maxDist, lerp) && !TheCamera.IsSphereVisible(*outPos, 5.0f)) {
+                *outLerp = lerp;
+                found    = true;
+            }
+        }
+
+        // It can't be too steep
+        if (found && std::abs(curPos.z - nextPos.z) <= linkLen * 0.5f) {
+            if (CGeneral::GetRandomNumber() & 8) {
+                *outNode1 = cur;
+                *outNode2 = next;
+            } else {
+                *outNode1 = next;
+                *outNode2 = cur;
+                *outLerp  = 1.0f - *outLerp;
+            }
+
+            auto* const node1 = &ThePaths.m_pPathNodes[outNode1->m_wAreaId][outNode1->m_wNodeId];
+            auto* const node2 = &ThePaths.m_pPathNodes[outNode2->m_wAreaId][outNode2->m_wNodeId];
+            if (node2->m_onDeadEnd && ThePaths.ThisNodeWillLeadIntoADeadEnd(node2, node1) && lowTraffic) {
+                return false;
+            }
+
+            // Has to be in the direction or not, depending on what is asked
+            const auto dx  = outPos->x - posn.x;
+            const auto dy  = outPos->y - posn.y;
+            const auto inv = 1.0f / std::sqrt(dx * dx + dy * dy);
+            const auto dot = inv * dx * dirX + inv * dy * dirY;
+            if (inDirection ? !(dot > minDot) : !(dot <= minDot)) {
+                return false;
+            }
+
+            std::snprintf(gString, sizeof(gString), "tell Obbe it happened again %d/%d %d/%d", outNode1->m_wAreaId, outNode1->m_wNodeId, outNode2->m_wAreaId, outNode2->m_wNodeId);
+            return true;
+        }
+
+        // Keeps walking
+        visited[numVisited++] = next;
+        cur                   = next;
+        walked += linkLen;
+        if (numVisited >= 30) {
+            return false;
+        }
+    }
+    return false;
 }
 
 // 0x42F9C0
