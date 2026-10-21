@@ -85,7 +85,7 @@ void CFileLoader::InjectHooks() {
     RH_ScopedInstall(LoadObjectTypes, 0x5B8400);
 
     RH_ScopedGlobalInstall(LinkLods, 0x5B51E0); 
-    RH_ScopedInstall(Load2dEffect, 0x5B7670, { .Reversed = false });
+    RH_ScopedInstall(Load2dEffect, 0x5B7670);
 }
 
 // copy textures from dictionary to baseDictionary
@@ -963,44 +963,222 @@ int32 CFileLoader::LoadObject(const char* line) {
 
 // 0x5B7670
 void CFileLoader::Load2dEffect(const char* line) {
-    return plugin::Call<0x5B7670, const char*>(line);
+    ZoneScoped;
 
-    // todo:
-    auto modelId{ MODEL_INVALID };
+    int32   modelId{ MODEL_INVALID };
     CVector pos{};
-    int32 type;
-    VERIFY(sscanf_s(line, "%d %f %f %f %d", &modelId, &pos.x, &pos.y, &pos.z, &type) == 5);
+    int32   type{};
+    sscanf_s(line, "%d %f %f %f %d", &modelId, &pos.x, &pos.y, &pos.z, &type);
 
     CTxdStore::PushCurrentTxd();
     CTxdStore::SetCurrentTxd(CTxdStore::FindTxdSlot("particle"));
 
-    auto& effect = CModelInfo::Get2dEffectStore()->AddItem();
-    CModelInfo::GetModelInfo(modelId)->Add2dEffect(&effect);
-    effect.m_Pos = pos;
-    effect.m_Type = *reinterpret_cast<e2dEffectType*>(type);
+    auto* const mi = CModelInfo::GetModelInfo(modelId);
+    auto&       fx = CModelInfo::Get2dEffectStore()->AddItem();
+    mi->Add2dEffect(&fx);
+    fx.m_Pos  = pos;
+    fx.m_Type = (e2dEffectType)type;
 
     switch (type) {
-    case EFFECT_LIGHT:
+    case EFFECT_LIGHT: {
+        int32 r{}, g{}, b{}, a{};
+        sscanf_s(line, "%d %f %f %f %d %d %d %d %d", &modelId, &pos.x, &pos.y, &pos.z, &type, &r, &g, &b, &a);
+
+        // The names of the textures are in quotes
+        const auto ReadQuoted = [](const char*& p, char* out, size_t outSize) {
+            while (*p && *p++ != '"') {}
+            size_t len = 0;
+            for (; *p && *p != '"'; p++) {
+                if (len + 1 < outSize) {
+                    out[len++] = *p;
+                }
+            }
+            out[len] = '\0';
+            if (*p) {
+                p++;
+            }
+        };
+        char        coronaTexName[64]{}, shadowTexName[64]{};
+        const char* rest = line;
+        ReadQuoted(rest, coronaTexName, std::size(coronaTexName));
+        ReadQuoted(rest, shadowTexName, std::size(shadowTexName));
+
+        float coronaFarClip{}, pointlightRange{}, coronaSize{}, shadowSize{};
+        int32 shadowColorMult{ -1 }, flashType{ -1 }, enableReflection{ -1 }, flareType{ -1 }, flags{ -1 }, shadowZDist{ -1 }, offsetX{ -1 }, offsetY{ -1 }, offsetZ{ -1 };
+        sscanf_s(rest, "%f %f %f %f %d %d %d %d %d %d %d %d %d", &coronaFarClip, &pointlightRange, &coronaSize, &shadowSize, &shadowColorMult, &flashType, &enableReflection, &flareType, &flags, &shadowZDist, &offsetX, &offsetY, &offsetZ);
+
+        auto& light               = fx.light;
+        light.m_color.red         = (uint8)r;
+        light.m_color.green       = (uint8)g;
+        light.m_color.blue        = (uint8)b;
+        light.m_color.alpha       = (uint8)a;
+        light.m_fCoronaFarClip    = coronaFarClip;
+        light.m_fPointlightRange  = pointlightRange;
+        light.m_fCoronaSize       = coronaSize;
+        light.m_fShadowSize       = shadowSize;
+        light.m_nShadowColorMultiplier = (uint8)shadowColorMult;
+        light.m_nCoronaFlashType  = (e2dCoronaFlashType)flashType;
+        light.m_bCoronaEnableReflection = enableReflection != 0;
+        light.m_nCoronaFlareType  = (uint8)flareType;
+        light.m_nFlags            = (uint16)flags;
+        light.m_nShadowZDistance  = (char)shadowZDist;
+        light.offsetX             = (char)offsetX;
+        light.offsetY             = (char)offsetY;
+        light.offsetZ             = (char)offsetZ;
+        light.m_pCoronaTex        = RwTextureRead(coronaTexName, nullptr);
+        light.m_pShadowTex        = RwTextureRead(shadowTexName, nullptr);
+        if (flags & 4) {
+            light.m_nFlags &= ~2;
+        }
         break;
+    }
     case EFFECT_PARTICLE:
+        sscanf_s(line, "%d %f %f %f %d %s", &modelId, &pos.x, &pos.y, &pos.z, &type, SCANF_S_STR(fx.particle.m_szName));
         break;
-    case EFFECT_ATTRACTOR:
+    case EFFECT_ATTRACTOR: {
+        auto& attractor = fx.pedAttractor;
+
+        int32 attractorType{}, probability{}, unknown{};
+        char  scriptName[128]{};
+        sscanf_s(
+            line, "%d %f %f %f %d %d %f %f %f %f %f %f %f %f %f %d %d %s",
+            &modelId, &pos.x, &pos.y, &pos.z, &type,
+            &attractorType,
+            &attractor.m_vecQueueDir.x, &attractor.m_vecQueueDir.y, &attractor.m_vecQueueDir.z,
+            &attractor.m_vecUseDir.x, &attractor.m_vecUseDir.y, &attractor.m_vecUseDir.z,
+            &attractor.m_vecForwardDir.x, &attractor.m_vecForwardDir.y, &attractor.m_vecForwardDir.z,
+            &probability, &unknown,
+            SCANF_S_STR(scriptName)
+        );
+        attractor.m_nAttractorType         = (ePedAttractorType)attractorType;
+        strncpy_s(attractor.m_szScriptName, scriptName, _TRUNCATE);
+        attractor.m_nPedExistingProbability = (uint8)probability;
+        attractor.field_36                  = (uint8)unknown;
         break;
-    case EFFECT_INTERIOR:
+    }
+    case EFFECT_INTERIOR: {
+        auto& interior = *reinterpret_cast<C2dEffectInterior*>(&fx);
+
+        int32 interiorType{ -1 }, door{ -1 }, seed{ -1 }, groupId{ -1 }, status{ 50 };
+        float width{}, depth{}, height{};
+        int32 lDoorStart{ -1 }, lDoorEnd{ -1 }, tDoorStart{ -1 }, tDoorEnd{ -1 }, rDoorStart{ -1 }, rDoorEnd{ -1 };
+        int32 lWindowStart{ -1 }, lWindowEnd{ -1 }, tWindowStart{ -1 }, tWindowEnd{ -1 }, rWindowStart{ -1 }, rWindowEnd{ -1 };
+        int32 noGoLeft[3]{ -1, -1, -1 }, noGoBottom[3]{ -1, -1, -1 }, noGoWidth[3]{ -1, -1, -1 }, noGoDepth[3]{ -1, -1, -1 };
+        sscanf_s(
+            line, "%d %f %f %f %d %d %f %f %f %f %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d  %d %d %d %d  %d %d %d %d  %d %d %d %d",
+            &modelId, &pos.x, &pos.y, &pos.z, &type,
+            &interiorType, &width, &depth, &height, &interior.m_rot,
+            &door, &seed, &groupId, &status,
+            &lDoorStart, &lDoorEnd, &tDoorStart, &tDoorEnd, &rDoorStart, &rDoorEnd,
+            &lWindowStart, &lWindowEnd, &tWindowStart, &tWindowEnd, &rWindowStart, &rWindowEnd,
+            &noGoLeft[0], &noGoBottom[0], &noGoWidth[0], &noGoDepth[0],
+            &noGoLeft[1], &noGoBottom[1], &noGoWidth[1], &noGoDepth[1],
+            &noGoLeft[2], &noGoBottom[2], &noGoWidth[2], &noGoDepth[2]
+        );
+
+        interior.m_type        = (uint8)interiorType;
+        interior.m_groupId     = (int8)groupId;
+        interior.m_width       = (uint8)(int32)width;
+        interior.m_depth       = (uint8)(int32)depth;
+        interior.m_height      = (uint8)(int32)height;
+        interior.m_door        = (int8)door;
+        interior.m_lDoorStart  = (int8)lDoorStart;
+        interior.m_lDoorEnd    = (int8)lDoorEnd;
+        interior.m_rDoorStart  = (int8)rDoorStart;
+        interior.m_rDoorEnd    = (int8)rDoorEnd;
+        interior.m_tDoorStart  = (int8)tDoorStart;
+        interior.m_tDoorEnd    = (int8)tDoorEnd;
+        interior.m_lWindowStart = (int8)lWindowStart;
+        interior.m_lWindowEnd   = (int8)lWindowEnd;
+        interior.m_rWindowStart = (int8)rWindowStart;
+        interior.m_rWindowEnd   = (int8)rWindowEnd;
+        interior.m_tWindowStart = (int8)tWindowStart;
+        interior.m_tWindowEnd   = (int8)tWindowEnd;
+        for (auto i = 0; i < 3; i++) {
+            interior.m_noGoLeft[i]   = (int8)noGoLeft[i];
+            interior.m_noGoBottom[i] = (int8)noGoBottom[i];
+            interior.m_noGoWidth[i]  = (int8)noGoWidth[i];
+            interior.m_noGoDepth[i]  = (int8)noGoDepth[i];
+        }
+        interior.m_seed   = (uint8)seed;
+        interior.m_status = (uint8)status;
         break;
-    case EFFECT_ENEX:
+    }
+    case EFFECT_ENEX: {
+        auto& enex = fx.enEx;
+
+        int32 interiorId{}, flags1{}, skyColor{};
+        char  interiorName[64]{};
+        sscanf_s(
+            line, "%d %f %f %f %d %f %f %f %f %f %f %f %d %d %s %d",
+            &modelId, &pos.x, &pos.y, &pos.z, &type,
+            &enex.m_fEnterAngle, &enex.m_vecRadius.x, &enex.m_vecRadius.y,
+            &enex.m_vecExitPosn.x, &enex.m_vecExitPosn.y, &enex.m_vecExitPosn.z,
+            &enex.m_fExitAngle,
+            &interiorId, &flags1,
+            SCANF_S_STR(interiorName),
+            &skyColor
+        );
+        enex.m_nInteriorId = (eAreaCodes)interiorId;
+        enex.m_nFlags1     = (uint8)flags1;
+        enex.m_nSkyColor   = (uint8)skyColor;
+        strncpy(enex.m_szInteriorName, interiorName, std::size(enex.m_szInteriorName));
         break;
-    case EFFECT_ROADSIGN:
+    }
+    case EFFECT_ROADSIGN: {
+        auto& sign = fx.roadsign;
+
+        // Every line of the text has 16 characters
+        char text[4][33]{};
+        for (auto& l : text) {
+            l[0] = ' ';
+        }
+        int32 flags{};
+        sscanf_s(
+            line, "%d %f %f %f %d %f %f %f %f %f %d %s %s %s %s",
+            &modelId, &pos.x, &pos.y, &pos.z, &type,
+            &sign.m_vecSize.x, &sign.m_vecSize.y,
+            &sign.m_vecRotation.x, &sign.m_vecRotation.y, &sign.m_vecRotation.z,
+            &flags,
+            SCANF_S_STR(text[0]), SCANF_S_STR(text[1]), SCANF_S_STR(text[2]), SCANF_S_STR(text[3])
+        );
+        sign.m_nFlags = *reinterpret_cast<CRoadsignAttrFlags*>(&flags); // Only the low word is used
+
+        sign.m_pText = (RwChar*)CMemoryMgr::Malloc(4 * 16, 0);
+        for (auto i = 0; i < 4; i++) {
+            std::memcpy(sign.m_pText + i * 16, text[i], 16);
+        }
+        sign.m_pAtomic = nullptr;
         break;
+    }
     case EFFECT_TRIGGER_POINT:
+        sscanf_s(line, "%d %f %f %f %d %d", &modelId, &pos.x, &pos.y, &pos.z, &type, &fx.slotMachineIndex.m_nId);
         break;
-    case EFFECT_COVER_POINT:
+    case EFFECT_COVER_POINT: {
+        int32 usage{};
+        sscanf_s(line, "%d %f %f %f %d %f %f %d", &modelId, &pos.x, &pos.y, &pos.z, &type, &fx.coverPoint.m_DirOfCover.x, &fx.coverPoint.m_DirOfCover.y, &usage);
+        fx.coverPoint.m_Usage = (CCoverPoint::eUsage)usage;
         break;
-    case EFFECT_ESCALATOR:
+    }
+    case EFFECT_ESCALATOR: {
+        auto& escalator = fx.escalator;
+
+        int32 direction{};
+        sscanf_s(
+            line, "%d %f %f %f %d %f %f %f %f %f %f %f %f %f %d",
+            &modelId, &pos.x, &pos.y, &pos.z, &type,
+            &escalator.m_vecBottom.x, &escalator.m_vecBottom.y, &escalator.m_vecBottom.z,
+            &escalator.m_vecTop.x, &escalator.m_vecTop.y, &escalator.m_vecTop.z,
+            &escalator.m_vecEnd.x, &escalator.m_vecEnd.y, &escalator.m_vecEnd.z,
+            &direction
+        );
+        escalator.m_nDirection = direction != 0;
         break;
+    }
     default:
         break;
     }
+
     CTxdStore::PopCurrentTxd();
 }
 
