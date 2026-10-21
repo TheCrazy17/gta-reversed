@@ -91,7 +91,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(ClitargetOrientationToLink, 0x422760);
     RH_ScopedInstall(CreateConvoy, 0x42C740, { .Reversed = false });
     RH_ScopedInstall(CreatePoliceChase, 0x42C2B0, { .Reversed = false });
-    RH_ScopedInstall(DealWithBend_Racing, 0x428040, { .Reversed = false });
+    RH_ScopedInstall(DealWithBend_Racing, 0x428040);
     RH_ScopedInstall(DragCarToPoint, 0x42EC90, { .Reversed = false });
     RH_ScopedInstall(FindAngleToWeaveThroughTraffic, 0x4325C0);
     RH_ScopedInstall(FindIntersection2Lines, 0x4226F0);
@@ -516,7 +516,124 @@ bool CCarCtrl::CreatePoliceChase(CVehicle* vehicle, int32 arg2, CNodeAddress Nod
 
 // 0x428040
 bool CCarCtrl::DealWithBend_Racing(CVehicle* vehicle, CCarPathLinkAddress LinkAddress1, CCarPathLinkAddress LinkAddress2, CCarPathLinkAddress LinkAddress3, CCarPathLinkAddress LinkAddress4, char arg6, char arg7, char arg8, char arg9, float arg10, float* arg11, float* arg12, float* arg13, float* arg14, CVector* pos) {
-    return plugin::CallAndReturn<bool, 0x428040, CVehicle*, CCarPathLinkAddress, CCarPathLinkAddress, CCarPathLinkAddress, CCarPathLinkAddress, int8, int8, int8, int8, float, float*, float*, float*, float*, CVector*>(vehicle, LinkAddress1, LinkAddress2, LinkAddress3, LinkAddress4, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, pos);
+    // arg6 to arg9 are the sides the links are driven, arg10 the speed of the vehicle
+    // arg11 is the heading to take, arg12 how much to slow down, arg13 how sharp the bend is, arg14 how far the bend is and pos where the lanes of the links meet
+    const auto IsInvalid = [](CCarPathLinkAddress address) { return reinterpret_cast<const uint16&>(address) == UINT16_MAX; };
+    if (IsInvalid(LinkAddress1) || IsInvalid(LinkAddress2)) {
+        return false;
+    }
+
+    // The bicycles take smaller bends
+    const auto isBMX       = vehicle->m_nVehicleSubType == VEHICLE_TYPE_BMX;
+    const auto minBend     = isBMX ? 0.34906587f : 0.5235988f;
+    const auto bigBend     = isBMX ? 0.69813174f : 1.0471976f;
+    const auto maxDistance = isBMX ? 50.0f : 40.0f;
+
+    *arg12 = 1.0f;
+    if (!ThePaths.m_pPathNodes[LinkAddress1.m_wAreaId] || !ThePaths.m_pPathNodes[LinkAddress2.m_wAreaId]) {
+        return false;
+    }
+
+    const auto& link1    = ThePaths.GetCarPathLink(LinkAddress1);
+    const auto  pos1     = link1.GetNodeCoors();
+    const auto  vehPos   = vehicle->GetPosition();
+    const auto  distance = (pos1 - CVector2D{ vehPos }).Magnitude();
+    *arg14 = distance;
+
+    if (distance > 60.0f) {
+        return false;
+    }
+
+    // The link the bend ends in, the following links are taken when they are close to it
+    const CCarPathLink* linkEnd = &ThePaths.GetCarPathLink(LinkAddress2);
+    auto signEnd = arg7;
+    if (!IsInvalid(LinkAddress3)) {
+        const auto& link3 = ThePaths.GetCarPathLink(LinkAddress3);
+        if ((linkEnd->GetNodeCoors() - link3.GetNodeCoors()).SquaredMagnitude() < 100.0f) {
+            linkEnd = &link3;
+            signEnd = arg8;
+        }
+        if (!IsInvalid(LinkAddress4)) {
+            const auto& link4 = ThePaths.GetCarPathLink(LinkAddress4);
+            if ((linkEnd->GetNodeCoors() - link4.GetNodeCoors()).SquaredMagnitude() < 100.0f) {
+                linkEnd = &link4;
+                signEnd = arg9;
+            }
+        }
+    }
+
+    const auto posEnd = linkEnd->GetNodeCoors();
+    const auto dir1   = CVector2D{ (float)link1.m_dir.x, (float)link1.m_dir.y } * (float)arg6;
+    const auto dirEnd = CVector2D{ (float)linkEnd->m_dir.x, (float)linkEnd->m_dir.y } * (float)signEnd;
+
+    // How much the vehicle has to turn to go along the end link
+    auto diff = CGeneral::GetATanOfXY(vehicle->GetMatrix().GetForward().x, vehicle->GetMatrix().GetForward().y) - CGeneral::GetATanOfXY(dirEnd.x, dirEnd.y);
+    while (diff > PI) {
+        diff -= TWO_PI;
+    }
+    while (diff < -PI) {
+        diff += TWO_PI;
+    }
+    if (std::abs(diff) < minBend) {
+        return false;
+    }
+    const auto TotalLanes = [](const CCarPathLink& link) { return (int32)link.m_numOppositeDirLanes + (int32)link.m_numSameDirLanes; };
+    if (TotalLanes(*linkEnd) >= 4 && TotalLanes(link1) >= 4 && std::abs(diff) < bigBend) {
+        return false;
+    }
+    *arg13 = diff;
+
+    // The edges of the lanes of the first link, the one that is closer to the end link is where the bend starts
+    const auto offset1 = link1.OneWayLaneOffset();
+    const auto edgeA1  = (offset1 + ((float)link1.m_numOppositeDirLanes - 1.0f));
+    const auto edgeC1  = (offset1 + ((float)link1.m_numSameDirLanes - 1.0f));
+    const CVector2D laneA1{ edgeA1 * dir1.y * 5.4f + pos1.x, pos1.y - edgeA1 * dir1.x * 5.4f };
+    const CVector2D laneC1{ pos1.x - edgeC1 * dir1.y * 5.4f, edgeC1 * dir1.x * 5.4f + pos1.y };
+
+    CVector2D bendStart = laneC1;
+    CVector2D bendEnd   = laneA1;
+    if ((laneC1 - posEnd).SquaredMagnitude() > (laneA1 - posEnd).SquaredMagnitude()) {
+        bendStart = laneA1;
+        bendEnd   = laneC1;
+    }
+
+    // The part of the bend that is looked at is not longer than 11
+    const auto bendLength = (bendEnd - bendStart).Magnitude();
+    if (bendLength > 11.0f) {
+        const auto scale = 11.0f / bendLength;
+        bendEnd = (bendEnd - bendStart) * scale + bendStart;
+    }
+
+    // The same for the end link, here the one that is closer to the first link is used
+    const auto offsetEnd = linkEnd->OneWayLaneOffset();
+    const auto edgeAE    = (offsetEnd + ((float)linkEnd->m_numOppositeDirLanes - 1.0f));
+    const auto edgeCE    = (offsetEnd + ((float)linkEnd->m_numSameDirLanes - 1.0f));
+    const CVector2D laneAE{ edgeAE * dirEnd.y * 5.4f + posEnd.x, posEnd.y - edgeAE * dirEnd.x * 5.4f };
+    const CVector2D laneCE{ posEnd.x - edgeCE * dirEnd.y * 5.4f, edgeCE * dirEnd.x * 5.4f + posEnd.y };
+    const auto laneEnd = (laneCE - pos1).SquaredMagnitude() <= (laneAE - pos1).SquaredMagnitude() ? laneCE : laneAE;
+
+    // Where the lanes meet, when they are parallel it is where the bend starts
+    if (std::abs(dir1.x - dirEnd.x) < 0.1f && std::abs(dir1.y - dirEnd.y) != 0.0f) {
+        pos->x = bendStart.x;
+        pos->y = bendStart.y;
+    } else {
+        FindIntersection2Lines(bendStart.x, bendStart.y, dir1.x, dir1.y, laneEnd.x, laneEnd.y, dirEnd.x, dirEnd.y, &pos->x, &pos->y);
+    }
+
+    // Slows down for the bend when it is close
+    const auto sharpness = std::min(std::abs(diff * 0.63661975f), 1.0f);
+    if (distance < maxDistance) {
+        *arg12 = 1.0f - ((maxDistance - distance) / maxDistance) * sharpness * 0.6f;
+    }
+
+    // The bend is aimed at when it is close, before that the far end of it
+    const auto speedFactor = std::clamp(arg10 * 0.033333335f, 0.2f, 1.0f);
+    if (sharpness * speedFactor * 20.0f <= distance) {
+        *arg11 = CGeneral::GetATanOfXY(bendEnd.x - vehPos.x, bendEnd.y - vehPos.y);
+    } else {
+        *arg11 = CGeneral::GetATanOfXY(pos->x - vehPos.x, pos->y - vehPos.y);
+    }
+    return true;
 }
 
 // 0x42EC90
