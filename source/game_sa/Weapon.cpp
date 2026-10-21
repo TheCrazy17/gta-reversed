@@ -59,7 +59,7 @@ void CWeapon::InjectHooks() {
     RH_ScopedGlobalInstall(DoDriveByAutoAiming, 0x73D720, { .Reversed = false });
     RH_ScopedGlobalInstall(FindNearestTargetEntityWithScreenCoors, 0x73E240);
     RH_ScopedGlobalInstall(EvaluateTargetForHeatSeekingMissile, 0x73E560);
-    RH_ScopedGlobalInstall(CheckForShootingVehicleOccupant, 0x73F480, { .Reversed = false });
+    RH_ScopedGlobalInstall(CheckForShootingVehicleOccupant, 0x73F480);
     RH_ScopedGlobalInstall(PickTargetForHeatSeekingMissile, 0x73F910);
     RH_ScopedOverloadedInstall(CanBeUsedFor2Player, "Static", 0x73B240, bool(*)(eWeaponType));
     RH_ScopedOverloadedInstall(CanBeUsedFor2Player, "Method", 0x73DEF0, bool(CWeapon::*)());
@@ -1324,8 +1324,80 @@ bool CWeapon::FireInstantHitFromCar(CVehicle* vehicle, bool leftSide, bool right
 }
 
 // 0x73F480
-bool CWeapon::CheckForShootingVehicleOccupant(CEntity** pCarEntity, CColPoint* colPoint, eWeaponType weaponType, const CVector& origin, const CVector& target) {
-    return plugin::CallAndReturn<bool, 0x73F480, CEntity**, CColPoint*, eWeaponType, const CVector&, const CVector&>(pCarEntity, colPoint, weaponType, origin, target);
+void CWeapon::CheckForShootingVehicleOccupant(CEntity** pCarEntity, CColPoint* colPoint, eWeaponType weaponType, const CVector& origin, const CVector& target) {
+    auto* const entity = *pCarEntity;
+    if (!entity->GetIsTypeVehicle()) {
+        return;
+    }
+    auto* const vehicle = entity->AsVehicle();
+
+    const auto savedColPoint = *colPoint;
+    auto       depth         = 1.0f;
+    auto       hitOccupant   = false;
+    CColLine   line{ origin, target };
+
+    // The head of the occupants that can be shot is tested
+    const auto TestOccupant = [&](CPed* occupant) {
+        if (!occupant || !occupant->bCanBeShotInVehicle) {
+            return;
+        }
+        auto* const hierarchy = GetAnimHierarchyFromSkinClump(occupant->GetRpClump());
+        const auto  index     = RpHAnimIDGetIndex(hierarchy, occupant->m_apBones[PED_NODE_HEAD]->BoneTag);
+        RwV3d       headPos{};
+        RwV3dTransformPoints(&headPos, &headPos, 1, &RpHAnimHierarchyGetMatrixArray(hierarchy)[index]);
+
+        CColSphere head;
+        head.Set(0.2f, CVector{ headPos.x, headPos.y, headPos.z + 0.1f }, (eSurfaceType)0, 9, tColLighting{ 0xFF });
+        if (CCollision::ProcessLineSphere(line, head, *colPoint, depth)) {
+            *pCarEntity = occupant;
+            hitOccupant = true;
+        }
+    };
+    TestOccupant(vehicle->m_pDriver);
+    for (auto* const passenger : vehicle->m_apPassengers) {
+        TestOccupant(passenger);
+    }
+
+    // And the glass of the cars, if the shot goes through the windscreen it gets damaged
+    if (vehicle->IsAutomobile()) {
+        const auto& matrix = vehicle->GetMatrix();
+        const auto  dx     = target.x - origin.x;
+        const auto  dy     = target.y - origin.y;
+        const auto  dz     = target.z - origin.z;
+        if (dy * matrix.GetForward().y + dz * matrix.GetForward().z + dx * matrix.GetForward().x < 0.0f
+            && (dy * matrix.GetUp().y + dz * matrix.GetUp().z + dx * matrix.GetUp().x <= 0.0f || vehicle->vehicleFlags.bIsVan)) {
+            auto* const colModel = vehicle->GetColModel();
+            auto* const colData  = colModel->m_pColData;
+            if ((int16)colData->m_nNumTriangles > 0) {
+                const auto inverted = Invert(matrix);
+                line.m_vecStart     = inverted.TransformPoint(line.m_vecStart);
+                line.m_vecEnd       = inverted.TransformPoint(line.m_vecEnd);
+                colModel->CalculateTrianglePlanes();
+
+                for (int16 i = 0; i < (int16)colData->m_nNumTriangles; i++) {
+                    if (!g_surfaceInfos.IsGlass(colData->m_pTriangles[i].GetSurfaceType())
+                        || !CCollision::TestLineTriangle(line, colData->m_pVertices, colData->m_pTriangles[i], colData->m_pTrianglePlanes[i])) {
+                        continue;
+                    }
+                    auto* const automobile = vehicle->AsAutomobile();
+                    auto&       damage     = automobile->m_damageManager;
+                    if (damage.ProgressPanelDamage(WINDSCREEN_PANEL)) {
+                        if (damage.GetPanelStatus(WINDSCREEN_PANEL) == DAMSTATE_DAMAGED) {
+                            damage.ProgressPanelDamage(WINDSCREEN_PANEL);
+                        }
+                        automobile->SetPanelDamage(WINDSCREEN_PANEL, true);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Nobody was hit, so it is the car
+    if (!hitOccupant) {
+        *pCarEntity = vehicle;
+        *colPoint   = savedColPoint;
+    }
 }
 
 // 0x73F910
