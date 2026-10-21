@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 99%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 21, 2026 at 11:51:30 UTC
-(Triggered by commit [3466cf4c](https://github.com/TheCrazy17/gta-reversed/commit/3466cf4c8f131830998bb93ddf610001a26bfa59))
+Last update was at Oct 21, 2026 at 13:03:43 UTC
+(Triggered by commit [ef45f167](https://github.com/TheCrazy17/gta-reversed/commit/ef45f1674d22f1f2c87d228b6c1ed19779e220b7))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8283 out of 8344 functions done in 720 categories)
+## Stats (8295 out of 8344 functions done in 720 categories)
 
-#### Completely reversed categories (693/720) [96%]
+#### Completely reversed categories (694/720) [96%]
 
 <details>
 <summary>See list of categories</summary>
@@ -109,6 +109,7 @@ Last update was at Oct 21, 2026 at 11:51:30 UTC
 - CCrime (2)<br />
 - CEscalators (4)<br />
 - cTransmission (4)<br />
+- CCarCtrl (111)<br />
 - CTheZones (21)<br />
 - CMenuManager (61)<br />
 - CSprite2d (33)<br />
@@ -711,7 +712,7 @@ Last update was at Oct 21, 2026 at 11:51:30 UTC
 
 </details>
 
-#### Partially reversed categories (26/720) [4%]
+#### Partially reversed categories (25/720) [3%]
 
 <details>
 <summary>See list of categories</summary>
@@ -720,22 +721,21 @@ Last update was at Oct 21, 2026 at 11:51:30 UTC
 - CRope (6/7) [86%]<br />
 - CFileLoader (47/48) [98%]<br />
 - CPopulation (65/66) [98%]<br />
-- CWeapon (36/41) [88%]<br />
+- CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
-- CCarCtrl (106/111) [95%]<br />
 - CPostEffects (36/38) [95%]<br />
 - CStencilShadows (9/13) [69%]<br />
 - CGangWars (33/35) [94%]<br />
 - CPedGeometryAnalyser (36/38) [95%]<br />
 - CShadows (27/31) [87%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
-- CPed (141/145) [97%]<br />
+- CPed (143/145) [99%]<br />
 - CEventHandler (69/72) [96%]<br />
 - CTaskComplexGangFollower (6/7) [86%]<br />
 - CTaskComplexKillCriminal (9/11) [82%]<br />
 - CTaskSimpleCarDrive (12/13) [92%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
-- CTaskUtilityLineUpPedWithCar (3/5) [60%]<br />
+- CTaskUtilityLineUpPedWithCar (4/5) [80%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
 - CAEFrontendAudioEntity (5/6) [83%]<br />
 - CAEScriptAudioEntity (17/19) [89%]<br />

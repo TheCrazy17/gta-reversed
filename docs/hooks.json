@@ -7927,7 +7927,7 @@
   {
     "Category": "CWeapon",
     "Name": "FireInstantHitFromCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWeapon",
@@ -7967,12 +7967,12 @@
   {
     "Category": "CWeapon",
     "Name": "DoTankDoomAiming",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWeapon",
     "Name": "DoDriveByAutoAiming",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWeapon",
@@ -7987,7 +7987,7 @@
   {
     "Category": "CWeapon",
     "Name": "CheckForShootingVehicleOccupant",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CWeapon",
@@ -8412,12 +8412,12 @@
   {
     "Category": "CCarCtrl",
     "Name": "CreateConvoy",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
     "Name": "CreatePoliceChase",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8427,7 +8427,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "DragCarToPoint",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8507,7 +8507,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "GenerateCarCreationCoors2",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -8522,7 +8522,7 @@
   {
     "Category": "CCarCtrl",
     "Name": "GenerateOneRandomCar",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CCarCtrl",
@@ -18577,7 +18577,7 @@
   {
     "Category": "CPed",
     "Name": "MakeTyresMuddySectorList<CPtrListSingleLink<CPhysical*>>",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -18767,7 +18767,7 @@
   {
     "Category": "CPed",
     "Name": "PositionPedOutOfCollision",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPed",
@@ -30267,7 +30267,7 @@
   {
     "Category": "CTaskUtilityLineUpPedWithCar",
     "Name": "GetLocalPositionToOpenCarDoor",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskUtilityLineUpPedWithCar",
