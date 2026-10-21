@@ -103,7 +103,7 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FindSpeedMultiplierWithSpeedFromNodes, 0x424130);
     RH_ScopedInstall(FindGhostRoadHeight, 0x422370);
     RH_ScopedInstall(FireHeliRocketsAtTarget, 0x42B270);
-    RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70, { .Reversed = false });
+    RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70);
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940);
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000, { .Reversed = false });
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210, { .Reversed = false });
@@ -854,7 +854,149 @@ void CCarCtrl::FireHeliRocketsAtTarget(CAutomobile* entityLauncher, CEntity* ent
 
 // 0x429A70
 void CCarCtrl::FlyAIHeliInCertainDirection(CHeli* heli, float arg2, float arg3, bool arg4) {
-    plugin::Call<0x429A70, CHeli*, float, float, bool>(heli, arg2, arg3, arg4);
+    static_assert(offsetof(CHeli, field_9B8) == 0x9B8 && offsetof(CHeli, field_9AC) == 0x9AC);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_vecDestinationCoors) == 0x3EC);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_ucHeliTargetDist2) == 0x3DF);
+    static_assert(offsetof(CVehicle, m_autoPilot) + offsetof(CAutoPilot, m_ucHeliSpeedMult) == 0x3D9);
+
+    // arg2 is the heading to fly in, arg3 how far the target is (for the heli that follows something) and arg4 whether it has to slow down for the target.
+    // m_fLeftRightSkid is the yaw control, m_fSteeringUpDown the pitch, m_fSteeringLeftRight the roll and m_fAccelerationBreakStatus the height control.
+    auto&       autoPilot = heli->m_autoPilot;
+    const auto& vel       = heli->m_vecMoveSpeed;
+    auto        direction = arg2;
+
+    // When it sits above the place it was sent to, it looks to the side
+    auto lookToSide = false;
+    if (autoPilot.m_nCarMission == MISSION_HELI_NEWS_BEHAVIOUR && (float)autoPilot.m_ucHeliTargetDist2 > arg3 && std::sqrt(vel.y * vel.y + vel.x * vel.x) < 0.01f) {
+        lookToSide = true;
+        direction += HALF_PI;
+    }
+
+    const auto& heliMat = heli->GetMatrix();
+    const auto  heliPos = heli->GetPosition();
+    const auto  Probe   = [](const CVector& from, const CVector& to, CColPoint& colPoint) {
+        CEntity* hitEntity{};
+        return CWorld::ProcessLineOfSight(from, to, colPoint, hitEntity, true, false, false, false, false, false, false, true);
+    };
+
+    // Every so often looks at the ground and at the sides of the way
+    if ((CTimer::GetTimeInMS() + heli->m_nRandomSeed) % 500 < (heli->m_nRandomSeed + CTimer::GetPreviousTimeInMS()) % 500) {
+        heli->field_9AC = heli->m_fMaxAltitude;
+
+        const CVector origin = vel * 50.0f + heliPos;
+        CVector       down{ std::cos(direction), std::sin(direction), -1.0f };
+        down.Normalise();
+        const CVector forwardDir{ std::cos(direction), std::sin(direction), 0.0f };
+
+        CColPoint colPoint;
+        if (Probe(origin, down * 60.0f + origin, colPoint)) {
+            heli->field_9AC = std::max((lookToSide ? heli->m_fMinAltitude * 0.5f : heli->m_fMinAltitude) + colPoint.m_vecPoint.z, heli->field_9AC);
+        }
+
+        // How far ahead the heli looks, depends on how fast it goes
+        const auto reach = std::sqrt(vel.y * vel.y + vel.x * vel.x) * 100.0f + (heli->vehicleFlags.bIsRCVehicle ? 5.0f : 30.0f);
+        heli->field_9B8  = 1;
+        if (!Probe(origin, forwardDir * reach + origin, colPoint)) {
+            heli->field_9B8            = 0;
+            heli->m_fSteeringLeftRight = 0.0f;
+        } else {
+            // Looks along both sides of the heli to see which one has more room
+            auto right = CVector{ heliMat.GetRight().x, heliMat.GetRight().y, 0.0f };
+            right.Normalise();
+
+            const auto DistanceToWall = [&](const CVector& side) {
+                if (Probe(heliPos, side, colPoint)) {
+                    return 0.0f;
+                }
+                if (Probe(side, forwardDir * reach + side, colPoint)) {
+                    return (colPoint.m_vecPoint - side).Magnitude();
+                }
+                return 1000.0f;
+            };
+            const auto distRight = DistanceToWall(right * 10.0f + heliPos);
+            const auto distLeft  = DistanceToWall(heliPos - right * 10.0f);
+            heli->m_fSteeringLeftRight = distLeft <= distRight ? -0.5f : 0.5f;
+        }
+    }
+
+    if (autoPilot.m_nCarMission == MISSION_HELI_LAND_TOUCHING_DOWN) {
+        heli->field_9B8            = 0;
+        heli->m_fSteeringLeftRight = 0.0f;
+    }
+
+    const auto heading = CGeneral::GetATanOfXY(heliMat.GetForward().x, heliMat.GetForward().y);
+
+    // Up and down, the wanted height is reached in a smooth way
+    heli->m_fAccelerationBreakStatus = 0.0f;
+    auto height = heli->field_9AC - (vel.z * 100.0f + heliPos.z);
+    height *= height <= 0.0f ? 0.2f : 0.1f;
+    heli->m_fAccelerationBreakStatus = height;
+    const auto thrust = ((float)(CGeneral::GetRandomNumber() & 0xF) - 7.0f) * 0.002f + heli->m_fAccelerationBreakStatus;
+    heli->m_fAccelerationBreakStatus = thrust >= 1.0f ? 1.0f : (thrust < -0.3f ? -0.3f : thrust);
+    const auto thrustAboveHalf = thrust - 0.5f;
+
+    // Turns towards the direction by the shortest way
+    auto turn = direction - heading;
+    while (turn > PI) {
+        turn -= TWO_PI;
+    }
+    while (turn < -PI) {
+        turn += TWO_PI;
+    }
+    turn *= -2.0f;
+    heli->m_fLeftRightSkid = turn >= 1.0f ? 1.0f : (turn < -1.0f ? -1.0f : turn);
+
+    // Pitch
+    if (arg3 > 60.0f || !arg4) {
+        heli->m_fSteeringUpDown = -0.8f;
+    } else {
+        const auto dx = vel.x * 50.0f + heliPos.x - autoPilot.m_vecDestinationCoors.x;
+        const auto dy = vel.y * 50.0f + heliPos.y - autoPilot.m_vecDestinationCoors.y;
+        const auto distance = std::sqrt(dx * dx + dy * dy) - (float)autoPilot.m_ucHeliTargetDist2;
+        if (distance >= 0.0f) {
+            heli->m_fSteeringUpDown = distance * -0.8f / (30.0f - (float)autoPilot.m_ucHeliTargetDist2);
+        }
+    }
+
+    if (heli->m_fSteeringUpDown < 0.0f) {
+        // Slows down when it is not facing where it has to go
+        auto angle = heading - direction;
+        while (angle < -PI) {
+            angle += TWO_PI;
+        }
+        while (angle > PI) {
+            angle -= TWO_PI;
+        }
+        angle = std::abs(angle);
+        heli->m_fSteeringUpDown *= std::max(1.0f - angle * 2.1220658f, 0.0f);
+        if (angle > HALF_PI && heliMat.GetForward().z * vel.z + heliMat.GetForward().y * vel.y + heliMat.GetForward().x * vel.x > 0.0f) {
+            heli->m_fSteeringUpDown = 0.3f;
+        }
+    }
+
+    if (thrustAboveHalf > 0.0f) {
+        heli->m_fSteeringUpDown *= 1.0f - std::min(thrustAboveHalf, 1.0f);
+    }
+
+    if (heli->m_fSteeringUpDown < 0.0f) {
+        const auto speedForward = vel.z * heliMat.GetForward().z + vel.y * heliMat.GetForward().y + vel.x * heliMat.GetForward().x;
+        const auto brake        = std::clamp(((float)autoPilot.m_nCruiseSpeed - speedForward * 60.0f) * 0.1f, 0.0f, 1.0f);
+        heli->m_fSteeringUpDown = std::max(-brake, heli->m_fSteeringUpDown);
+
+        // Pushes the heli forward a bit when it has to go slow and is not moving
+        if (autoPilot.m_ucHeliSpeedMult && heli->m_fSteeringUpDown < -0.2f && !heli->field_9B8) {
+            const auto push = (float)(int8)autoPilot.m_ucHeliSpeedMult * CTimer::GetTimeStep() * 0.001f;
+            heli->m_vecMoveSpeed += CVector{ heliMat.GetForward().x * push, heliMat.GetForward().y * push, 0.0f };
+        }
+    }
+
+    if (heli->field_9B8) {
+        auto forward = CVector{ heliMat.GetForward().x, heliMat.GetForward().y, 0.0f };
+        forward.Normalise();
+        heli->m_fSteeringUpDown = (forward.y * vel.y + forward.z * vel.z + forward.x * vel.x) * 2.0f;
+    }
+
+    heli->m_fSteeringUpDown = std::clamp(heli->m_fSteeringUpDown, -1.0f, 1.0f);
 }
 
 // 0x423940
