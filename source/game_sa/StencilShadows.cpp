@@ -20,7 +20,7 @@ void CStencilShadows::InjectHooks() {
     RH_ScopedInstall(RenderStencilShadows, 0x7113B0);
     RH_ScopedInstall(RenderForVehicle, 0x70FAE0, {.Reversed = false});
     RH_ScopedInstall(RenderForObject, 0x710310, {.Reversed = false});
-    RH_ScopedInstall(Render, 0x710D50, {.Reversed = false});
+    RH_ScopedInstall(Render, 0x710D50);
     RH_ScopedInstall(RenderBuffer, 0x710B50);
     RH_ScopedInstall(SunSetPositionFromEntity, 0x710AF0);
     RH_ScopedInstall(sub_710CC0, 0x710CC0);
@@ -58,40 +58,55 @@ void CStencilShadows::Shutdown() {
 
 // 0x710D50
 void CStencilShadows::Render(const CRGBA& color) {
-    plugin::Call<0x710D50>();
-
-    /*
-    uiTempBufferIndicesStored = 0;
+    uiTempBufferIndicesStored  = 0;
     uiTempBufferVerticesStored = 0;
 
-    const auto intColor = color.ToInt();
+    const auto intColor = color.ToIntARGB();
+
+    // Adds `numVerts` vertices as triangles, the indices are the count of what is already stored
+    const auto AddTriangles = [&](const CVector* verts, uint32 numVerts) {
+        sub_710CC0(numVerts, numVerts);
+
+        const auto firstIdx  = uiTempBufferIndicesStored;
+        const auto firstVert = uiTempBufferVerticesStored;
+        for (auto i = 0u; i < numVerts; i++) {
+            aTempBufferIndices[firstIdx + i] = (RxVertexIndex)(firstIdx + i);
+
+            auto& vert     = TempBufferVertices.m_3d[firstVert + i];
+            vert.objVertex = { verts[i].x, verts[i].y, verts[i].z };
+            vert.color     = intColor;
+        }
+        uiTempBufferVerticesStored += numVerts;
+        uiTempBufferIndicesStored  += numVerts;
+    };
+
+    if (!pFirstActiveStencilShadowObject) {
+        return;
+    }
+
     for (auto* shadow = pFirstActiveStencilShadowObject; shadow; shadow = shadow->m_pNext) {
-        auto*      facePts  = shadow->m_ShadowFacesData;
-        const auto numFaces = shadow->m_SizeOfShadowFacesData / sizeof(*facePts);
-         
-        for (auto face = 0u; face < numFaces; face++, facePts += 6) {
-            auto points = std::span{ facePts, 6 };
+        const auto* const verts    = shadow->m_ShadowFacesData;
+        const auto        numQuads = (int32)shadow->m_SizeOfShadowFacesData / 6; // Two triangles at a time
 
-            sub_710CC0(6, 6);
-
-            auto nextVert = std::exchange(uiTempBufferVerticesStored, uiTempBufferVerticesStored + 6);
-            auto nextIdx  = std::exchange(uiTempBufferIndicesStored, uiTempBufferIndicesStored + 6);
-            for (auto i = 0; i < 6; i++) {
-                auto& vert     = TempBufferVertices.m_3d[nextVert + i];
-                vert.objVertex = points[0];
-                vert.color     = intColor;
-
-                aTempBufferIndices[nextIdx + i] = nextIdx + i;
-            }
+        for (auto i = 0; i < numQuads; i++) {
+            AddTriangles(verts + i * 6, 6);
         }
 
-        // what the fuck?
-        // TODO: maybe this just boils down to size > 0 && size % 2 == 0
-        const auto v14 = (0x55555556ull * shadow->m_SizeOfShadowFacesData) >> 32;
-        if (((v14 & 0x80000000) != 0) + (v14 & 1) != 0) {
+        // A triangle is left when there is an odd number of them
+        if (((int32)shadow->m_SizeOfShadowFacesData / 3) & 1) {
+            AddTriangles(verts + numQuads * 6, 3);
         }
     }
-    */
+
+    if (uiTempBufferIndicesStored && uiTempBufferVerticesStored) {
+        RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nullptr);
+        LittleTest();
+        if (RwIm3DTransform(TempBufferVertices.m_3d, uiTempBufferVerticesStored, nullptr, rwIM3D_VERTEXXYZ | rwIM3D_VERTEXRGBA)) {
+            RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, aTempBufferIndices, uiTempBufferIndicesStored);
+            RwIm3DEnd();
+        }
+        uiTempBufferVerticesStored = uiTempBufferIndicesStored = 0;
+    }
 }
 
 // unused
