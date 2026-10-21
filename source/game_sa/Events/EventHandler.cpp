@@ -262,7 +262,7 @@ void CEventHandler::InjectHooks() {
     RH_ScopedInstall(ComputeHighAngerAtPlayerResponse, 0x4BAC10);
     RH_ScopedInstall(ComputeInWaterResponse, 0x4BAF80);
     RH_ScopedInstall(ComputeInteriorUseInfoResponse, 0x4BAFE0);
-    RH_ScopedInstall(ComputeKnockOffBikeResponse, 0x4B9FF0, { .Reversed = false });
+    RH_ScopedInstall(ComputeKnockOffBikeResponse, 0x4B9FF0);
     RH_ScopedInstall(ComputeLowAngerAtPlayerResponse, 0x4BAAD0);
     RH_ScopedInstall(ComputeLowHealthResponse, 0x4BA990);
     RH_ScopedInstall(ComputeObjectCollisionPassiveResponse, 0x4BBB90);
@@ -1467,7 +1467,143 @@ void CEventHandler::ComputeInteriorUseInfoResponse(CEventInteriorUseInfo* e, CTa
 
 // 0x4B9FF0
 void CEventHandler::ComputeKnockOffBikeResponse(CEvent* e, CTask* tactive, CTask* tsimplest) {
-    plugin::CallMethod<0x4B9FF0, CEventHandler*, CEvent*, CTask*, CTask*>(this, e, tactive, tsimplest);
+    ZoneScoped;
+
+    auto* const ped = m_Ped;
+
+    // Where the ped gets thrown to, relative to the way the ped is facing
+    const auto GetThrowDir = [ped](int32 dir) -> CVector {
+        const auto& mat = ped->GetMatrix();
+        switch (dir) {
+        case 0:  return -mat.GetForward();
+        case 1:  return mat.GetRight();
+        case 2:  return mat.GetForward();
+        default: return -mat.GetRight();
+        }
+    };
+
+    CEventKnockOffBike  eventKnockOff{};
+    CEventKnockOffBike* ko{};
+    switch (e->GetEventType()) {
+    case EVENT_KNOCK_OFF_BIKE: {
+        ko = static_cast<CEventKnockOffBike*>(e);
+
+        // The fall hurts the ped
+        CEventDamage damage{ ko->m_vehicle, CTimer::GetTimeInMS(), WEAPON_FALL, (ePedPieceTypes)3, 2, true, false };
+        if (damage.AffectsPed(ped)) {
+            CPedDamageResponseCalculator calculator{ ko->m_vehicle, ko->field_28, WEAPON_FALL, (ePedPieceTypes)3, true };
+            calculator.ComputeDamageResponse(ped, damage.m_damageResponse, true);
+        }
+        break;
+    }
+    case EVENT_DAMAGE: {
+        const auto* const damage = static_cast<CEventDamage*>(e);
+        auto* const       veh    = ped->m_pVehicle;
+        eventKnockOff = CEventKnockOffBike{ veh, veh->m_vecMoveSpeed * 0.75f, GetThrowDir(damage->m_ucDirection), 50.0f, 0.0f, (uint8)damage->m_weaponType, damage->m_ucDirection, 0, nullptr, false, false };
+        ko            = &eventKnockOff;
+        break;
+    }
+    case EVENT_VEHICLE_DIED:
+    case EVENT_VEHICLE_ON_FIRE: {
+        auto* const veh = ped->m_pVehicle;
+        const auto  dir = (int32)((double)(rand() & 0xFFFF) * (double)(1.0f / 32768.0f) * 4.0);
+        eventKnockOff = CEventKnockOffBike{ veh, veh->m_vecMoveSpeed * 0.75f, GetThrowDir(dir), 50.0f, 0.0f, KNOCK_OFF_TYPE_EXPLOSION, (uint8)dir, 0, nullptr, false, false };
+        ko            = &eventKnockOff;
+        break;
+    }
+    default:
+        return; // The original dereferences null here
+    }
+
+    auto* const veh = ko->m_vehicle;
+    if (!veh) {
+        return;
+    }
+    if (veh->m_pDriver != ped && veh->m_apPassengers[0] != ped && veh->m_apPassengers[1] != ped && veh->m_apPassengers[2] != ped) {
+        return;
+    }
+
+    g_InterestingEvents.Add(CInterestingEvents::INTERESTING_EVENT_16, ped);
+
+    if (!ko->SetPedSafePosition(ped)) {
+        if (ped->bInVehicle) {
+            ped->m_bUsesCollision = false;
+        }
+        return;
+    }
+    ko->SetPedOutCar(ped);
+    auto animId = ko->CalcForcesAndAnims(ped);
+
+    const auto isBike = veh->m_nVehicleType == VEHICLE_TYPE_BIKE;
+
+    // The one who knocked the ped off takes the bike, if there is one
+    const auto FinishWithCarjacker = [&] {
+        if (ko->m_ped) {
+            CEventDraggedOutCar draggedOut{ veh, ko->m_ped, ko->m_isVictimDriver };
+            ped->GetIntelligence()->GetEventGroup().Add(&draggedOut, true);
+            if (isBike) {
+                veh->AsBike()->bikeFlags.bOnSideStand = true;
+            }
+        } else if (isBike) {
+            veh->AsBike()->bikeFlags.bOnSideStand = false;
+        }
+    };
+
+    if (ko->m_knockOffType == KNOCK_OFF_TYPE_FALL) {
+        ped->bIsStanding                    = false;
+        ped->bWasStanding                   = false;
+        ped->bIsInTheAir                    = true;
+        ped->physicalFlags.bSubmergedInWater = true;
+        ped->physicalFlags.bTouchingWater   = true;
+        if (ped->m_fHealth <= 0.0f) {
+            m_EventResponseTask = new CTaskComplexDie{ (eWeaponType)(int8)ko->m_knockOffType, (AssocGroupId)0, (AnimationId)animId, 4.0f, 0.0f, false, false, eDirection::FORWARD, false };
+        } else {
+            m_EventResponseTask = new CTaskComplexInAirAndLand{ false, false };
+        }
+        FinishWithCarjacker();
+        return;
+    }
+
+    if (!(ped->m_fHealth > 0.0f)) {
+        if (animId == ANIM_ID_NO_ANIMATION_SET) {
+            switch (ko->m_knockOffDirection) {
+            case 0:  animId = ANIM_ID_BIKE_FALLR; break;
+            case 1:
+            case 2:  animId = ANIM_ID_KO_SPIN_R;  break;
+            case 3:  animId = ANIM_ID_KO_SPIN_L;  break;
+            default: break;
+            }
+        }
+        m_EventResponseTask = new CTaskComplexDie{ (eWeaponType)(int8)ko->m_knockOffType, (AssocGroupId)0, (AnimationId)animId, 4.0f, 0.0f, false, false, eDirection::FORWARD, false };
+        ped->bIsStanding    = false;
+        if (isBike) {
+            veh->AsBike()->bikeFlags.bOnSideStand = false;
+        }
+        return;
+    }
+
+    if (ko->m_knockOffType != KNOCK_OFF_TYPE_NONE) {
+        m_EventResponseTask = new CTaskComplexFallAndGetUp{ (AnimationId)animId, (AssocGroupId)0, (int32)ko->m_time };
+
+        // The group follows the leader in the vehicle, or lets the others know about it
+        if (auto* const group = CPedGroups::GetPedsGroup(ped)) {
+            auto& membership = group->GetMembership();
+            if (!membership.IsLeader(ped) && !ko->m_isVictimDriver) {
+                auto* const leader = membership.GetLeader();
+                if (leader && leader->bInVehicle && !leader->GetIntelligence()->GetEventGroup().GetEventOfType(EVENT_KNOCK_OFF_BIKE)) {
+                    auto* const sequence = new CTaskComplexSequence{};
+                    sequence->AddTask(m_EventResponseTask);
+                    sequence->AddTask(new CTaskComplexEnterCarAsPassenger{ veh, 0, true });
+                    m_EventResponseTask = sequence;
+                }
+            } else if (membership.IsLeader(ped)) {
+                CEventGroupEvent groupEvent{ ped, new CEventLeaderExitedCarAsDriver{} };
+                group->GetIntelligence().AddEvent(&groupEvent);
+            }
+        }
+        ped->bIsStanding = false;
+    }
+    FinishWithCarjacker();
 }
 
 // 0x4BAAD0
