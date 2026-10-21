@@ -10357,7 +10357,7 @@
   {
     "Category": "CPostEffects",
     "Name": "HeatHazeFX",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPostEffects",
