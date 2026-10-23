@@ -50,7 +50,7 @@ void StopStoring() {
         uiTempBufferVerticesStored += s_VerticesToBeStored;
         uiTempBufferIndicesStored  += s_IndicesToBeStored;
     } else {
-        for (auto n = uiTempBufferIndicesStored; n <= totalNumIdx; n++) {
+        for (auto n = uiTempBufferIndicesStored; n < totalNumIdx; n++) {
             aTempBufferIndices[n] += uiTempBufferVerticesStored;
         }
         uiTempBufferVerticesStored += s_VerticesToBeStored;

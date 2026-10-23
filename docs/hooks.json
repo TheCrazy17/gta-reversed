@@ -16987,7 +16987,7 @@
   {
     "Category": "CShadows",
     "Name": "CastShadowEntityXY",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CShadows",

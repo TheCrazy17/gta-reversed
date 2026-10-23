@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 13:03:44 UTC
+Last update was at Oct 23, 2026 at 13:10:30 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8332 out of 8339 functions done in 719 categories)
+## Stats (8333 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (713/719) [99%]
+#### Completely reversed categories (714/719) [99%]
 
 <details>
 <summary>See list of categories</summary>
@@ -219,6 +219,7 @@ Last update was at Oct 23, 2026 at 13:03:44 UTC
 - CRealTimeShadowManager (7)<br />
 - CRealTimeShadow (9)<br />
 - CShadowCamera (19)<br />
+- CShadows (30)<br />
 - ProcObjectMan_c (8)<br />
 - ProcSurfaceInfo_c (4)<br />
 - CPlantColEntEntry (2)<br />
@@ -730,14 +731,13 @@ Last update was at Oct 23, 2026 at 13:03:44 UTC
 
 </details>
 
-#### Partially reversed categories (6/719) [0.8%]
+#### Partially reversed categories (5/719) [0.7%]
 
 <details>
 <summary>See list of categories</summary>
 - CPopulation (65/66) [98%]<br />
 - CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
-- CShadows (29/30) [97%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 
