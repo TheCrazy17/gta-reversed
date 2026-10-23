@@ -40,7 +40,7 @@ void Fx_c::InjectHooks() {
     RH_ScopedInstall(AddWood, 0x49EE10);
     RH_ScopedInstall(AddSparks, 0x49F040);
     RH_ScopedInstall(AddTyreBurst, 0x49F300);
-    // RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
+    RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
     RH_ScopedInstall(AddPunchImpact, 0x49F670);
     RH_ScopedInstall(AddDebris, 0x49F750);
     RH_ScopedInstall(AddGlass, 0x49F970);
@@ -364,8 +364,47 @@ void Fx_c::AddTyreBurst(const CVector& posn, const CVector& velocity) {
 }
 
 // 0x49F3D0
-void Fx_c::AddBulletImpact(const CVector& posn, const CVector& direction, int32 bulletFxType, int32 amount, float arg4) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32, int32, float))0x49F3D0)(this, posn, direction, bulletFxType, amount, arg4);
+void Fx_c::AddBulletImpact(const CVector& posn, const CVector& direction, int32 bulletFxType, int32 amount, float lightMult) {
+    const auto fxType = g_surfaceInfos.GetBulletFx(bulletFxType);
+    if (!fxType || DistanceBetweenPointsSquared(TheCamera.GetPosition(), posn) > 22500.0f) {
+        return;
+    }
+
+    switch (fxType) {
+    case 1: { // Sparks and a puff of smoke
+        AddSparks(posn, direction, 3.0f, amount, CVector{}, SPARK_PARTICLE_SPARK, 0.4f, 1.0f);
+
+        FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 0.15f, 0.4f, 0.0f, 0.075f };
+        auto numParticles = 2;
+        if (amount > 7) {
+            numParticles = 1;
+            prtMult.m_Color.alpha += prtMult.m_Color.alpha;
+        }
+        for (auto i = 0; i < numParticles; i++) {
+            m_SmokeII3expand->AddParticle(posn, direction, (float)i * 0.05f, prtMult, -1.0f, lightMult, 0.6f);
+        }
+        break;
+    }
+    case 2:
+    case 4: { // Dust
+        FxPrtMult_c prtMult{ 0.81f, 0.67f, 0.57f, 0.15f, 0.4f, 0.0f, 0.3f };
+        if (fxType == 4) {
+            prtMult.m_Color.red = prtMult.m_Color.green = prtMult.m_Color.blue = 0.6f;
+        }
+        auto numParticles = 4;
+        if (amount > 7) {
+            numParticles = 2;
+            prtMult.m_Color.alpha += prtMult.m_Color.alpha;
+        }
+        for (auto i = 0; i < numParticles; i++) {
+            m_Sand->AddParticle(posn, direction * 0.3f, (float)i * 0.05f, prtMult, -1.0f, lightMult, 0.6f);
+        }
+        break;
+    }
+    case 3: // Wood
+        AddWood(posn, direction, (int32)((float)amount * 0.5f), 1.0f);
+        break;
+    }
 }
 
 // 0x49F670

@@ -18406,6 +18406,11 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddBulletImpact",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "AddPunchImpact",
     "IsReversed": true
   },
