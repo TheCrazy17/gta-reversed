@@ -607,7 +607,7 @@ void CPickups::PickedUpHorseShoe() {
     AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_PICKUP_COLLECTABLE1);
 
     CStats::IncrementStat(STAT_HORSESHOES_COLLECTED);
-    CStats::IncrementStat(STAT_LUCK, 1000.f / CStats::GetStatValue(STAT_TOTAL_HORSESHOES)); // TODO: Is this some inlined stuff? (The division part)
+    CStats::IncrementStat(STAT_LUCK, 1000.f / CStats::GetStatValue(STAT_TOTAL_HORSESHOES));
 
     FindPlayerInfo().m_nMoney += 100; // originally rewarded to the player 1.
 

@@ -2473,7 +2473,6 @@ void CPed::SetPedState(ePedState pedState) {
         ReleaseCoverPoint();
         if (bClearRadarBlipOnDeath) {
             CRadar::ClearBlipForEntity(BLIP_CHAR, GetPedPool()->GetRef(this));
-            // TODO: Shouldn't we `bClearRadarBlipOnDeath = false` here?
         }
     }
 }

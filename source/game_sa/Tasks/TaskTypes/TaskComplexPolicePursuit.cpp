@@ -96,7 +96,7 @@ bool CTaskComplexPolicePursuit::SetPursuit(CPed* ped) {
             continue;
         }
         if (plyr->bInVehicle) {
-            if (distSq * plyr->m_pVehicle->GetMoveSpeed().SquaredMagnitude() >= sq(4.f)) { // TODO/BUG: Why `*`?
+            if (distSq * plyr->m_pVehicle->GetMoveSpeed().SquaredMagnitude() >= sq(4.f)) {
                 continue;
             }
         }
