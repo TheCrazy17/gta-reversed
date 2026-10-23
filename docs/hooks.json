@@ -18386,6 +18386,11 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddBlood",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "AddWood",
     "IsReversed": true
   },

@@ -9,6 +9,7 @@
 
 #include "Fx.h"
 #include "Blueprints/FxInfoAttractLine.h"
+#include "Shadows.h"
 
 static auto& TempVertexBuffer = StaticRef<std::array<RxObjSpace3DVertex, 4>>(0xC4D958);
 
@@ -35,7 +36,7 @@ void Fx_c::InjectHooks() {
     RH_ScopedGlobalInstall(FindClosestPtOnLine, 0x4A4880);
     // + RH_ScopedInstall(SetFxQuality, 0x49EA40);
     // + RH_ScopedInstall(GetFxQuality, 0x49EA50);
-    // RH_ScopedInstall(AddBlood, 0x49EB00);
+    RH_ScopedInstall(AddBlood, 0x49EB00);
     RH_ScopedInstall(AddWood, 0x49EE10);
     RH_ScopedInstall(AddSparks, 0x49F040);
     RH_ScopedInstall(AddTyreBurst, 0x49F300);
@@ -255,7 +256,44 @@ static CVector RandomDebrisOrGlassVelocity() {
 
 // 0x49EB00
 void Fx_c::AddBlood(const CVector& pos, const CVector& direction, int32 amount, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32, float))0x49EB00)(this, pos, direction, amount, lightMult);
+    if (!CLocalisation::Blood()) {
+        return;
+    }
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+
+    FxPrtMult_c prtMult{ 0.5f, 0.0f, 0.0f, 1.0f, 0.8f, 0.0f, 0.8f };
+    const auto Rand10000 = [] { return (float)(CGeneral::GetRandomNumber() % 10000); };
+    for (auto i = 0; i < amount; i++) {
+        prtMult.m_fSize = Rand10000() * 0.0001f * 0.3f + 0.7f;
+
+        CVector vel = direction * 1.5f;
+        const auto RandSpread = [&](float base) {
+            const auto r = Rand10000() * 0.0001f;
+            return ((r + r) - 1.0f) + base;
+        };
+        vel.x = RandSpread(vel.x);
+        vel.y = RandSpread(vel.y);
+        vel.z = RandSpread(vel.z);
+        m_Blood->AddParticle(pos, vel, 0.0f, prtMult, -1.0f, lightMult, 0.6f);
+    }
+
+    // Every 8th call (3rd and 6th) leaves a blood pool on the ground
+    CVector shadowPos = direction * 0.5f + pos;
+    shadowPos.x = (Rand10000() * 0.0001f * 0.2f - 0.1f) + shadowPos.x;
+    const auto randY = Rand10000();
+    m_Randomizer++;
+    shadowPos.y = (randY * 0.0001f * 0.2f - 0.1f) + shadowPos.y;
+    shadowPos.z += 1.0f;
+    switch (m_Randomizer & 7) {
+    case 5:
+        CShadows::AddPermanentShadow(1, gpBloodPoolTex, &shadowPos, 0.1f, 0.0f, 0.0f, -0.1f, 255, 200, 0, 0, 4.0f, (CGeneral::GetRandomNumber() & 0xFFF) + 2000, 1.0f);
+        break;
+    case 2:
+        CShadows::AddPermanentShadow(1, gpBloodPoolTex, &shadowPos, 0.2f, 0.0f, 0.0f, -0.2f, 255, 200, 0, 0, 4.0f, (CGeneral::GetRandomNumber() & 0xFFF) + 8000, 1.0f);
+        break;
+    }
 }
 
 // 0x49EE10
