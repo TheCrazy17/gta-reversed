@@ -29587,7 +29587,7 @@
   {
     "Category": "CTaskSimpleUseGun",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskSimpleUseGun",

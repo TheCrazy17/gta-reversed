@@ -12,6 +12,11 @@ CTaskSimpleFight::~CTaskSimpleFight() {
     plugin::CallMethod<0x61C530, CTaskSimpleFight*>(this);
 }
 
+// 0x6240B0
+void CTaskSimpleFight::FightStrike(CPed* ped, CVector& posn) {
+    plugin::CallMethod<0x6240B0, CTaskSimpleFight*, CPed*, CVector&>(this, ped, posn);
+}
+
 // 0x61C5E0
 bool CTaskSimpleFight::ControlFight(CEntity* entity, uint8 command) {
     m_bIsInControl = true;
