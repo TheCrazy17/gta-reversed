@@ -647,17 +647,17 @@
   {
     "Category": "CPedGroupPlacer",
     "Name": "PlaceFormationGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroupPlacer",
     "Name": "PlaceChatGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroupPlacer",
     "Name": "PlaceRandomGroup",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGroupPlacer",

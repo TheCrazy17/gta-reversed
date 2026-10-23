@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 11:41:50 UTC
+Last update was at Oct 23, 2026 at 11:50:11 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8322 out of 8347 functions done in 720 categories)
+## Stats (8325 out of 8347 functions done in 720 categories)
 
-#### Completely reversed categories (705/720) [98%]
+#### Completely reversed categories (706/720) [98%]
 
 <details>
 <summary>See list of categories</summary>
@@ -20,6 +20,7 @@ Last update was at Oct 23, 2026 at 11:41:50 UTC
 - CHandShaker (3)<br />
 - CCutsceneMgr (36)<br />
 - CFileMgr (17)<br />
+- CPedGroupPlacer (4)<br />
 - CLoadedCarGroup (8)<br />
 - RenderBuffer (4)<br />
 - CPedGroup (12)<br />
@@ -722,11 +723,10 @@ Last update was at Oct 23, 2026 at 11:41:50 UTC
 
 </details>
 
-#### Partially reversed categories (14/720) [2%]
+#### Partially reversed categories (13/720) [2%]
 
 <details>
 <summary>See list of categories</summary>
-- CPedGroupPlacer (1/4) [25%]<br />
 - CRope (6/7) [86%]<br />
 - CPopulation (65/66) [98%]<br />
 - CWeapon (40/41) [98%]<br />
