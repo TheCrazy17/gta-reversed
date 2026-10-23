@@ -44,6 +44,7 @@ void CShadows::InjectHooks() {
     RH_ScopedInstall(StoreCarLightShadow, 0x70C500);
     RH_ScopedInstall(StoreShadowForPole, 0x70C750);
     RH_ScopedInstall(RenderIndicatorShadow, 0x70CCB0);
+    // Not reversed on purpose, it takes its arguments in eax, ebx and edi, see docs/not_reversed_on_purpose.json
     RH_ScopedGlobalInstall(ShadowRenderTriangleCB, 0x709CF0, { .Reversed = false });
 }
 

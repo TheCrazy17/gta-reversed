@@ -27,6 +27,11 @@ ap.add_argument(
     default=None,
     help="Path to the output Markdown file (if not provided, a file dialog will be shown to select the output location)",
 )
+ap.add_argument(
+    "--excluded",
+    default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "not_reversed_on_purpose.json"),
+    help="Path to the json file with the functions that are not reversed on purpose (they are not counted)",
+)
 args = ap.parse_args()
 
 if args.input is None or args.output is None:
@@ -77,10 +82,18 @@ class HookCategory:
 
 
 def main() -> None:
+    excluded: list[dict] = []
+    if os.path.exists(args.excluded):
+        with open(args.excluded, "r", encoding="utf8") as excludedf:
+            excluded = json.load(excludedf)
+    excluded_keys = {(e["Category"], e["Name"]) for e in excluded}
+
     category_info: dict[str, HookCategory] = {}
     with open(args.input, "r", encoding="utf8") as hooksf:
         r: HookCategoryItem
         for r in json.load(hooksf):
+            if (r["Category"], r["Name"]) in excluded_keys and not r.get("IsReversed", False):
+                continue
             category_info.setdefault(
                 r["Category"], HookCategory(r["Category"])
             ).process_item(r)
@@ -167,6 +180,14 @@ def main() -> None:
         with class_list_spoiler():
             for cat in not_at_all:
                 outf.write(f"- {cat.name} ({cat.num_fn})<br />\n")
+
+        if excluded:
+            outf.write("\n## Not reversed on purpose\n")
+            outf.write(
+                "These functions are not counted above, because reversing them is not possible or not worth the risk.\n\n"
+            )
+            for e in excluded:
+                outf.write(f"- {e['Category']}::{e['Name']}: {e['Reason']}<br />\n")
 
 if __name__ == "__main__":
     main()

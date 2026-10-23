@@ -1,0 +1,42 @@
+[
+  {
+    "Category": "CMemoryMgr",
+    "Name": "InitScratchPad",
+    "Reason": "Wrapper of the heap of the game. Reimplementing it would mean replacing the allocator of the game, and memory from it has to be freed with the same one."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "Malloc-",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "Free",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "Realloc-",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "Calloc-",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "FreeAlign",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CMemoryMgr",
+    "Name": "MallocAlign-",
+    "Reason": "Wrapper of the heap of the game, see InitScratchPad."
+  },
+  {
+    "Category": "CShadows",
+    "Name": "ShadowRenderTriangleCB",
+    "Reason": "Takes its arguments in eax, ebx and edi, so it cannot be hooked as a normal function. Its logic is reimplemented in the functions that use it."
+  }
+]

@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 12:13:42 UTC
+Last update was at Oct 23, 2026 at 12:18:29 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8328 out of 8347 functions done in 720 categories)
+## Stats (8328 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (709/720) [98%]
+#### Completely reversed categories (709/719) [99%]
 
 <details>
 <summary>See list of categories</summary>
@@ -726,7 +726,7 @@ Last update was at Oct 23, 2026 at 12:13:42 UTC
 
 </details>
 
-#### Partially reversed categories (10/720) [1%]
+#### Partially reversed categories (10/719) [1%]
 
 <details>
 <summary>See list of categories</summary>
@@ -734,7 +734,7 @@ Last update was at Oct 23, 2026 at 12:13:42 UTC
 - CPopulation (65/66) [98%]<br />
 - CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
-- CShadows (29/31) [94%]<br />
+- CShadows (29/30) [97%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
 - CPed (144/145) [99%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
@@ -743,10 +743,21 @@ Last update was at Oct 23, 2026 at 12:13:42 UTC
 
 </details>
 
-#### Not-at-all reversed categories (1/720) [0.1%]
+#### Not-at-all reversed categories (0/719) [0%]
 
 <details>
 <summary>See list of categories</summary>
-- CMemoryMgr (7)<br />
 
 </details>
+
+## Not reversed on purpose
+These functions are not counted above, because reversing them is not possible or not worth the risk.
+
+- CMemoryMgr::InitScratchPad: Wrapper of the heap of the game. Reimplementing it would mean replacing the allocator of the game, and memory from it has to be freed with the same one.<br />
+- CMemoryMgr::Malloc-: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CMemoryMgr::Free: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CMemoryMgr::Realloc-: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CMemoryMgr::Calloc-: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CMemoryMgr::FreeAlign: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CMemoryMgr::MallocAlign-: Wrapper of the heap of the game, see InitScratchPad.<br />
+- CShadows::ShadowRenderTriangleCB: Takes its arguments in eax, ebx and edi, so it cannot be hooked as a normal function. Its logic is reimplemented in the functions that use it.<br />

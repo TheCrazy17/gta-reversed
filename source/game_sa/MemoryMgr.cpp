@@ -24,6 +24,7 @@ static LPCRITICAL_SECTION gpScratchPadCS;
 void CMemoryMgr::InjectHooks() {
     RH_ScopedClass(CMemoryMgr);
     RH_ScopedCategory("Memory");
+    // Not reversed on purpose, they are wrappers of the heap of the game, see docs/not_reversed_on_purpose.json
     RH_ScopedInstall(InitScratchPad, 0x72F480, { .Reversed = false });
     RH_ScopedOverloadedInstall(Malloc, "", 0x72F420, void*(*)(uint32, uint32), { .Reversed = false });
     RH_ScopedInstall(Free, 0x72F430, { .Reversed = false });
