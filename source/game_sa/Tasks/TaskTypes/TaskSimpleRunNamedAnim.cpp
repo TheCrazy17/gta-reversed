@@ -10,8 +10,8 @@ void CTaskSimpleRunNamedAnim::InjectHooks() {
     RH_ScopedOverloadedInstall(Constructor, "Anim", 0x61A990, CTaskSimpleRunNamedAnim*(CTaskSimpleRunNamedAnim::*)(char const*, char const*, int32, float, int32, bool, bool, bool, bool));
     RH_ScopedInstall(Destructor, 0x61BF10);
 
-    //RH_ScopedInstall(FinishRunAnimMovePedCB, 0x61AAA0, { .Reversed = false });
-    //RH_ScopedInstall(StartAnim, 0x61BB10, { .Reversed = false });
+    RH_ScopedInstall(FinishRunAnimMovePedCB, 0x61AAA0);
+    RH_ScopedInstall(StartAnim, 0x61BB10);
     RH_ScopedVMTInstall(Clone, 0x61B770);
     RH_ScopedVMTInstall(GetTaskType, 0x61AA90);
     RH_ScopedVMTInstall(ProcessPed, 0x61BF20);
@@ -52,9 +52,39 @@ CTaskSimpleRunNamedAnim::CTaskSimpleRunNamedAnim(
     }
 }
 
-// 0x61BB10 (not reversed yet)
+// 0x61AAA0
+void CTaskSimpleRunNamedAnim::FinishRunAnimMovePedCB(CAnimBlendAssociation* anim, void* data) {
+    auto* const task = static_cast<CTaskSimpleRunNamedAnim*>(data);
+    anim->GetNode(0)->GetCurrentTranslation(task->m_vecOffsetAtEnd, 0.0f);
+    task->m_bOffsetAvailable = true;
+    anim->SetFlag(ANIMATION_IGNORE_ROOT_TRANSLATION);
+    if ((anim->m_Flags & ANIMATION_IS_FINISH_AUTO_REMOVE) || anim->m_nCallbackType == ANIM_BLEND_CALLBACK_DELETE) {
+        task->m_bIsFinished = true;
+        task->m_pAnim       = nullptr;
+    } else {
+        anim->SetDeleteCallback(CTaskSimpleAnim::FinishRunAnimCB, task);
+    }
+}
+
+// 0x61BB10
 void CTaskSimpleRunNamedAnim::StartAnim(CPed* ped) {
-    plugin::CallMethod<0x61BB10, CTaskSimpleRunNamedAnim*, CPed*>(this, ped);
+    if ((int32)m_Time >= 0) {
+        m_Timer.m_nStartTime = CTimer::GetTimeInMS();
+        m_Timer.m_nInterval  = (int32)m_Time;
+        m_Timer.m_bStarted   = true;
+    }
+    if (!(m_animFlags & ANIMATION_IS_FINISH_AUTO_REMOVE)) {
+        m_animFlags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+    }
+    m_pAnim = CAnimManager::BlendAnimation(ped->GetRpClump(), m_pAnimHierarchy, m_animFlags, m_fBlendDelta);
+    if (m_bOffsetAtEnd) {
+        m_pAnim->SetFinishCallback(FinishRunAnimMovePedCB, this);
+    } else if (!(m_animFlags & ANIMATION_IS_FINISH_AUTO_REMOVE) && !m_bRunInSequence) {
+        m_pAnim->SetDeleteCallback(CTaskSimpleAnim::FinishRunAnimCB, this);
+    } else {
+        m_pAnim->SetFinishCallback(CTaskSimpleAnim::FinishRunAnimCB, this);
+    }
+    m_nAnimId = m_pAnim->GetAnimId();
 }
 
 // 0x61BF20

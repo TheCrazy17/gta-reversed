@@ -12,8 +12,8 @@ void CTaskComplexTrackEntity::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x65F460);
 
     RH_ScopedInstall(SetOffsetPos, 0x65F760, {.State = HS::RedirectToGTA, .Locked = true});
-    RH_ScopedInstall(CalcTargetPos, 0x65F780, {.State = HS::RedirectToGTA, .Locked = true});
-    RH_ScopedInstall(CalcMoveRatio, 0x65F930, {.State = HS::RedirectToGTA, .Locked = true});
+    RH_ScopedInstall(CalcTargetPos, 0x65F780);
+    RH_ScopedInstall(CalcMoveRatio, 0x65F930);
 
     RH_ScopedVMTInstall(Clone, 0x65F4E0);
     RH_ScopedVMTInstall(GetTaskType, 0x65F450);
@@ -55,12 +55,56 @@ void CTaskComplexTrackEntity::SetOffsetPos(CVector posn) {
 
 // 0x65F780
 void CTaskComplexTrackEntity::CalcTargetPos(CPed* ped) {
-    plugin::CallMethod<0x65F780, CTaskComplexTrackEntity*, CPed*>(this, ped);
+    m_goToPos = m_toTrack->GetPosition();
+    if (f == 0) {
+        m_goToPos.x = m_offsetPosn.x + m_goToPos.x;
+        m_goToPos.y = m_offsetPosn.y + m_goToPos.y;
+    } else {
+        const auto& trackedMat = m_toTrack->GetMatrix();
+        m_goToPos += trackedMat.GetRight() * m_offsetPosn.x;
+        m_goToPos += trackedMat.GetForward() * m_offsetPosn.y;
+    }
+
+    if (m_toTrack->GetIsTypeVehicle() || m_toTrack->GetIsTypePed()) {
+        m_goToPos += m_toTrack->AsPhysical()->GetMoveSpeed() * CTimer::GetTimeStep();
+    }
+
+    const auto& pedPos = ped->GetPosition();
+    const auto  dx     = m_goToPos.x - pedPos.x;
+    const auto  dy     = m_goToPos.y - pedPos.y;
+    m_distToTargetSq   = dx * dx + dy * dy;
 }
 
 // 0x65F930
 void CTaskComplexTrackEntity::CalcMoveRatio(CPed* ped) {
-    plugin::CallMethod<0x65F930, CTaskComplexTrackEntity*, CPed*>(this, ped);
+    constexpr float MIN_DIST_SQ  = 0.04f;
+    constexpr float NEAR_DIST_SQ = 1.0f;
+    constexpr float MAX_DIST_SQ  = 25.0f;
+
+    if (MIN_DIST_SQ <= m_distToTargetSq) {
+        if (m_distToTargetSq <= MAX_DIST_SQ) {
+            if (NEAR_DIST_SQ <= m_distToTargetSq) {
+                float40 = (std::sqrt(m_distToTargetSq) - 1.0f) * 0.25f * 0.5f + 0.5f;
+            } else {
+                float40 = (std::sqrt(m_distToTargetSq) - 0.2f) * 1.25f * 0.5f;
+            }
+        } else {
+            float40 = 1.0f;
+        }
+    } else {
+        float40 = 0.0f;
+    }
+
+    float40 = std::sqrt(float40) * 3.0f;
+    if (a == 0 && float40 > 2.0f) {
+        float40 = 2.0f;
+    }
+
+    if (float40 - m_fMoveRatio <= 0.2f) {
+        m_fMoveRatio = float40;
+    } else {
+        m_fMoveRatio += 0.2f;
+    }
 }
 
 // 0x65F4C0

@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 19:14:28 UTC
+Last update was at Oct 23, 2026 at 19:33:14 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8364 out of 8364 functions done in 722 categories)
+## Stats (8372 out of 8372 functions done in 723 categories)
 
-#### Completely reversed categories (722/722) [100%]
+#### Completely reversed categories (723/723) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -248,7 +248,7 @@ Last update was at Oct 23, 2026 at 19:14:28 UTC
 - FxEmitterPrt_c (1)<br />
 - FxEmitterBP_c (9)<br />
 - FxEmitter_c (1)<br />
-- Fx_c (11)<br />
+- Fx_c (15)<br />
 - CPedAttractorPedPlacer (1)<br />
 - CCopPed (7)<br />
 - CPed (145)<br />
@@ -560,6 +560,7 @@ Last update was at Oct 23, 2026 at 19:14:28 UTC
 - CTaskSimpleClimb (15)<br />
 - CTaskComplexPlayHandSignalAnim (9)<br />
 - CTaskComplexJump (6)<br />
+- CTaskComplexWanderStandard (1)<br />
 - CTaskComplexSunbathe (11)<br />
 - CTaskComplexEnterCar (15)<br />
 - CTaskComplexUseGoggles (5)<br />
@@ -586,7 +587,7 @@ Last update was at Oct 23, 2026 at 19:14:28 UTC
 - CTaskComplexTreatAccident (7)<br />
 - CTaskComplexGoToPointAndStandStillTimed (6)<br />
 - CTaskComplexPartnerShove (1)<br />
-- CTaskSimpleRunNamedAnim (7)<br />
+- CTaskSimpleRunNamedAnim (9)<br />
 - CTaskComplexStuckInAir (6)<br />
 - CTaskSimpleHoldEntity (14)<br />
 - CTaskSimpleGoTo (4)<br />
@@ -718,7 +719,7 @@ Last update was at Oct 23, 2026 at 19:14:28 UTC
 - CBike (40)<br />
 - CBmx (10)<br />
 - CBoat (23)<br />
-- CHeli (11)<br />
+- CHeli (12)<br />
 - CMonsterTruck (11)<br />
 - CPlane (23)<br />
 - CQuadBike (12)<br />
@@ -739,14 +740,14 @@ Last update was at Oct 23, 2026 at 19:14:28 UTC
 
 </details>
 
-#### Partially reversed categories (0/722) [0%]
+#### Partially reversed categories (0/723) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/722) [0%]
+#### Not-at-all reversed categories (0/723) [0%]
 
 <details>
 <summary>See list of categories</summary>

@@ -8,6 +8,7 @@
 #include "StdInc.h"
 
 #include "Fx.h"
+#include "Blueprints/FxInfoAttractLine.h"
 
 static auto& TempVertexBuffer = StaticRef<std::array<RxObjSpace3DVertex, 4>>(0xC4D958);
 
@@ -30,7 +31,8 @@ void Fx_c::InjectHooks() {
     // + RH_ScopedInstall(DestroyEntityFx, 0x4A1280);
     // + RH_ScopedInstall(Update, 0x49E640);
     // + RH_ScopedInstall(Render, 0x49E650);
-    // RH_ScopedInstall(CreateMatFromVec, 0x49E950);
+    RH_ScopedInstall(CreateMatFromVec, 0x49E950);
+    RH_ScopedGlobalInstall(FindClosestPtOnLine, 0x4A4880);
     // + RH_ScopedInstall(SetFxQuality, 0x49EA40);
     // + RH_ScopedInstall(GetFxQuality, 0x49EA50);
     // RH_ScopedInstall(AddBlood, 0x49EB00);
@@ -38,7 +40,7 @@ void Fx_c::InjectHooks() {
     RH_ScopedInstall(AddSparks, 0x49F040);
     RH_ScopedInstall(AddTyreBurst, 0x49F300);
     // RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
-    // RH_ScopedInstall(AddPunchImpact, 0x49F670);
+    RH_ScopedInstall(AddPunchImpact, 0x49F670);
     // RH_ScopedInstall(AddDebris, 0x49F750);
     // RH_ScopedInstall(AddGlass, 0x49F970);
     // RH_ScopedInstall(AddWheelSpray, 0x49FB30);
@@ -49,7 +51,7 @@ void Fx_c::InjectHooks() {
     // RH_ScopedInstall(AddWheelDust, 0x4A09C0);
     RH_ScopedInstall(TriggerWaterHydrant, 0x4A0D70);
     // RH_ScopedInstall(TriggerGunshot, 0x4A0DE0);
-    // RH_ScopedInstall(TriggerTankFire, 0x4A0FA0);
+    RH_ScopedInstall(TriggerTankFire, 0x4A0FA0);
     RH_ScopedInstall(TriggerWaterSplash, 0x4A1070);
     RH_ScopedInstall(TriggerBulletSplash, 0x4A10E0);
     RH_ScopedInstall(TriggerFootSplash, 0x4A1150);
@@ -198,24 +200,26 @@ void Fx_c::Render(RwCamera* camera, bool heatHaze) {
 
 // 0x49E950
 void Fx_c::CreateMatFromVec(RwMatrix* out, const CVector* origin, const CVector* direction) {
-    ((void(__thiscall*)(Fx_c*, RwMatrix*, const CVector*, const CVector*))0x49E950)(this, out, origin, direction);
-    return;
+    out->right = { 1.0f, 0.0f, 0.0f };
+    out->up    = { 0.0f, 1.0f, 0.0f };
+    out->at    = { 0.0f, 0.0f, 1.0f };
+    out->pos   = { 0.0f, 0.0f, 0.0f };
+    out->flags |= 0x20003;
 
-    /*
-    RwMatrixSetIdentity(out);
-    RwV3dAssign(RwMatrixGetPos(out), origin);
-    RwV3dAssign(RwMatrixGetUp(out), direction);
-    RwV3dNormalize(&out->up, RwMatrixGetUp(out));
+    RwV3dAssign(&out->pos, origin);
+    RwV3dAssign(&out->up, direction);
+    RwV3dNormalize(&out->up, &out->up);
 
-    out->right.x = out->up.z * 0.0f  - out->up.y * -1.0f;
-    out->right.y = out->up.x * -1.0f - out->up.z * 0.0f;
-    out->right.z = out->up.y * 0.0f  - out->up.x * 0.0f;
+    const auto& up = out->up;
+    out->right.x = up.z * 0.0f - up.y * -1.0f;
+    out->right.y = up.x * -1.0f - up.z * 0.0f;
+    out->right.z = up.y * 0.0f - up.x * 0.0f;
 
-    out->at.x = out->up.x * -1.0f        - out->up.z * 0.0f * out->up.z - out->up.y * 0.0f  - out->up.x * 0.0f * out->up.y;
-    out->at.y = out->up.y * 0.0f         - out->up.x * 0.0f * out->up.x - out->right.x                         * out->up.z;
-    out->at.z = out->right.x * out->up.y - out->up.x * -1.0f            - out->up.z * 0.0f                     * out->up.x;
+    out->at.x = out->right.y * up.z - out->right.z * up.y;
+    out->at.y = out->right.z * up.x - out->right.x * up.z;
+    out->at.z = out->right.x * up.y - out->right.y * up.x;
 
-    RwMatrixUpdate(out);*/
+    RwMatrixUpdate(out);
 }
 
 // 0x49EA40
@@ -290,7 +294,12 @@ void Fx_c::AddBulletImpact(const CVector& posn, const CVector& direction, int32 
 
 // 0x49F670
 void Fx_c::AddPunchImpact(const CVector& pos, const CVector& velocity, int32 num) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32))0x49F670)(this, pos, velocity, num);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+    const FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 0.4f, 0.1f, 0.0f, 0.1f };
+    m_SmokeII3expand->AddParticle(pos, velocity, 0.0f, prtMult);
+    m_SmokeII3expand->AddParticle(pos, velocity, 0.05f, prtMult);
 }
 
 // 0x49F750
@@ -345,7 +354,16 @@ void Fx_c::TriggerGunshot(CEntity* entity, const CVector& origin, const CVector&
 
 // 0x4A0FA0
 void Fx_c::TriggerTankFire(const CVector& pos, const CVector& dir) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&))0x4A0FA0)(this, pos, dir);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+    auto* const mat = g_fxMan.FxRwMatrixCreate();
+    CreateMatFromVec(mat, &pos, &dir);
+    if (auto* const fx = g_fxMan.CreateFxSystem("tank_fire", CVector{}, mat, false)) {
+        fx->CopyParentMatrix();
+        fx->PlayAndKill();
+    }
+    g_fxMan.FxRwMatrixDestroy(mat);
 }
 
 // 0x4A1070

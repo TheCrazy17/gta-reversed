@@ -3,6 +3,8 @@
 #include "FxInfo.h"
 #include "FxInterpInfo32.h"
 
+void FindClosestPtOnLine(CVector& out, CVector& lineA, CVector& lineB, CVector& point);
+
 class NOTSA_EXPORT_VTABLE FxInfoAttractLine_c : public FxInfo_c {
 protected:
     FxInterpInfo32_c m_InterpInfo;

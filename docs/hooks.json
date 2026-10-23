@@ -18376,6 +18376,16 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "CreateMatFromVec",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "FindClosestPtOnLine",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "AddSparks",
     "IsReversed": true
   },
@@ -18386,7 +18396,17 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddPunchImpact",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "TriggerWaterHydrant",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "TriggerTankFire",
     "IsReversed": true
   },
   {
@@ -30685,6 +30705,11 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskComplexWanderStandard",
+    "Name": "SetNextMinScanTime",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskComplexSunbathe",
     "Name": "Constructor",
     "IsReversed": true
@@ -31547,6 +31572,16 @@
   {
     "Category": "CTaskSimpleRunNamedAnim",
     "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleRunNamedAnim",
+    "Name": "FinishRunAnimMovePedCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleRunNamedAnim",
+    "Name": "StartAnim",
     "IsReversed": true
   },
   {
@@ -39312,6 +39347,11 @@
   {
     "Category": "CHeli",
     "Name": "Post_SearchLightCone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
+    "Name": "FindSwatPositionRelativeToHeli",
     "IsReversed": true
   },
   {
