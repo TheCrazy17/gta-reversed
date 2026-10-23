@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 18:10:29 UTC
+Last update was at Oct 23, 2026 at 18:29:32 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8340 out of 8340 functions done in 719 categories)
+## Stats (8342 out of 8342 functions done in 720 categories)
 
-#### Completely reversed categories (719/719) [100%]
+#### Completely reversed categories (720/720) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -601,6 +601,7 @@ Last update was at Oct 23, 2026 at 18:10:29 UTC
 - CTaskComplexEnterBoatAsDriver (8)<br />
 - CTaskSimpleFight (5)<br />
 - CTaskComplexUseWaterCannon (5)<br />
+- CTaskSimpleSlideToCoord (1)<br />
 - CTaskSimplePickUpEntity (4)<br />
 - CTaskComplexBeInGroup (10)<br />
 - CTaskComplexAvoidOtherPedWhileWandering (15)<br />
@@ -711,7 +712,7 @@ Last update was at Oct 23, 2026 at 18:10:29 UTC
 - CAERadioTrackManager (43)<br />
 - CAESoundManager (14)<br />
 - CAEUserRadioTrackManager (15)<br />
-- CAutomobile (100)<br />
+- CAutomobile (101)<br />
 - CBike (40)<br />
 - CBmx (10)<br />
 - CBoat (23)<br />
@@ -736,14 +737,14 @@ Last update was at Oct 23, 2026 at 18:10:29 UTC
 
 </details>
 
-#### Partially reversed categories (0/719) [0%]
+#### Partially reversed categories (0/720) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/719) [0%]
+#### Not-at-all reversed categories (0/720) [0%]
 
 <details>
 <summary>See list of categories</summary>
