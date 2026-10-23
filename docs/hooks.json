@@ -36282,7 +36282,7 @@
   {
     "Category": "CAEScriptAudioEntity",
     "Name": "ProcessMissionAudioEvent",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEScriptAudioEntity",

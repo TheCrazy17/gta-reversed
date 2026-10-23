@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 12:47:37 UTC
+Last update was at Oct 23, 2026 at 13:03:44 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8331 out of 8339 functions done in 719 categories)
+## Stats (8332 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (712/719) [99%]
+#### Completely reversed categories (713/719) [99%]
 
 <details>
 <summary>See list of categories</summary>
@@ -680,6 +680,7 @@ Last update was at Oct 23, 2026 at 12:47:37 UTC
 - CAEPedSpeechAudioEntity (58)<br />
 - CAEWeaponAudioEntity (20)<br />
 - CAEPoliceScannerAudioEntity (17)<br />
+- CAEScriptAudioEntity (19)<br />
 - CAETwinLoopSoundEntity (7)<br />
 - CAEVehicleAudioEntity (106)<br />
 - CAEWaterCannonAudioEntity (7)<br />
@@ -729,7 +730,7 @@ Last update was at Oct 23, 2026 at 12:47:37 UTC
 
 </details>
 
-#### Partially reversed categories (7/719) [1.0%]
+#### Partially reversed categories (6/719) [0.8%]
 
 <details>
 <summary>See list of categories</summary>
@@ -739,7 +740,6 @@ Last update was at Oct 23, 2026 at 12:47:37 UTC
 - CShadows (29/30) [97%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
-- CAEScriptAudioEntity (18/19) [95%]<br />
 
 </details>
 
