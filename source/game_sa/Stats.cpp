@@ -12,6 +12,9 @@
 #include "Hud.h"
 #include "TagManager.h"
 #include "GangWars.h"
+#include "Localisation.h"
+#include "World.h"
+#include "StuntJumpManager.h"
 
 void CStats::InjectHooks() {
     RH_ScopedClass(CStats);
@@ -61,7 +64,7 @@ void CStats::InjectHooks() {
     RH_ScopedInstall(LoadStatUpdateConditions, 0x559860);
     RH_ScopedInstall(GetFatAndMuscleModifier, 0x559AF0);
     RH_ScopedInstall(FindCriminalRatingString, 0x55A210);
-    RH_ScopedInstall(ConstructStatLine, 0x55A780, { .Reversed = false });
+    RH_ScopedInstall(ConstructStatLine, 0x55A780);
     RH_ScopedInstall(UpdateRespectStat, 0x55BC50);
     RH_ScopedInstall(UpdateSexAppealStat, 0x55BF20);
     RH_ScopedInstall(UpdateFatAndMuscleStats, 0x55C470);
@@ -208,8 +211,43 @@ int32 CStats::FindCriminalRatingNumber() {
 
 // 0x5591E0
 float CStats::GetPercentageProgress() {
-    return std::min(StatTypesFloat[STAT_PROGRESS_MADE] / 187.0f * 100.0f, 100.0f);
+    // The total is a stat of its own (187 in the game)
+    const auto total = StatTypesFloat[STAT_TOTAL_PROGRESS];
+    if (total == 0.0f) {
+        return 0.0f;
+    }
+    return std::min(StatTypesFloat[STAT_PROGRESS_MADE] / total * 100.0f, 100.0f);
 }
+
+namespace {
+// An entry of the lists of stats of the stats page
+struct tStatLine {
+    int16 stat;
+    uint8 valueType;   // How the value is shown
+    bool  alwaysShown; // Otherwise it's hidden while the value is 0
+    bool  isSpecial;   // Shown in its own way, depending on the stat
+    uint8 _pad;
+};
+VALIDATE_SIZE(tStatLine, 0x6);
+
+// The lists end with this stat
+constexpr int16 STAT_LINES_END = -99;
+
+auto GetStatLines(uint8 listId) {
+    constexpr uintptr_t LISTS[] = { 0x8CD8A0, 0x8CD938, 0x8CD9B0, 0x8CD9D8, 0x8CDA70, 0x8CDAC8, 0x8CDBF8 };
+    const auto* const first = reinterpret_cast<const tStatLine*>(listId < std::size(LISTS) ? LISTS[listId] : 0x8CDE08);
+    const auto*       last  = first;
+    while (last->stat != STAT_LINES_END) {
+        last++;
+    }
+    return std::span{ first, last };
+}
+
+// The text of a GXT entry as ASCII (0x69F7E0)
+const char* TextAsAscii(const char* key) {
+    return plugin::CallAndReturn<const char*, 0x69F7E0, const GxtChar*, uint32>(TheText.Get(key), 0);
+}
+} // namespace
 
 // 0x559230
 void CStats::BuildStatLine(const char* labelKey, void* pValue1, int32 metrics, void* pValue2, int32 type) {
@@ -218,11 +256,6 @@ void CStats::BuildStatLine(const char* labelKey, void* pValue1, int32 metrics, v
     }
 
     gString2[0] = '\0';
-
-    // The text of a GXT entry as ASCII (0x69F7E0)
-    const auto TextAsAscii = [](const char* key) {
-        return plugin::CallAndReturn<const char*, 0x69F7E0, const GxtChar*, uint32>(TheText.Get(key), 0);
-    };
 
     if (type == 1) { // Time, "minutes:seconds"
         const auto minutes = *(int32*)pValue1;
@@ -674,8 +707,349 @@ const GxtChar* CStats::FindCriminalRatingString() {
 }
 
 // 0x55A780
-int32 CStats::ConstructStatLine(int32 arg0, uint8 arg1) {
-    return plugin::CallAndReturn<int32, 0x55A780, int32, uint8>(arg0, arg1);
+int32 CStats::ConstructStatLine(int32 lineIdx, uint8 listId) {
+    // What showing a line returns, when it was the one asked for
+    constexpr int32 LINE_SHOWN = -1;
+
+    int32 line = 0; // The line being looked at
+
+    // The label is the text of the stat, the value is what's in `gString2`
+    const auto ShowLine = [] {
+        GxtCharStrcpy(gGxtString, TheText.Get(gString));
+        plugin::Call<0x719240, GxtChar*>(gGxtString); // Removes the control codes
+        AsciiToGxtChar(gString2, gGxtString2);
+    };
+    const auto ShowFormatted = [&](const char* format, auto... args) {
+        gString2[0] = '\0';
+        sprintf_s(gString2, format, args...);
+        ShowLine();
+        return LINE_SHOWN;
+    };
+    const auto ShowLabelOnly = [&] {
+        gString2[0] = '\0';
+        ShowLine();
+        return LINE_SHOWN;
+    };
+    // No label, the value is the text of the key
+    const auto ShowText = [](const char* key) {
+        gGxtString[0] = '\0';
+        GxtCharStrcpy(gGxtString2, TheText.Get(key));
+        return LINE_SHOWN;
+    };
+    const auto ShowXofY = [&](int32 value, int32 total) {
+        gString2[0]            = '\0';
+        const auto* const text = TextAsAscii("FEST_OO");
+        sprintf_s(gString2, " %d %s %d", value, text, total);
+        ShowLine();
+        return LINE_SHOWN;
+    };
+    const auto ShowTime = [&](int32 hours, int32 minutes) {
+        BuildStatLine(gString, &hours, 0, &minutes, 1);
+        return LINE_SHOWN;
+    };
+    // The int stats are read straight from the array, which is also how the ones before it are read
+    const auto IntStat = [](eStats stat) {
+        return *(StatTypesInt.data() + (ptrdiff_t)stat - (ptrdiff_t)FIRST_INT_STAT);
+    };
+    const auto RawStatAsFloat = [&](uint16 stat) {
+        return stat < FIRST_UNUSED_STAT ? StatTypesFloat[stat] : (float)IntStat((eStats)stat);
+    };
+    // Time in minutes, as given by the stats that count it in milliseconds
+    const auto MinutesFromStat = [&](eStats stat) {
+        return (int32)((double)IntStat(stat) * (double)1.6666667e-05f);
+    };
+
+    // How many lines the stat takes, or `LINE_SHOWN` if one of them is the line that was asked for
+    const auto ShowStat = [&](const tStatLine& entry) -> int32 {
+        const auto stat   = (eStats)entry.stat;
+        const bool isLine = line == lineIdx;
+
+        if (!entry.isSpecial) {
+            switch (entry.valueType) {
+            case 1:
+                return isLine ? ShowFormatted("%.2f", (double)GetStatValue(stat)) : 1;
+            case 3:
+                return isLine ? ShowFormatted("$%.2f", (double)GetStatValue(stat)) : 1;
+            case 4:
+                return isLine ? ShowFormatted("%d|", (int32)GetStatValue(stat)) : 1;
+            case 5: { // Weight
+                if (!isLine) {
+                    return 1;
+                }
+                const auto pounds = (int32)GetStatValue(stat);
+                if (!CLocalisation::Metric()) {
+                    return ShowFormatted("%dlbs", pounds);
+                }
+                // The format wants an integer, but a double is passed (Like the original does)
+                return ShowFormatted("%dkgs", (double)pounds * (double)0.4536f);
+            }
+            case 6: {
+                if (!isLine) {
+                    return 1;
+                }
+                const auto value       = GetStatValue(stat);
+                const auto* const unit = TextAsAscii("ST_MILE");
+                return ShowFormatted("%.2f %s", (double)value, unit);
+            }
+            case 7: // Distance
+                if (!isLine) {
+                    return 1;
+                }
+                return CLocalisation::Metric()
+                    ? ShowFormatted("%.2fm", (double)GetStatValue(stat))
+                    : ShowFormatted("%.2fft", (double)GetStatValue(stat) * (double)3.3333333f);
+            case 9: { // Time, in seconds
+                if (!isLine) {
+                    return 1;
+                }
+                const auto minutes = ConvertToMins((int32)GetStatValue(stat));
+                const auto seconds = ConvertToSecs((int32)GetStatValue(stat));
+                return ShowTime(minutes, seconds);
+            }
+            case 10: // Bar chart
+                m_ThisStatIsABarChart = (int16)stat;
+                return isLine ? ShowFormatted("%d", (int32)GetStatValue(stat)) : 1;
+            default:
+                return isLine ? ShowFormatted("%d", entry.stat < FIRST_UNUSED_STAT ? (int32)StatTypesFloat[entry.stat] : IntStat(stat)) : 1;
+            }
+        }
+
+        // The stats that are shown in their own way
+        if (entry.stat >= STAT_PROGRESS_WITH_DENISE && entry.stat <= STAT_PROGRESS_WITH_MILLIE) {
+            if (!(0.0f < RawStatAsFloat(entry.stat))) {
+                return 0;
+            }
+            return isLine ? ShowFormatted("%0.2f%%", (double)GetStatValue(stat)) : 1;
+        }
+
+        switch (stat) {
+        case STAT_PROGRESS_MADE:
+            return isLine ? ShowFormatted("%0.2f%%", (double)GetPercentageProgress()) : 1;
+        case STAT_BEST_INSANE_STUNT_AWARDED: { // A line of its own for the stunt
+            if (isLine) {
+                return ShowLabelOnly();
+            }
+            static constexpr const char* STUNTS[] = { "INSTUN", "PRINST", "DBINST", "DBPINS", "TRINST", "PRTRST", "QUINST", "PQUINS" };
+            const auto stunt = (uint32)(IntStat(stat) - 1);
+            if (line + 1 != lineIdx) {
+                return 2;
+            }
+            return ShowText(stunt < std::size(STUNTS) ? STUNTS[stunt] : "NOSTUC");
+        }
+        case STAT_UNIQUE_JUMPS_FOUND:
+        case STAT_UNIQUE_JUMPS_DONE:
+            return isLine ? ShowXofY(IntStat(stat), CStuntJumpManager::m_iNumJumps) : 1;
+        case STAT_ARMOR:
+            return isLine ? ShowFormatted("%d", (int32)CWorld::Players[0].m_pPed->m_fArmour) : 1;
+        case STAT_FLIGHT_TIME: {
+            const auto minutes = MinutesFromStat(stat);
+            return isLine ? ShowTime(minutes / 60, minutes % 60) : 1;
+        }
+        case STAT_TIME_ON_JETPACK: {
+            const auto minutes = MinutesFromStat(stat);
+            if (minutes / 60 <= 0 && minutes % 60 <= 0) {
+                return 0;
+            }
+            return isLine ? ShowTime(minutes / 60, minutes % 60) : 1;
+        }
+        case STAT_SHOOTING_RANGE_LEVELS_PASSED:
+            return isLine ? ShowXofY(IntStat(stat), 12) : 1;
+        case STAT_MOST_CARS_PARKED_ON_VALET_PARKING:
+            return isLine ? ShowXofY(IntStat(stat), 25) : 1;
+        case STAT_NUMBER_OF_VEHICLES_EXPORTED:
+            return isLine ? ShowXofY(IntStat(stat), 30) : 1;
+        case STAT_SNAPSHOTS_TAKEN:
+            return isLine ? ShowXofY(IntStat(stat), IntStat(STAT_TOTAL_SNAPSHOTS)) : 1;
+        case STAT_HORSESHOES_COLLECTED:
+            return isLine ? ShowXofY(IntStat(stat), IntStat(STAT_TOTAL_HORSESHOES)) : 1;
+        case STAT_OYSTERS_COLLECTED:
+            return isLine ? ShowXofY(IntStat(stat), IntStat(STAT_TOTAL_OYSTERS)) : 1;
+        case STAT_PLAYING_TIME: {
+            const auto minutes = CTimer::GetTimeInMS() / 60000;
+            return isLine ? ShowTime((int32)minutes / 60, (int32)minutes % 60) : 1;
+        }
+        case STAT_TAGS_SPRAYED:
+            return isLine ? ShowXofY(CTagManager::ms_numTagged, CTagManager::ms_numTags) : 1;
+        case STAT_LEAST_FAVORITE_GANG: { // The gang that was killed the most
+            uint32 mostKilled = 0;
+            int32  gang       = 0;
+            for (auto i = 7; i < 15; i++) {
+                if ((uint32)PedsKilledOfThisType[i] > mostKilled) {
+                    mostKilled = PedsKilledOfThisType[i];
+                    gang       = i;
+                }
+            }
+            if (gang == 0) {
+                return 0;
+            }
+            if (isLine) {
+                return ShowLabelOnly();
+            }
+            static constexpr const char* GANGS[] = { "ST_GNG0", "ST_GNG1", "ST_GNG2", "ST_GNG3", "ST_GNG4", "ST_GNG5", "ST_GNG6", "ST_GNG7" };
+            if (line + 1 != lineIdx) {
+                return 2;
+            }
+            return ShowText(GANGS[gang - 7]);
+        }
+        case STAT_GANG_MEMBERS_WASTED: {
+            if (!isLine) {
+                return 1;
+            }
+            int32 killed = 0;
+            for (auto i = 7; i < 16; i++) {
+                killed += PedsKilledOfThisType[i];
+            }
+            return ShowFormatted("%d", killed);
+        }
+        case STAT_CRIMINALS_WASTED:
+            return isLine ? ShowFormatted("%d", PedsKilledOfThisType[20]) : 1;
+        case STAT_MOST_FAVORITE_RADIO_STATION:
+        case STAT_LEAST_FAVORITE_RADIO_STATION: {
+            if (PopulateFavoriteRadioStationList()) {
+                return 0;
+            }
+            if (isLine) {
+                return ShowLabelOnly();
+            }
+            char key[16];
+            AudioEngine.GetRadioStationNameKey(
+                stat == STAT_MOST_FAVORITE_RADIO_STATION ? FindMostFavoriteRadioStation() : (eRadioID)FindLeastFavoriteRadioStation(),
+                key
+            );
+            return line + 1 == lineIdx ? ShowText(key) : 2;
+        }
+        case STAT_CURRENT_WEAPON_SKILL: {
+            const auto& activeWeapon = FindPlayerPed(-1)->GetActiveWeapon();
+            const auto  type         = (uint16)activeWeapon.m_Type;
+            if (type != WEAPON_TEC9 && (type < WEAPON_PISTOL || type > WEAPON_TEC9)) { // Only the ones that have a skill
+                return 0;
+            }
+            auto skill = (uint8)((type == WEAPON_TEC9 ? 0x1C : type) - 0x15);
+            if (isLine) {
+                return ShowFormatted("%d", (int32)GetStatValue((eStats)(STAT_PISTOL_SKILL - 1 + skill)));
+            }
+
+            // The name of the skill
+            if ((int32)FindPlayerPed(-1)->GetActiveWeapon().m_Type == WEAPON_TEC9) {
+                skill = 11;
+                sprintf_s(gString, "STWE0%d", (int32)skill);
+            } else {
+                sprintf_s(gString, skill < 10 ? "STWE00%d" : skill < 100 ? "STWE0%d" : "STWE%d", (int32)skill);
+            }
+            return line + 1 == lineIdx ? ShowText(gString) : 2;
+        }
+        case STAT_WEAPON_SKILL_LEVELS: { // The skill of each weapon
+            if (isLine) {
+                return ShowLabelOnly();
+            }
+            for (uint16 i = 1; i < 11; i++) {
+                sprintf_s(gString, i < 10 ? "STWE00%d" : i < 100 ? "STWE0%d" : "STWE%d", (int32)i);
+                const auto skill = FindPlayerPed(-1)->GetWeaponSkill((eWeaponType)(i + 0x15));
+                sprintf_s(gString2, skill == eWeaponSkill::STD ? "WS_STD" : skill == eWeaponSkill::PRO ? "WS_PRO" : "WS_POOR");
+                if (line + i == lineIdx) {
+                    GxtCharStrcpy(gGxtString, TheText.Get(gString));
+                    GxtCharStrcpy(gGxtString2, TheText.Get(gString2));
+                    return LINE_SHOWN;
+                }
+            }
+            return 11;
+        }
+        case STAT_PILOT_RANKING: {
+            const auto minutes = MinutesFromStat(STAT_FLIGHT_TIME);
+            const auto hours   = minutes / 60;
+            const auto mins    = minutes % 60;
+            if (hours <= 0 && mins < 5) {
+                return 0;
+            }
+            if (isLine) {
+                return ShowLabelOnly();
+            }
+
+            // The rank, up to the hours and minutes it needs
+            struct tRank {
+                int32       maxHours;
+                int32       lessMinutes;
+                const char* key;
+            };
+            static constexpr tRank RANKS[] = {
+                { 0, 10, "ST_PR01" }, { 0, 20, "ST_PR02" }, { 0, 30, "ST_PR03" },
+                { 1, 0, "ST_PR04" }, { 1, 30, "ST_PR05" }, { 2, 0, "ST_PR06" }, { 2, 30, "ST_PR07" },
+                { 3, 0, "ST_PR08" }, { 3, 30, "ST_PR09" }, { 4, 0, "ST_PR10" }, { 5, 0, "ST_PR11" },
+                { 10, 0, "ST_PR12" }, { 20, 0, "ST_PR13" }, { 25, 0, "ST_PR14" }, { 30, 0, "ST_PR15" },
+                { 49, 2, "ST_PR16" }, { 50, 0, "ST_PR17" }, { 100, 0, "ST_PR18" },
+            };
+            const char* rank = "ST_PR19";
+            for (const auto& r : RANKS) {
+                if (hours <= r.maxHours && mins < r.lessMinutes) {
+                    rank = r.key;
+                    break;
+                }
+            }
+            return line + 1 == lineIdx ? ShowText(rank) : 2;
+        }
+        case STAT_STRONGEST_GANG:
+        case STAT_2ND_STRONGEST_GANG:
+        case STAT_3RD_STRONGEST_GANG: {
+            const auto rating = stat - STAT_STRONGEST_GANG;
+            const auto gang   = CGangWars::GangRatings[rating];
+            if (gang < 0) {
+                return 0;
+            }
+            sprintf_s(gString2, "ST_GNG%d", gang);
+            sprintf_s(gString, "ST_LAB%d", (int32)rating);
+            const auto* const label = TheText.Get(gString);
+            if (isLine) {
+                GxtCharStrcpy(gGxtString, label);
+                GxtCharStrcpy(gGxtString2, TheText.Get(gString2));
+                return LINE_SHOWN;
+            }
+
+            // The strength of the gang, without a label
+            sprintf_s(gString, "%d", CGangWars::GangRatingStrength[rating]);
+            AsciiToGxtChar(gString, gGxtString2);
+            if (line + 1 == lineIdx) {
+                gGxtString[0] = '\0'; // The original also copied the value over itself
+                return LINE_SHOWN;
+            }
+            return 2;
+        }
+        case STAT_MONEY_LOST_GAMBLING: {
+            auto lost = (double)StatTypesFloat[STAT_MONEY_SPENT_GAMBLING] - (double)StatTypesFloat[STAT_MONEY_WON_GAMBLING];
+            if (lost < 0.0) {
+                lost = 0.0;
+            }
+            return isLine ? ShowFormatted("$%.2f", lost) : 1;
+        }
+        case STAT_TERRITORY_UNDER_CONTROL:
+            return isLine ? ShowFormatted("%0.2f%%", (double)CGangWars::TerritoryUnderControlPercentage * 100.0) : 1;
+        default:
+            return 0;
+        }
+    };
+
+    for (const auto& entry : GetStatLines(listId)) {
+        if (!entry.alwaysShown && !(0.0f < RawStatAsFloat(entry.stat))) {
+            continue;
+        }
+
+        sprintf_s(gString, entry.stat < 10 ? "STAT00%d" : entry.stat < 100 ? "STAT0%d" : "STAT%d", (int32)entry.stat);
+
+        if (CLocalisation::GermanGame()) {
+            switch ((uint8)entry.stat) {
+            case 0xA7: case 0xA8: case 0xB1: case 0xCD: case 0xCE: case 0xCF: case 0xD0: case 0xD1:
+                continue;
+            }
+        }
+
+        m_ThisStatIsABarChart = 0;
+
+        const auto numLines = ShowStat(entry);
+        if (numLines == LINE_SHOWN) {
+            return 0;
+        }
+        line += numLines;
+    }
+    return line;
 }
 
 // 0x55B900
