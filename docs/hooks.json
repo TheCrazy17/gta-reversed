@@ -30292,7 +30292,7 @@
   {
     "Category": "CTaskUtilityLineUpPedWithCar",
     "Name": "ProcessPed",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CTaskSimpleLand",

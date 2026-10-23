@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 12:39:24 UTC
+Last update was at Oct 23, 2026 at 12:47:37 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8330 out of 8339 functions done in 719 categories)
+## Stats (8331 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (711/719) [99%]
+#### Completely reversed categories (712/719) [99%]
 
 <details>
 <summary>See list of categories</summary>
@@ -544,6 +544,7 @@ Last update was at Oct 23, 2026 at 12:39:24 UTC
 - CTaskComplexFollowNodeRoute (19)<br />
 - CTaskComplexFollowLeaderInFormation (8)<br />
 - CTaskSimpleHitHead (4)<br />
+- CTaskUtilityLineUpPedWithCar (5)<br />
 - CTaskSimpleLand (6)<br />
 - CTaskSimpleJetPack (14)<br />
 - CTaskSimpleJump (8)<br />
@@ -728,7 +729,7 @@ Last update was at Oct 23, 2026 at 12:39:24 UTC
 
 </details>
 
-#### Partially reversed categories (8/719) [1%]
+#### Partially reversed categories (7/719) [1.0%]
 
 <details>
 <summary>See list of categories</summary>
@@ -738,7 +739,6 @@ Last update was at Oct 23, 2026 at 12:39:24 UTC
 - CShadows (29/30) [97%]<br />
 - FxEmitterBP_c (7/9) [78%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
-- CTaskUtilityLineUpPedWithCar (4/5) [80%]<br />
 - CAEScriptAudioEntity (18/19) [95%]<br />
 
 </details>
