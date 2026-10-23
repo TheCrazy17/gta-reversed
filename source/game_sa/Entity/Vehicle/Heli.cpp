@@ -6,6 +6,8 @@
 */
 #include "StdInc.h"
 
+#include "Shadows.h"
+
 void CHeli::InjectHooks() {
     RH_ScopedVirtualClass(CHeli, 0x871680, 71);
     RH_ScopedCategory("Vehicle");
@@ -20,6 +22,7 @@ void CHeli::InjectHooks() {
     RH_ScopedInstall(TestSniperCollision, 0x6C6890);
     RH_ScopedInstall(UpdateHelis, 0x6C79A0);
     RH_ScopedInstall(GenerateHeli, 0x6C6520);
+    RH_ScopedVMTInstall(PreRender, 0x6C5420);
     RH_ScopedVMTInstall(BlowUpCar, 0x6C6D30);
     RH_ScopedVMTInstall(Render, 0x6C4400);
     RH_ScopedVMTInstall(Fix, 0x6C4530);
@@ -562,7 +565,99 @@ void CHeli::ProcessFlyingCarStuff() {
 
 // 0x6C5420
 void CHeli::PreRender() {
-    plugin::CallMethod<0x6C5420, CHeli*>(this);
+    CVehicle::PreRender();
+
+    if (m_bSearchLightEnabled && m_fSearchLightIntensity > 0.0f && CClock::GetIsTimeInRange(19, 6)) {
+        AddHeliSearchLight(
+            GetMatrix().TransformPoint(CVector{ 0.0f, 3.5f, -0.3f }),
+            m_vecSearchLightTarget,
+            20.0f,
+            m_fSearchLightIntensity,
+            (uint32)this + 0xB,
+            1,
+            1
+        );
+    }
+
+    if (vehicleFlags.bVehicleColProcessed) {
+        DoBurstAndSoftGroundRatios();
+
+        const auto* mi = GetVehicleModelInfo();
+        for (auto i = 0; i < 4; i++) {
+            // How relaxed the suspension is past its resting length
+            const auto restRatio  = 1.0 - (double)m_aSuspensionSpringLength[i] / m_aSuspensionLineLength[i];
+            const auto relaxation = (float)(((double)m_fWheelsSuspensionCompression[i] - restRatio) / (1.0 - restRatio));
+
+            CVector wheelPos;
+            mi->GetWheelPosn(i, wheelPos, true);
+
+            auto& currentPos = m_wheelPosition[i];
+            auto  pos        = (double)wheelPos.z + m_pHandlingData->m_fSuspensionUpperLimit;
+            if (relaxation > 0.0f) {
+                pos -= (double)relaxation * m_aSuspensionSpringLength[i];
+            }
+            if (pos <= currentPos && (!physicalFlags.bAddMovingCollisionSpeed || !(m_nHandlingFlagsIntValue & VEHICLE_HANDLING_HYDRAULIC_INST))) {
+                pos = (pos - currentPos) * 0.75 + currentPos;
+            }
+            currentPos = (float)pos;
+        }
+    }
+
+    for (const auto node : { CAR_WHEEL_RB, CAR_WHEEL_LB, CAR_WHEEL_RF, CAR_WHEEL_LF }) {
+        UpdateWheelMatrix(node, 1);
+    }
+
+    if (m_nModelIndex != MODEL_RCRAIDER && m_nModelIndex != MODEL_RCGOBLIN) {
+        DoHeliDustEffect(1.0f, 1.0f);
+    }
+
+    // Spin the rotors
+    constexpr float FULL_TURN = 2.0f * PI;
+
+    auto mainRotorStep = (double)CTimer::GetTimeStep() * m_fHeliRotorSpeed;
+    if (notsa::contains({ MODEL_SPARROW, MODEL_SEASPAR, MODEL_MAVERICK, MODEL_VCNMAV, MODEL_POLMAV }, GetModelId())) {
+        mainRotorStep *= 1.66f;
+    }
+    m_fRotorZ = (float)((double)m_fRotorZ - mainRotorStep);
+    if (m_fRotorZ < -FULL_TURN) {
+        auto angle = (double)m_fRotorZ;
+        do {
+            angle += FULL_TURN;
+        } while (angle < -FULL_TURN);
+        m_fRotorZ = (float)angle;
+    }
+
+    auto secondRotorStep = (double)CTimer::GetTimeStep() * m_fHeliRotorSpeed;
+    if (m_nModelIndex == MODEL_LEVIATHN) {
+        secondRotorStep += secondRotorStep;
+    } else {
+        secondRotorStep *= 2.3f;
+    }
+    m_fSecondRotorZ = (float)((double)m_fSecondRotorZ - secondRotorStep);
+    if (m_fSecondRotorZ > FULL_TURN) {
+        auto angle = (double)m_fSecondRotorZ;
+        do {
+            angle -= FULL_TURN;
+        } while (angle > FULL_TURN);
+        m_fSecondRotorZ = (float)angle;
+    }
+
+    CMatrix matrix;
+    const auto RotateNode = [&](eCarNodes node, auto&& setRotation) {
+        if (auto* frame = m_aCarNodes[node]) {
+            matrix.Attach(RwFrameGetMatrix(frame), false);
+            const auto pos = matrix.GetPosition();
+            setRotation();
+            matrix.GetPosition() += pos;
+            matrix.UpdateRW();
+        }
+    };
+    RotateNode(CAR_BUMP_FRONT, [&] { matrix.SetRotateZ(m_fRotorZ); });
+    RotateNode(CAR_BUMP_REAR, [&] { matrix.SetRotateZ(m_fRotorZ); });
+    RotateNode(CAR_WING_RF, [&] { matrix.SetRotateX(m_fSecondRotorZ); });
+    RotateNode(CAR_WING_LF, [&] { matrix.SetRotateX(m_fSecondRotorZ); });
+
+    CShadows::StoreShadowForVehicle(this, VEH_SHD_HELI);
 }
 
 // 0x6C7050
