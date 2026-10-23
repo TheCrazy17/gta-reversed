@@ -18426,6 +18426,11 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddWheelSpray",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "AddWheelGrass",
     "IsReversed": true
   },
@@ -18437,6 +18442,16 @@
   {
     "Category": "Fx_c",
     "Name": "AddWheelMud",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddWheelSand",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddWheelDust",
     "IsReversed": true
   },
   {

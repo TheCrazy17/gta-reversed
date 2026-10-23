@@ -44,12 +44,12 @@ void Fx_c::InjectHooks() {
     RH_ScopedInstall(AddPunchImpact, 0x49F670);
     RH_ScopedInstall(AddDebris, 0x49F750);
     RH_ScopedInstall(AddGlass, 0x49F970);
-    // RH_ScopedInstall(AddWheelSpray, 0x49FB30);
+    RH_ScopedInstall(AddWheelSpray, 0x49FB30);
     RH_ScopedInstall(AddWheelGrass, 0x49FF20);
     RH_ScopedInstall(AddWheelGravel, 0x4A0170);
     RH_ScopedInstall(AddWheelMud, 0x4A03C0);
-    // RH_ScopedInstall(AddWheelSand, 0x4A0610);
-    // RH_ScopedInstall(AddWheelDust, 0x4A09C0);
+    RH_ScopedInstall(AddWheelSand, 0x4A0610);
+    RH_ScopedInstall(AddWheelDust, 0x4A09C0);
     RH_ScopedInstall(TriggerWaterHydrant, 0x4A0D70);
     RH_ScopedInstall(TriggerGunshot, 0x4A0DE0);
     RH_ScopedInstall(TriggerTankFire, 0x4A0FA0);
@@ -453,7 +453,65 @@ void Fx_c::AddGlass(const CVector& pos, const RwRGBA& color, float scale, int32 
 
 // 0x49FB30
 void Fx_c::AddWheelSpray(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, bool bInWater, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, uint8, float))0x49FB30)(this, vehicle, pos, bWheelsSpinning, bInWater, lightMult);
+    const auto playerVeh = FindPlayerVehicle(-1, false);
+    const auto distSq    = DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos);
+    if (!(distSq <= 625.0f)) {
+        return;
+    }
+
+    // Further away vehicles spawn their particles less often
+    if (distSq > 400.0f) {
+        if ((((uint8)vehicle->m_nModelIndex + CTimer::GetFrameCounter()) & 3) != 0) {
+            return;
+        }
+    } else if (!(distSq <= 64.0f && playerVeh)) {
+        if ((((uint8)vehicle->m_nModelIndex + CTimer::GetFrameCounter()) & 1) != 0) {
+            return;
+        }
+    }
+
+    const auto& moveSpeed = vehicle->m_vecMoveSpeed;
+    if (!(std::fabs(moveSpeed.Magnitude()) > 0.01f) && !bWheelsSpinning) {
+        return;
+    }
+
+    FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 0.05f, 0.0f, 1.0f, 0.0f };
+
+    float speedFactor;
+    if (bWheelsSpinning) {
+        speedFactor = 1.0f;
+    } else {
+        const auto doubleSpeed = moveSpeed.Magnitude() + moveSpeed.Magnitude();
+        speedFactor = doubleSpeed <= 1.0f ? doubleSpeed : 1.0f;
+    }
+
+    prtMult.m_Color.alpha = (speedFactor + 1.0f) * (bInWater ? 0.2f : 0.15f);
+    prtMult.m_fSize       = (speedFactor + 1.0f) * 0.2f;
+    prtMult.m_fLife       = 0.08f;
+
+    // The particles take a random fraction of the vehicle's speed
+    const auto speedA = (speedFactor + 1.0f) * 10.0f;
+    const auto speedMin = 30.0f - speedA;
+    const auto speedMult = ((speedA + 30.0f) - speedMin) * ((float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL) + speedMin;
+    const CVector particleVel = moveSpeed * speedMult;
+
+    const CVector frameMove{
+        CTimer::GetTimeStep() * moveSpeed.x,
+        CTimer::GetTimeStep() * moveSpeed.y,
+        CTimer::GetTimeStep() * moveSpeed.z
+    };
+    const auto numParticles = std::max(1, (int32)frameMove.Magnitude());
+    const auto invNumParticles = 1.0f / (float)numParticles;
+
+    for (auto i = 0; i < numParticles; i++) {
+        const CVector offset = ((moveSpeed * invNumParticles) * (float)i) * CTimer::GetTimeStep();
+        CVector particlePos = pos - offset;
+        particlePos.z += 0.25f;
+
+        CVector vel = particleVel;
+        vel.z = ((float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL + 1.0f) * speedFactor + vel.z;
+        m_BoatSplash->AddParticle(particlePos, vel, 0.0f, prtMult, -1.0f, lightMult, 0.6f);
+    }
 }
 
 // NOTSA - The bodies of `AddWheelGrass`, `AddWheelGravel` and `AddWheelMud` only differ in the particle colour
@@ -510,14 +568,98 @@ void Fx_c::AddWheelMud(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, flo
     AddWheelGroundParticles(*this, vehicle, pos, lightMult, { 0.25f, 0.12f, 0.06f });
 }
 
+// NOTSA - `AddWheelSand` and `AddWheelDust` only differ in the particle colour and life
+static void AddWheelSandOrDustParticles(Fx_c& fx, CVehicle* vehicle, const CVector& pos, bool bWheelsSpinning, float lightMult, bool isDust) {
+    const auto playerVeh = FindPlayerVehicle(-1, false);
+    const auto distSq    = DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos);
+    if (!(distSq <= 625.0f)) {
+        return;
+    }
+
+    // Particles are spawned less often on lower fx qualities and further away from the camera
+    const auto spawnCounter = CTimer::GetFrameCounter() + (int32)(int16)vehicle->m_nModelIndex;
+    const auto forceSpawn   = distSq <= 64.0f && playerVeh;
+    if ((int32)fx.m_FxQuality >= 1) {
+        if (spawnCounter & 1) {
+            return;
+        }
+        if (!forceSpawn && (spawnCounter & 3)) {
+            return;
+        }
+    } else if ((int32)fx.m_FxQuality == 0) {
+        if (spawnCounter & 3) {
+            return;
+        }
+        if (!forceSpawn && (spawnCounter & 7)) {
+            return;
+        }
+    }
+
+    FxPrtMult_c prtMult = isDust
+        ? FxPrtMult_c{ 0.51f, 0.44f, 0.31f, 0.5f, 1.0f, 0.0f, 0.0f }
+        : FxPrtMult_c{ 0.81f, 0.67f, 0.57f, 0.5f, 1.0f, 0.0f, 0.0f };
+
+    const auto absGasPedal = std::fabs(vehicle->m_GasPedal);
+
+    // How much speed the particles take from the vehicle
+    float speedFactor;
+    if (bWheelsSpinning) {
+        speedFactor = 1.0f;
+    } else {
+        const auto doubleSpeed = vehicle->m_vecMoveSpeed.Magnitude() + vehicle->m_vecMoveSpeed.Magnitude();
+        speedFactor = doubleSpeed <= 1.0f ? doubleSpeed : 1.0f;
+    }
+
+    prtMult.m_fLife = isDust
+        ? speedFactor * 0.05f + 0.1f
+        : (speedFactor + 1.0f) * 0.1f;
+    prtMult.m_fSize = speedFactor * 0.9f + 0.1f;
+
+    float particlesPerUnit;
+    switch (vehicle->m_nVehicleSubType) {
+    case VEHICLE_TYPE_BMX:
+        particlesPerUnit = 2.0f;
+        prtMult.m_fSize *= 0.25f;
+        break;
+    case VEHICLE_TYPE_BIKE:
+    case VEHICLE_TYPE_QUAD:
+        particlesPerUnit = 2.0f;
+        prtMult.m_fSize *= 0.5f;
+        break;
+    default:
+        particlesPerUnit = 1.5f;
+        prtMult.m_fSize *= 0.7f;
+        break;
+    }
+
+    const CVector frameMove{
+        CTimer::GetTimeStep() * vehicle->m_vecMoveSpeed.x,
+        CTimer::GetTimeStep() * vehicle->m_vecMoveSpeed.y,
+        CTimer::GetTimeStep() * vehicle->m_vecMoveSpeed.z
+    };
+    const auto numParticles = std::max(1, (int32)(frameMove.Magnitude() * particlesPerUnit));
+
+    const auto RandNorm = [] { return (float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL; };
+    const auto zSpeedRange = (speedFactor + 0.8f) - 0.2f;
+    for (auto i = 0; i < numParticles; i++) {
+        CVector vel;
+        vel.x = RandNorm() * ((absGasPedal * vehicle->m_vecMoveSpeed.x) * -40.0f);
+        vel.y = RandNorm() * ((absGasPedal * vehicle->m_vecMoveSpeed.y) * -40.0f);
+        vel.z = RandNorm() * zSpeedRange + 0.2f;
+
+        const auto t = 1.0f - (float)i / (float)numParticles;
+        fx.m_Sand->AddParticle(pos - frameMove * t, vel, 0.0f, prtMult, -1.0f, lightMult, 0.7f);
+    }
+}
+
 // 0x4A0610
 void Fx_c::AddWheelSand(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, float))0x4A0610)(this, vehicle, pos, bWheelsSpinning, lightMult);
+    AddWheelSandOrDustParticles(*this, vehicle, pos, bWheelsSpinning, lightMult, false);
 }
 
 // 0x4A09C0
 void Fx_c::AddWheelDust(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, float))0x4A09C0)(this, vehicle, pos, bWheelsSpinning, lightMult);
+    AddWheelSandOrDustParticles(*this, vehicle, pos, bWheelsSpinning, lightMult, true);
 }
 
 // 0x4A0D70
