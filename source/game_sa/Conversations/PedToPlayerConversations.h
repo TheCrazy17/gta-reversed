@@ -1,6 +1,7 @@
 #pragma once
 
 class CPed;
+class CVehicle;
 
 class CPedToPlayerConversations {
 public:
@@ -13,6 +14,8 @@ public:
 
     static inline auto& m_State                        = StaticRef<eP2pState>(0x969A20);
     static inline auto& m_pPed                         = StaticRef<CPed*>(0x9691C0);
+    static inline auto& m_pPlayerVehicle               = StaticRef<CVehicle*>(0x969A40); // The last vehicle of the player
+    static inline auto& m_PedPoolIndex                 = StaticRef<int32>(0x969A3C);     // Where the next ped to talk to is looked for
     static inline auto& m_Topic                        = StaticRef<int32>(0x9691BC);
     static inline auto& m_TimeOfLastPlayerConversation = StaticRef<uint32>(0x9691B4);
     static inline auto& m_StartTime                    = StaticRef<uint32>(0x9691B8);

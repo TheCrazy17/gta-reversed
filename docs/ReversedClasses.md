@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 12:04:19 UTC
+Last update was at Oct 23, 2026 at 12:13:42 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8327 out of 8347 functions done in 720 categories)
+## Stats (8328 out of 8347 functions done in 720 categories)
 
-#### Completely reversed categories (708/720) [98%]
+#### Completely reversed categories (709/720) [98%]
 
 <details>
 <summary>See list of categories</summary>
@@ -626,6 +626,7 @@ Last update was at Oct 23, 2026 at 12:04:19 UTC
 - CCustomCarEnvMapPipeline (37)<br />
 - CConversations (11)<br />
 - CConversationForPed (2)<br />
+- CPedToPlayerConversations (3)<br />
 - CIplDefPool (1)<br />
 - CPedPool (2)<br />
 - CVehiclePool (1)<br />
@@ -725,7 +726,7 @@ Last update was at Oct 23, 2026 at 12:04:19 UTC
 
 </details>
 
-#### Partially reversed categories (11/720) [2%]
+#### Partially reversed categories (10/720) [1%]
 
 <details>
 <summary>See list of categories</summary>
@@ -738,7 +739,6 @@ Last update was at Oct 23, 2026 at 12:04:19 UTC
 - CPed (144/145) [99%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (4/5) [80%]<br />
-- CPedToPlayerConversations (2/3) [67%]<br />
 - CAEScriptAudioEntity (18/19) [95%]<br />
 
 </details>

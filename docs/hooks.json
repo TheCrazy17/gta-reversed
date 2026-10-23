@@ -33472,7 +33472,7 @@
   {
     "Category": "CPedToPlayerConversations",
     "Name": "Update",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedToPlayerConversations",
