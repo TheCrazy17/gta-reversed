@@ -17,6 +17,7 @@ void CTheZones::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedGlobalInstall(ResetZonesRevealed, 0x572110);
+    RH_ScopedGlobalInstall(SetCurrentZoneAsUnlocked, 0x572800);
     RH_ScopedGlobalInstall(PointLiesWithinZone, 0x572270);
     RH_ScopedGlobalInstall(GetNavigationZone, 0x572590);
     RH_ScopedGlobalInstall(GetMapZone, 0x5725A0);
@@ -241,7 +242,11 @@ void CTheZones::Init() {
 // Unlock the current zone
 // 0x572800
 void CTheZones::SetCurrentZoneAsUnlocked() {
-    ((void(__cdecl*)())0x572800)();
+    const auto pos = FindPlayerCoors();
+    m_CurrLevel = GetLevelFromPosition(pos);
+    if (!CTheScripts::bPlayerIsOffTheMap && CGame::currArea == AREA_CODE_NORMAL_WORLD && SetZoneWasVisited(pos, true)) {
+        ZonesRevealed++;
+    }
 }
 
 // Creates a zone

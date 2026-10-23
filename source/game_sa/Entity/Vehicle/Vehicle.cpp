@@ -226,14 +226,14 @@ void CVehicle::InjectHooks() {
 
     RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Object", 0x6D2690, RwObject*(*)(RwObject*, void*));
     RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Frame", 0x6D26D0, RwFrame*(*)(RwFrame*, void*));
-    // RH_ScopedGlobalInstall(SetCompAlphaCB, 0x6D2950);
+    RH_ScopedGlobalInstall(SetCompAlphaCB, 0x6D2950);
     RH_ScopedGlobalInstall(IsVehiclePointerValid, 0x6E38F0);
-    // RH_ScopedGlobalInstall(RemoveUpgradeCB, 0x6D3300);
-    // RH_ScopedGlobalInstall(FindUpgradeCB, 0x6D3370);
+    RH_ScopedGlobalInstall(RemoveUpgradeCB, 0x6D3300);
+    RH_ScopedGlobalInstall(FindUpgradeCB, 0x6D3370);
     RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Object", 0x6D33B0, RwObject*(*)(RwObject*, void*));
     RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Frame", 0x6D3420, RwFrame*(*)(RwFrame*, void*));
     RH_ScopedGlobalInstall(CopyObjectsCB, 0x6D3450);
-    // RH_ScopedGlobalInstall(FindReplacementUpgradeCB, 0x6D3490);
+    RH_ScopedGlobalInstall(FindReplacementUpgradeCB, 0x6D3490);
     RH_ScopedGlobalInstall(RemoveAllUpgradesCB, 0x6D34D0);
 }
 
@@ -1955,7 +1955,8 @@ void CVehicle::ApplyBoatWaterResistance(tBoatHandlingData* boatHandling, float f
 
 // 0x6D2950
 RpMaterial* SetCompAlphaCB(RpMaterial* material, void* data) {
-    return ((RpMaterial * (__cdecl*)(RpMaterial*, void*))0x6D2950)(material, data);
+    RpMaterialGetColor(material)->alpha = (RwUInt8)(uintptr)data;
+    return material;
 }
 
 // 0x6D2960
@@ -2276,12 +2277,34 @@ bool CVehicle::ClearVehicleUpgradeFlags(int32 arg0, int32 modId) {
 
 // 0x6D3300
 RpAtomic* RemoveUpgradeCB(RpAtomic* atomic, void* data) {
-    return ((RpAtomic * (__cdecl*)(RpAtomic*, void*))0x6D3300)(atomic, data);
+    if (CVisibilityPlugins::GetAtomicId(atomic) & ATOMIC_UPGRADE) {
+        auto* const mi = CVisibilityPlugins::GetModelInfo(atomic);
+        if ((uint32)(uintptr)data == mi->CarMod && !mi->bUsesVehDummy) {
+            auto* const frame = RpAtomicGetFrame(atomic);
+            RpClumpRemoveAtomic(RpAtomicGetClump(atomic), atomic);
+            RpAtomicDestroy(atomic);
+            RwFrameDestroy(frame);
+            mi->RemoveRef();
+        }
+    }
+    return atomic;
 }
+
+struct tUpgradeSearch {
+    int32     upgradeId;
+    RpAtomic* atomic;
+};
 
 // 0x6D3370
 RpAtomic* FindUpgradeCB(RpAtomic* atomic, void* data) {
-    return ((RpAtomic * (__cdecl*)(RpAtomic*, void*))0x6D3370)(atomic, data);
+    if (CVisibilityPlugins::GetAtomicId(atomic) & ATOMIC_UPGRADE) {
+        auto& search = *static_cast<tUpgradeSearch*>(data);
+        if ((uint32)search.upgradeId == CVisibilityPlugins::GetModelInfo(atomic)->CarMod) {
+            search.atomic = atomic;
+            return nullptr;
+        }
+    }
+    return atomic;
 }
 
 // 0x6D33B0
@@ -2330,7 +2353,14 @@ RwObject* CopyObjectsCB(RwObject* object, void* data) {
 
 // 0x6D3490
 RwObject* FindReplacementUpgradeCB(RwObject* object, void* data) {
-    return ((RwObject * (__cdecl*)(RwObject*, void*))0x6D3490)(object, data);
+    if (RwObjectGetType(object) == rpATOMIC) {
+        const auto atomic = (RpAtomic*)object;
+        if (!(CVisibilityPlugins::GetAtomicId(atomic) & ATOMIC_UPGRADE) && CVisibilityPlugins::GetModelInfoIndex(atomic) != -1) {
+            static_cast<tCompSearchStructById*>(data)->m_pFrame = reinterpret_cast<RwFrame*>(object);
+            return nullptr;
+        }
+    }
+    return object;
 }
 
 // 0x6D34D0
@@ -2391,12 +2421,12 @@ RpAtomic* CVehicle::CreateUpgradeAtomic(CBaseModelInfo* mi, const UpgradePosnDes
 
 // 0x6D3630
 void CVehicle::RemoveUpgrade(int32 upgradeId) {
-    RpClumpForAllAtomics(GetRpClump(), RemoveUpgradeCB, &upgradeId);
+    RpClumpForAllAtomics(GetRpClump(), RemoveUpgradeCB, (void*)(uintptr)upgradeId);
 }
 
 // 0x6D3650
 int32 CVehicle::GetUpgrade(int32 upgradeId) {
-    struct { int32 upgradeId; RpAtomic* atomic; } data = { upgradeId, nullptr };
+    tUpgradeSearch data = { upgradeId, nullptr };
     RpClumpForAllAtomics(GetRpClump(), FindUpgradeCB, &data);
     if (data.atomic) {
         return CVisibilityPlugins::GetModelInfoIndex(data.atomic);

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "EventEditableResponse.h"
-
-#include "EventEditableResponse.h"
+#include "Ped.h"
 
 
 class NOTSA_EXPORT_VTABLE CEventLowAngerAtPlayer : public CEventEditableResponse {
+public:
     CEventLowAngerAtPlayer() = default;
     ~CEventLowAngerAtPlayer() override = default;
 

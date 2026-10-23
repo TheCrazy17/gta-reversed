@@ -48,6 +48,7 @@ void CPedIntelligence::InjectHooks()
     RH_ScopedInstall(Destructor, 0x607300);
 
     RH_ScopedInstall(GetPedEntities, 0x4893E0);
+    RH_ScopedInstall(RemoveAllInterestingEntities, 0x602320);
     RH_ScopedInstall(SetPedDecisionMakerType, 0x600B50);
     RH_ScopedInstall(SetPedDecisionMakerTypeInGroup, 0x600BB0);
     RH_ScopedInstall(RestorePedDecisionMakerType, 0x600BC0);
@@ -824,7 +825,12 @@ void CPedIntelligence::LookAtInterestingEntities() {
 // unused
 // 0x602320
 void CPedIntelligence::RemoveAllInterestingEntities() {
-    plugin::CallMethod<0x602320, CPedIntelligence*>(this);
+    for (auto& entity : m_apInterestingEntities) {
+        if (entity) {
+            entity->CleanUpOldReference(&entity);
+        }
+        entity = nullptr;
+    }
 }
 
 // 0x602350

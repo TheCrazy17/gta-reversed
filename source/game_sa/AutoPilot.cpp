@@ -2,6 +2,13 @@
 
 #include "AutoPilot.h"
 
+void CAutoPilot::InjectHooks() {
+    RH_ScopedClass(CAutoPilot);
+    RH_ScopedCategoryGlobal();
+
+    RH_ScopedInstall(RemoveOnePathNode, 0x41B950);
+}
+
 // 0x6D5E20
 CAutoPilot::CAutoPilot() : m_aPathFindNodesInfo() {
     _smthNext = 1;
@@ -49,7 +56,10 @@ void CAutoPilot::ModifySpeed(float target) {
 
 // 0x41B950
 void CAutoPilot::RemoveOnePathNode() {
-    plugin::CallMethod<0x41B950, CAutoPilot*>(this);
+    m_nPathFindNodesCount--;
+    for (int16 i = 0; i < (int16)m_nPathFindNodesCount; i++) {
+        m_aPathFindNodesInfo[i] = m_aPathFindNodesInfo[i + 1];
+    }
 }
 
 void CAutoPilot::SetCarMission(eCarMission carMission, uint32 timeOffsetMs) {

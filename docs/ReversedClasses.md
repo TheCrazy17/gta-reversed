@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 18:44:02 UTC
+Last update was at Oct 23, 2026 at 19:07:47 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8347 out of 8347 functions done in 720 categories)
+## Stats (8362 out of 8362 functions done in 722 categories)
 
-#### Completely reversed categories (720/720) [100%]
+#### Completely reversed categories (722/722) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -26,7 +26,7 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 - CPedGroup (12)<br />
 - CPedGroupMembership (18)<br />
 - CPopCycle (15)<br />
-- RwHelper (24)<br />
+- RwHelper (29)<br />
 - CPad (79)<br />
 - CEscalator (5)<br />
 - CInterestingEvents (7)<br />
@@ -94,7 +94,9 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 - CObjectSaveStructure (2)<br />
 - CCompressedMatrixNotAligned (2)<br />
 - CVisibilityPlugins (84)<br />
-- CPedIntelligence (52)<br />
+- CPedIntelligence (53)<br />
+- CMentalState (2)<br />
+- CAutoPilot (1)<br />
 - CPedGroupIntelligence (27)<br />
 - CCollision (61)<br />
 - CTrafficLights (12)<br />
@@ -116,7 +118,7 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 - cTransmission (4)<br />
 - CStats (51)<br />
 - CCarCtrl (111)<br />
-- CTheZones (21)<br />
+- CTheZones (22)<br />
 - CMenuManager (61)<br />
 - CSprite2d (33)<br />
 - CCheat (72)<br />
@@ -328,7 +330,7 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 - CQuadTreeNode<T> (12)<br />
 - CNodeRoute (2)<br />
 - CKeyGen (4)<br />
-- CModelInfo (28)<br />
+- CModelInfo (29)<br />
 - CBaseModelInfo (34)<br />
 - CAtomicModelInfo (9)<br />
 - CLodAtomicModelInfo (3)<br />
@@ -722,7 +724,7 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 - CQuadBike (12)<br />
 - CTrailer (13)<br />
 - CTrain (41)<br />
-- CVehicle (149)<br />
+- CVehicle (153)<br />
 - FurnitureGroup_c (6)<br />
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />
@@ -737,14 +739,14 @@ Last update was at Oct 23, 2026 at 18:44:02 UTC
 
 </details>
 
-#### Partially reversed categories (0/720) [0%]
+#### Partially reversed categories (0/722) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/720) [0%]
+#### Not-at-all reversed categories (0/722) [0%]
 
 <details>
 <summary>See list of categories</summary>

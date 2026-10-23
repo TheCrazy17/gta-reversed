@@ -10,7 +10,7 @@ void RwHelperInjectHooks() {
     RH_ScopedGlobalInstall(GetNameAndDamage, 0x5370A0);
     RH_ScopedGlobalInstall(GetFirstAtomicCallback, 0x734810);
     RH_ScopedGlobalInstall(GetFirstAtomic, 0x734820);
-    // RH_ScopedGlobalInstall(Get2DEffectAtomicCallback, 0x734850);
+    RH_ScopedGlobalInstall(Get2DEffectAtomicCallback, 0x734850);
     RH_ScopedGlobalInstall(Get2DEffectAtomic, 0x734880);
     RH_ScopedGlobalInstall(GetFirstObjectCallback, 0x7348B0);
     RH_ScopedGlobalInstall(GetFirstObject, 0x7348C0);
@@ -18,7 +18,8 @@ void RwHelperInjectHooks() {
     RH_ScopedGlobalInstall(GetFirstChild, 0x734900);
     RH_ScopedGlobalInstall(SkinAtomicGetHAnimHierarchCB, 0x734A20);
     RH_ScopedGlobalInstall(GetAnimHierarchyFromSkinClump, 0x734A40);
-    // RH_ScopedGlobalInstall(GetAnimHierarchyFromFrame, 0x734AB0);
+    RH_ScopedGlobalInstall(GetAnimHierarchyFromFrameCB, 0x734A70);
+    RH_ScopedGlobalInstall(GetAnimHierarchyFromFrame, 0x734AB0);
     RH_ScopedGlobalInstall(GetAnimHierarchyFromClump, 0x734B10);
     RH_ScopedGlobalInstall(AtomicRemoveAnimFromSkinCB, 0x734B90);
     RH_ScopedGlobalInstall(RpAtomicConvertGeometryToTL, 0x734BE0);
@@ -28,6 +29,8 @@ void RwHelperInjectHooks() {
     RH_ScopedGlobalInstall(atomicConvertGeometryToTS, 0x734CE0);
     RH_ScopedGlobalInstall(RpClumpConvertGeometryToTS, 0x734D30);
     RH_ScopedGlobalInstall(forceLinearFilteringAtomicsCB, 0x734DA0);
+    RH_ScopedGlobalInstall(RpGeometryReplaceOldMaterialWithNewMaterial, 0x734DE0);
+    RH_ScopedGlobalInstall(RwTexDictionaryFindHashNamedTexture, 0x734E50);
     RH_ScopedGlobalInstall(SetFilterModeOnClumpsTextures, 0x734DC0);
     RH_ScopedGlobalInstall(forceLinearFilteringMatTexturesCB, 0x734D60);
     RH_ScopedGlobalInstall(SetFilterModeOnAtomicsTextures, 0x734D80);
@@ -88,7 +91,11 @@ RpAtomic* GetFirstAtomic(RpClump* clump) {
 
 // 0x734850
 RpAtomic* Get2DEffectAtomicCallback(RpAtomic* atomic, void* data) {
-    return ((RpAtomic * (__cdecl*)(RpAtomic*, void*))0x734850)(atomic, data);
+    if (RpGeometryGet2dFxCount(RpAtomicGetGeometry(atomic)) > 0) {
+        *static_cast<RpAtomic**>(data) = atomic;
+        return nullptr;
+    }
+    return atomic;
 }
 
 // 0x734880
@@ -124,10 +131,24 @@ RwFrame* GetFirstChild(RwFrame* frame) {
     return child;
 }
 
+// 0x734A70
+RwFrame* GetAnimHierarchyFromFrameCB(RwFrame* frame, void* data) {
+    if (const auto hier = RpHAnimFrameGetHierarchy(frame)) {
+        *static_cast<RpHAnimHierarchy**>(data) = hier;
+        return nullptr;
+    }
+    RwFrameForAllChildren(frame, GetAnimHierarchyFromFrameCB, data);
+    return frame;
+}
+
 // 0x734AB0
 RpHAnimHierarchy* GetAnimHierarchyFromFrame(RwFrame* frame) {
     assert(frame);
-    return ((RpHAnimHierarchy * (__cdecl*)(RwFrame*))0x734AB0)(frame);
+    RpHAnimHierarchy* hier = RpHAnimFrameGetHierarchy(frame);
+    if (!hier) {
+        RwFrameForAllChildren(frame, GetAnimHierarchyFromFrameCB, &hier);
+    }
+    return hier;
 }
 
 // 0x734B10
@@ -252,12 +273,31 @@ bool SetFilterModeOnClumpsTextures(RpClump* clump, RwTextureFilterMode filtering
 
 // 0x734DE0
 bool RpGeometryReplaceOldMaterialWithNewMaterial(RpGeometry* geometry, RpMaterial* oldMaterial, RpMaterial* newMaterial) {
-    return ((bool(__cdecl*)(RpGeometry*, RpMaterial*, RpMaterial*))0x734DE0)(geometry, oldMaterial, newMaterial);
+    bool replaced = false;
+    for (auto i = 0; i < geometry->mesh->numMeshes; i++) {
+        auto* const mesh = RpGeometryGetMesh(geometry, i);
+        if (mesh->material != oldMaterial) {
+            continue;
+        }
+        const auto matIdx = _rpMaterialListFindMaterialIndex(&geometry->matList, mesh->material);
+        RpMaterialDestroy(mesh->material);
+        geometry->matList.materials[matIdx] = newMaterial;
+        mesh->material = newMaterial;
+        newMaterial->refCount++;
+        replaced = true;
+    }
+    return replaced;
 }
 
 // 0x734E50
 RwTexture* RwTexDictionaryFindHashNamedTexture(RwTexDictionary* txd, uint32 hash) {
-    return ((RwTexture * (__cdecl*)(RwTexDictionary*, uint32))0x734E50)(txd, hash);
+    for (auto* it = rwLinkListGetFirstLLLink(&txd->texturesInDict); it != rwLinkListGetTerminator(&txd->texturesInDict); it = rwLLLinkGetNext(it)) {
+        auto* const texture = rwLLLinkGetData(it, RwTexture, lInDictionary);
+        if (CKeyGen::GetUppercaseKey(texture->name) == hash) {
+            return texture;
+        }
+    }
+    return nullptr;
 }
 
 // 0x734FC0

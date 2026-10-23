@@ -29,6 +29,7 @@ void CModelInfo::InjectHooks()
     RH_ScopedInstall(Initialise, 0x4C6810);
     RH_ScopedInstall(ShutDown, 0x4C63E0);
     RH_ScopedInstall(ReInit2dEffects, 0x4C63B0);
+    RH_ScopedInstall(Get2dEffectStore, 0x4C5A60);
 
     RH_ScopedInstall(GetModelInfoUInt16, 0x4C59F0);
     RH_ScopedInstall(GetModelInfoFromHashKey, 0x4C59B0);
@@ -335,7 +336,7 @@ CBaseModelInfo* CModelInfo::GetModelInfo(const char* name, int32 minIndex, int32
 // 0x4C5A60
 CStore<C2dEffect, CModelInfo::NUM_2DFX_INFOS>* CModelInfo::Get2dEffectStore()
 {
-    return ((CStore<C2dEffect, NUM_2DFX_INFOS>* (__cdecl *)())0x4C5A60)();
+    return &ms_2dFXInfoStore;
 }
 
 // 0x4C5A70

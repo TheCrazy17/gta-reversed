@@ -118,6 +118,8 @@ public:
 
     CAutoPilot();
 
+    static void InjectHooks();
+
     void ModifySpeed(float target);
     void RemoveOnePathNode();
 

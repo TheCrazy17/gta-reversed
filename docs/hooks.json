@@ -971,6 +971,11 @@
   },
   {
     "Category": "RwHelper",
+    "Name": "Get2DEffectAtomicCallback",
+    "IsReversed": true
+  },
+  {
+    "Category": "RwHelper",
     "Name": "Get2DEffectAtomic",
     "IsReversed": true
   },
@@ -1002,6 +1007,16 @@
   {
     "Category": "RwHelper",
     "Name": "GetAnimHierarchyFromSkinClump",
+    "IsReversed": true
+  },
+  {
+    "Category": "RwHelper",
+    "Name": "GetAnimHierarchyFromFrameCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "RwHelper",
+    "Name": "GetAnimHierarchyFromFrame",
     "IsReversed": true
   },
   {
@@ -1047,6 +1062,16 @@
   {
     "Category": "RwHelper",
     "Name": "forceLinearFilteringAtomicsCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "RwHelper",
+    "Name": "RpGeometryReplaceOldMaterialWithNewMaterial",
+    "IsReversed": true
+  },
+  {
+    "Category": "RwHelper",
+    "Name": "RwTexDictionaryFindHashNamedTexture",
     "IsReversed": true
   },
   {
@@ -6256,6 +6281,11 @@
   },
   {
     "Category": "CPedIntelligence",
+    "Name": "RemoveAllInterestingEntities",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedIntelligence",
     "Name": "SetPedDecisionMakerType",
     "IsReversed": true
   },
@@ -6497,6 +6527,21 @@
   {
     "Category": "CPedIntelligence",
     "Name": "GetActivePrimaryTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CMentalState",
+    "Name": "IncrementAnger",
+    "IsReversed": true
+  },
+  {
+    "Category": "CMentalState",
+    "Name": "Process",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutoPilot",
+    "Name": "RemoveOnePathNode",
     "IsReversed": true
   },
   {
@@ -8852,6 +8897,11 @@
   {
     "Category": "CTheZones",
     "Name": "ResetZonesRevealed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTheZones",
+    "Name": "SetCurrentZoneAsUnlocked",
     "IsReversed": true
   },
   {
@@ -22177,6 +22227,11 @@
   {
     "Category": "CModelInfo",
     "Name": "ReInit2dEffects",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "Get2dEffectStore",
     "IsReversed": true
   },
   {
@@ -40506,7 +40561,22 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "SetCompAlphaCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "IsVehiclePointerValid",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "RemoveUpgradeCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "FindUpgradeCB",
     "IsReversed": true
   },
   {
@@ -40522,6 +40592,11 @@
   {
     "Category": "CVehicle",
     "Name": "CopyObjectsCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "FindReplacementUpgradeCB",
     "IsReversed": true
   },
   {

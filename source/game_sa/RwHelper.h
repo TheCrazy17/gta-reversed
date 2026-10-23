@@ -19,6 +19,7 @@ RwFrame* GetFirstFrameCallback(RwFrame* frame, void* data);
 RwFrame* GetFirstChild(RwFrame* frame);
 RpAtomic* SkinAtomicGetHAnimHierarchCB(RpAtomic* atomic, void* data);
 RpHAnimHierarchy* GetAnimHierarchyFromSkinClump(RpClump* clump);
+RwFrame* GetAnimHierarchyFromFrameCB(RwFrame* frame, void* data);
 RpHAnimHierarchy* GetAnimHierarchyFromFrame(RwFrame* frame);
 RpHAnimHierarchy* GetAnimHierarchyFromClump(RpClump* clump);
 RpAtomic* AtomicRemoveAnimFromSkinCB(RpAtomic* atomic, void* data);
