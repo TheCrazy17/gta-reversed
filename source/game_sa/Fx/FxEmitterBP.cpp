@@ -13,13 +13,14 @@
 #include "FxSystem.h"
 #include "FxSystemBP.h"
 #include "FxTools.h"
+#include "Fx.h"
 
 void FxEmitterBP_c::InjectHooks() {
     RH_ScopedVirtualClass(FxEmitterBP_c, 0x85A788, 7);
     RH_ScopedCategory("Fx");
 
     RH_ScopedInstall(Constructor, 0x4A18D0);
-    RH_ScopedInstall(RenderHeatHaze, 0x4A1940, { .Reversed = false });
+    RH_ScopedInstall(RenderHeatHaze, 0x4A1940);
     RH_ScopedInstall(UpdateParticle, 0x4A21D0);
     RH_ScopedVMTInstall(CreateInstance, 0x4A2B40);
     RH_ScopedVMTInstall(Update, 0x4A2BC0);
@@ -36,7 +37,151 @@ FxEmitterBP_c::FxEmitterBP_c() : FxPrimBP_c() {
 
 // 0x4A1940
 void FxEmitterBP_c::RenderHeatHaze(RwCamera* camera, uint32 txdHashKey, float brightness) {
-    return plugin::CallMethod<0x4A1940, FxEmitterBP_c*, RwCamera*, uint32, float>(this, camera, txdHashKey, brightness);
+    if (!m_Particles.GetNumItems()) {
+        return;
+    }
+
+    // The haze is added over the screen
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(rwBLENDONE));
+
+    auto* curRaster = RwTextureGetRaster(m_apTextures[0]);
+    RenderBegin(curRaster, nullptr, rwIM3D_VERTEXUV);
+
+    const auto& camMat = *RwFrameGetMatrix(RwCameraGetFrame(camera));
+
+    for (auto* it = m_Particles.GetHead(); it; it = m_Particles.GetNext(it)) {
+        auto* const prt = it->AsFxEmitterPrt();
+
+        CVector prtPos;
+        if (prt->m_bLocalToSystem) {
+            auto* const mat = g_fxMan.FxRwMatrixCreate();
+            prt->m_System->GetCompositeMatrix(mat);
+            RwV3dTransformPoints(&prtPos, &prt->m_Pos, 1, mat);
+            g_fxMan.FxRwMatrixDestroy(mat);
+        } else {
+            prtPos = prt->m_Pos;
+        }
+
+        RenderInfo_t renderInfo;
+        m_FxInfoManager.ProcessRenderInfo(
+            prt->m_System->m_fCurrentTime,
+            prt->m_fCurrentLife / prt->m_fTotalLife,
+            0.0f,
+            prt->m_System->m_SystemBP->m_fLength,
+            false,
+            &renderInfo
+        );
+
+        // Where the particle faces: `at` is the axis it spins around, `right` and `up` span the sprite
+        CVector right, up, at;
+        if (!renderInfo.m_bHasDir) {
+            const auto& faceMat = renderInfo.m_bIsFlat ? renderInfo.m_FlatMatrix : camMat;
+            right = faceMat.right;
+            up    = faceMat.up;
+            at    = faceMat.at;
+        } else {
+            // Stands along a direction, turned to the camera as much as it can
+            CVector dir = renderInfo.m_bUseVel ? prt->m_Velocity : renderInfo.m_Direction;
+            RwV3dNormalize(&dir, &dir);
+
+            CVector toCam{ prtPos.x - camMat.pos.x, prtPos.y - camMat.pos.y, prtPos.z - camMat.pos.z };
+            RwV3dNormalize(&toCam, &toCam);
+
+            right = CVector{
+                toCam.z * dir.y - toCam.y * dir.z,
+                toCam.x * dir.z - toCam.z * dir.x,
+                toCam.y * dir.x - toCam.x * dir.y
+            };
+            at = CVector{
+                right.z * dir.y - right.y * dir.z,
+                right.x * dir.z - right.z * dir.x,
+                right.y * dir.x - right.x * dir.y
+            };
+            up = dir;
+        }
+
+        // Rotation is kept in degrees, in the range [0, 360)
+        if (prt->m_RotZ != -1) {
+            prt->m_CurrentRotation = (float)(uint8)prt->m_RotZ * 2.0f;
+        }
+        while (prt->m_CurrentRotation < 0.0f) {
+            prt->m_CurrentRotation += 360.0f;
+        }
+        while (prt->m_CurrentRotation >= 360.0f) {
+            prt->m_CurrentRotation -= 360.0f;
+        }
+        if (prt->m_CurrentRotation > 0.0f) {
+            CVector rotatedRight;
+            RotateVecAboutVec(rotatedRight, right, at, prt->m_CurrentRotation * 0.01745328f);
+            right = rotatedRight;
+            up    = CVector{
+                at.y * right.z - at.z * right.y,
+                at.z * right.x - at.x * right.z,
+                at.x * right.y - at.y * right.x
+            };
+        }
+
+        // The size varies a bit between particles, and it can be scaled down
+        auto sizeX = ((float)prt->m_RandR * 0.003921569f - 0.5f) * renderInfo.m_fSizeXBias + renderInfo.m_fSizeX;
+        auto sizeY = ((float)prt->m_RandG * 0.003921569f - 0.5f) * renderInfo.m_fSizeYBias + renderInfo.m_fSizeY;
+        if (const auto multSize = std::bit_cast<uint8>(prt->m_MultSize); multSize != 0xFF) {
+            sizeX = (float)multSize * 0.003921569f * sizeX;
+            sizeY = (float)multSize * 0.003921569f * sizeY;
+        }
+
+        // The texture can change over the life of the particle
+        const auto texId = renderInfo.m_nCurrentTexId;
+        auto*      tex   = m_apTextures[0];
+        if (renderInfo.m_bHasAnimTextures && texId >= 2 && texId <= 4 && m_apTextures[texId - 1]) {
+            tex = m_apTextures[texId - 1];
+        }
+        auto* const raster = RwTextureGetRaster(tex);
+        if (raster != curRaster) {
+            RenderEnd();
+            curRaster = raster;
+            RenderBegin(raster, nullptr, rwIM3D_VERTEXUV);
+        }
+
+        // Sides of the sprite, scaled by the size
+        const auto top    = renderInfo.m_fSpriteTop * sizeY;
+        const auto bottom = renderInfo.m_fSpriteBottom * sizeY;
+        const auto left   = renderInfo.m_fSpriteLeft * sizeX;
+        const auto rightK = renderInfo.m_fSpriteRight * sizeX;
+
+        const CVector bottomUp{ up.x * bottom, up.y * bottom, bottom * up.z };
+        const CVector leftRight{ right.x * left, right.y * left, left * right.z };
+        const CVector rightRight{ right.x * rightK, right.y * rightK, 0.0f }; // The height is left out, it is added where used
+
+        const CVector topLeft{
+            (leftRight.x + up.x * top) + prtPos.x,
+            prtPos.y + (leftRight.y + top * up.y),
+            prtPos.z + (leftRight.z + top * up.z)
+        };
+        const CVector bottomRight{
+            (rightRight.x + bottomUp.x) + prtPos.x,
+            prtPos.y + (rightRight.y + bottomUp.y),
+            prtPos.z + (bottomUp.z + rightK * right.z)
+        };
+        const CVector topRight{
+            (rightRight.x + up.x * top) + prtPos.x,
+            (rightRight.y + top * up.y) + prtPos.y,
+            (rightK * right.z + top * up.z) + prtPos.z
+        };
+        const CVector bottomLeft{
+            (leftRight.x + bottomUp.x) + prtPos.x,
+            (leftRight.y + bottomUp.y) + prtPos.y,
+            (leftRight.z + bottomUp.z) + prtPos.z
+        };
+
+        // Black, only the alpha matters
+        const CRGBA color{ 0, 0, 0, renderInfo.m_Color1.alpha };
+        RenderAddTri(topLeft,     bottomRight, topRight,   { 0.0f, 0.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, color, color, color);
+        RenderAddTri(bottomRight, topLeft,     bottomLeft, { 1.0f, 1.0f }, { 0.0f, 0.0f }, { 0.0f, 1.0f }, color, color, color);
+    }
+
+    RenderEnd();
 }
 
 // 0x4A21D0

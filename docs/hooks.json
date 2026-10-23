@@ -18277,7 +18277,7 @@
   {
     "Category": "FxEmitterBP_c",
     "Name": "RenderHeatHaze",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "FxEmitterBP_c",
