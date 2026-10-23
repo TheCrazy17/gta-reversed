@@ -340,7 +340,7 @@ int32 CCarCtrl::ChooseModel(int32* outZoneType) {
     return CPopulation::m_AppropriateLoadedCars.PickRandomCar(true, false);
 }
 
-int32 CCarCtrl::ChoosePoliceCarModel(uint32 ignoreLvpd1Model) {
+int32 CCarCtrl::ChoosePoliceCarModel(uint32 ignoreCopBike) {
     CWanted* playerWanted = FindPlayerWanted();
     if (playerWanted->AreSwatRequired()
         && CStreaming::IsModelLoaded(MODEL_ENFORCER)
@@ -362,7 +362,7 @@ int32 CCarCtrl::ChoosePoliceCarModel(uint32 ignoreLvpd1Model) {
             && CStreaming::IsModelLoaded(MODEL_ARMY))
             return (CGeneral::GetRandomNumber() < 0x3FFF) + MODEL_RHINO;
     }
-    return CStreaming::GetDefaultCopCarModel(ignoreLvpd1Model);
+    return CStreaming::GetDefaultCopCarModel(ignoreCopBike);
 }
 
 // 0x423F00

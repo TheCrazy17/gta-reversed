@@ -32070,6 +32070,31 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskSimpleSlideToCoord",
+    "Name": "Constructor-Anim",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleSlideToCoord",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleSlideToCoord",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleSlideToCoord",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleSlideToCoord",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskSimplePickUpEntity",
     "Name": "Constructor-1",
     "IsReversed": true

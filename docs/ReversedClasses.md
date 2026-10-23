@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 18:29:32 UTC
+Last update was at Oct 23, 2026 at 18:44:02 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8342 out of 8342 functions done in 720 categories)
+## Stats (8347 out of 8347 functions done in 720 categories)
 
 #### Completely reversed categories (720/720) [100%]
 
@@ -601,7 +601,7 @@ Last update was at Oct 23, 2026 at 18:29:32 UTC
 - CTaskComplexEnterBoatAsDriver (8)<br />
 - CTaskSimpleFight (5)<br />
 - CTaskComplexUseWaterCannon (5)<br />
-- CTaskSimpleSlideToCoord (1)<br />
+- CTaskSimpleSlideToCoord (6)<br />
 - CTaskSimplePickUpEntity (4)<br />
 - CTaskComplexBeInGroup (10)<br />
 - CTaskComplexAvoidOtherPedWhileWandering (15)<br />
