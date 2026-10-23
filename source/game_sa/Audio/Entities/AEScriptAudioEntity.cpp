@@ -114,11 +114,11 @@ CVector* CAEScriptAudioEntity::GetMissionAudioPosition(uint8 sampleId) {
 }
 
 // 0x4EC6D0
-void CAEScriptAudioEntity::PlayMissionBankSound(uint8 sampleId, CVector& posn, CPhysical* physical, int16 sfxId, uint8 linkId, uint8 a7, float volume, float maxDistance, float speed) {
+void CAEScriptAudioEntity::PlayMissionBankSound(eAudioEvents eventId, CVector& posn, CPhysical* physical, int16 sfxId, uint8 linkId, uint8 a7, float volume, float maxDistance, float speed) {
     if (linkId < 2 || linkId > 3) {
         return;
     }
-    if (a7 && AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(sampleId, this)) {
+    if (a7 && AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(eventId, this)) {
         return;
     }
 
@@ -127,7 +127,7 @@ void CAEScriptAudioEntity::PlayMissionBankSound(uint8 sampleId, CVector& posn, C
         return;
     }
 
-    const auto finalVolume = GetDefaultVolume(static_cast<eAudioEvents>(sampleId)) + volume;
+    const auto finalVolume = GetDefaultVolume(eventId) + volume;
 
     bool    frontend = false;
     CVector pos;
@@ -151,7 +151,7 @@ void CAEScriptAudioEntity::PlayMissionBankSound(uint8 sampleId, CVector& posn, C
         .Doppler            = 1.0f,
         .Flags              = SOUND_IS_CANCELLABLE | SOUND_REQUEST_UPDATES | (frontend ? SOUND_FRONT_END : 0u),
         .RegisterWithEntity = physical,
-        .EventID            = static_cast<eAudioEvents>(sampleId),
+        .EventID            = eventId,
     });
 }
 
@@ -909,7 +909,100 @@ void CAEScriptAudioEntity::ReportMissionAudioEvent(eAudioEvents eventId, CVector
 
 // 0x4EC970
 void CAEScriptAudioEntity::UpdateParameters(CAESound* sound, int16 playTime) {
-    plugin::CallMethod<0x4EC970, CAEScriptAudioEntity*, CAESound*, int16>(this, sound, playTime);
+    if (!sound) {
+        return;
+    }
+
+    // Eases the volume of the sound towards the one of the event, or stops it when it is going down and got there
+    const auto UpdateGymMachineVolume = [&](eAudioEvents event) {
+        const auto eventVolume = GetDefaultVolume(event);
+        if (field_8C == 1.0f) { // Going up
+            const auto volume = sound->m_Volume;
+            if (!(volume < eventVolume)) {
+                return;
+            }
+            sound->m_Volume = volume + 0.1f < eventVolume ? volume + 0.1f : eventVolume;
+        } else if (field_8C == 2.0f) { // Going down
+            const auto targetVolume = eventVolume - 18.0f;
+            const auto volume       = sound->m_Volume;
+            if (volume <= targetVolume) {
+                sound->StopSoundAndForget();
+                return;
+            }
+            sound->m_Volume = volume - 0.1f > targetVolume ? volume - 0.1f : targetVolume;
+        }
+    };
+
+    // The horn like sounds are stopped when they were going for too long
+    const auto StopIfPlayedFor = [&](uint32 time) {
+        if (CTimer::GetTimeInMS() > m_nLastTimeHornPlayed + time) {
+            sound->StopSoundAndForget();
+            m_nLastTimeHornPlayed = 0;
+        }
+    };
+
+    for (auto& link : wavLinks) {
+        if (link.m_Sound == sound) {
+            if (playTime == -1) { // It has finished
+                link.m_Sound = nullptr;
+                return;
+            }
+            if (link.m_pEntity) {
+                sound->SetPosition(link.m_pEntity->GetPosition());
+            }
+            continue;
+        }
+
+        switch (sound->m_Event) {
+        case AE_CRANE_WINCH_MOVE:
+            if (CTimer::GetTimeInMS() > m_nLastTimeHornPlayed + 300) {
+                sound->StopSoundAndForget();
+                m_nLastTimeHornPlayed = 0;
+                CVector posn = sound->m_CurrPos;
+                PlayResidentSoundEvent(SND_BANK_SLOT_PLAYER_ENGINE_P, SND_BANK_GENRL_CRANE_P, (eSoundID)2, AE_SCRIPT_CRANE_MOVE_STOP, posn, (CPhysical*)sound->m_PhysicalEntity.Get(), -12.0f, 1.0f, 0, 2.5f);
+            } else {
+                sound->m_Volume = m_Volume;
+                sound->m_Speed  = m_Speed;
+            }
+            break;
+        case AE_SCRIPT_ROULETTE_SPIN: {
+            if (CTimer::GetTimeInMS() > m_nLastTimeHornPlayed + 4500) {
+                // The spin slows down until it stops
+                if (sound->m_Volume <= -40.0f) {
+                    sound->StopSoundAndForget();
+                    m_nLastTimeHornPlayed = 0;
+                } else {
+                    sound->m_Volume -= 0.1f;
+                }
+                if (sound->m_Speed > 0.0f) {
+                    sound->m_Speed = std::max(sound->m_Speed - 0.001f, 0.0f);
+                }
+            }
+            if (CTimer::GetTimeInMS() > m_nLastTimeHornPlayed + 4800 && !field_7C) { // The ball bounces
+                CVector posn{ -1000.0f, -1000.0f, -1000.0f };
+                PlayMissionBankSound(AE_SCRIPT_ROULETTE_BALL_BOUNCING, posn, nullptr, (int16)CAEAudioUtility::GetRandomNumberInRange<int32>(1, 3), 3, 0, 0.0f, 2.0f, 1.0f);
+                field_7C = 1;
+            }
+            break;
+        }
+        case AE_SCRIPT_GYM_BIKE_START:
+            UpdateGymMachineVolume(AE_SCRIPT_GYM_BIKE_START);
+            break;
+        case AE_SCRIPT_GYM_RUNNING_MACHINE_START:
+            UpdateGymMachineVolume(AE_SCRIPT_GYM_RUNNING_MACHINE_START);
+            break;
+        case AE_SCRIPT_SWEETS_HORN:
+            StopIfPlayedFor(500);
+            break;
+        case AE_SCRIPT_DUAL_THRUST:
+        case AE_SCRIPT_BEE_BUZZ:
+        case AE_SCRIPT_TEMPEST_SHIELD_GLOW:
+            StopIfPlayedFor(300);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 // 0x4EC900
@@ -945,7 +1038,7 @@ void CAEScriptAudioEntity::InjectHooks() {
     RH_ScopedInstall(ProcessMissionAudioEvent, 0x4ECCF0, { .Reversed = false });
     RH_ScopedOverloadedInstall(ReportMissionAudioEvent, "1", 0x4EE960, void (CAEScriptAudioEntity::*)(eAudioEvents, CPhysical*, float, float));
     RH_ScopedOverloadedInstall(ReportMissionAudioEvent, "2", 0x4EE940, void (CAEScriptAudioEntity::*)(eAudioEvents, CVector&));
-    RH_ScopedVMTInstall(UpdateParameters, 0x4EC970, { .Reversed = false });
+    RH_ScopedVMTInstall(UpdateParameters, 0x4EC970);
 }
 
 CAEScriptAudioEntity* CAEScriptAudioEntity::Constructor() {
