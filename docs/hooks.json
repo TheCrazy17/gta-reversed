@@ -2187,7 +2187,7 @@
   {
     "Category": "CRope",
     "Name": "Update",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CRopes",
