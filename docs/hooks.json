@@ -18381,6 +18381,16 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddTyreBurst",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "TriggerWaterHydrant",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "TriggerWaterSplash",
     "IsReversed": true
   },

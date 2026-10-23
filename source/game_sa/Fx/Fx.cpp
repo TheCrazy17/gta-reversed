@@ -36,7 +36,7 @@ void Fx_c::InjectHooks() {
     // RH_ScopedInstall(AddBlood, 0x49EB00);
     // RH_ScopedInstall(AddWood, 0x49EE10);
     RH_ScopedInstall(AddSparks, 0x49F040);
-    // RH_ScopedInstall(AddTyreBurst, 0x49F300);
+    RH_ScopedInstall(AddTyreBurst, 0x49F300);
     // RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
     // RH_ScopedInstall(AddPunchImpact, 0x49F670);
     // RH_ScopedInstall(AddDebris, 0x49F750);
@@ -47,7 +47,7 @@ void Fx_c::InjectHooks() {
     // RH_ScopedInstall(AddWheelMud, 0x4A03C0);
     // RH_ScopedInstall(AddWheelSand, 0x4A0610);
     // RH_ScopedInstall(AddWheelDust, 0x4A09C0);
-    // RH_ScopedInstall(TriggerWaterHydrant, 0x4A0D70);
+    RH_ScopedInstall(TriggerWaterHydrant, 0x4A0D70);
     // RH_ScopedInstall(TriggerGunshot, 0x4A0DE0);
     // RH_ScopedInstall(TriggerTankFire, 0x4A0FA0);
     RH_ScopedInstall(TriggerWaterSplash, 0x4A1070);
@@ -274,7 +274,13 @@ void Fx_c::AddSparks(const CVector& origin, const CVector& direction, float forc
 
 // 0x49F300
 void Fx_c::AddTyreBurst(const CVector& posn, const CVector& velocity) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&))0x49F300)(this, posn, velocity);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), posn) > 625.0f) {
+        return;
+    }
+    const FxPrtMult_c prtMult{ 1.0f, 1.0f, 1.0f, 0.4f, 0.12f, 0.0f, 0.1f };
+    for (auto i = 0; i < 4; i++) {
+        m_SmokeII3expand->AddParticle(posn, velocity, (float)i * 0.05f, prtMult);
+    }
 }
 
 // 0x49F3D0
@@ -329,7 +335,7 @@ void Fx_c::AddWheelDust(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, fl
 
 // 0x4A0D70
 void Fx_c::TriggerWaterHydrant(const CVector& pos) {
-    ((void(__thiscall*)(Fx_c*, const CVector&))0x4A0D70)(this, pos);
+    CreateFxWithinCameraRange("water_hydrant", pos, 625.0f);
 }
 
 // 0x4A0DE0

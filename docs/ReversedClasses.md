@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 19:07:47 UTC
+Last update was at Oct 23, 2026 at 19:14:28 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8362 out of 8362 functions done in 722 categories)
+## Stats (8364 out of 8364 functions done in 722 categories)
 
 #### Completely reversed categories (722/722) [100%]
 
@@ -248,7 +248,7 @@ Last update was at Oct 23, 2026 at 19:07:47 UTC
 - FxEmitterPrt_c (1)<br />
 - FxEmitterBP_c (9)<br />
 - FxEmitter_c (1)<br />
-- Fx_c (9)<br />
+- Fx_c (11)<br />
 - CPedAttractorPedPlacer (1)<br />
 - CCopPed (7)<br />
 - CPed (145)<br />
