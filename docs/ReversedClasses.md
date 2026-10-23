@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 20:57:39 UTC
+Last update was at Oct 23, 2026 at 21:16:57 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8396 out of 8396 functions done in 723 categories)
+## Stats (8400 out of 8400 functions done in 727 categories)
 
-#### Completely reversed categories (723/723) [100%]
+#### Completely reversed categories (727/727) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -245,6 +245,10 @@ Last update was at Oct 23, 2026 at 20:57:39 UTC
 - FxMemoryPool_c (5)<br />
 - FxInfoManager_c (5)<br />
 - FxManager_c (25)<br />
+- FxInterpInfoFloat_c (1)<br />
+- FxInterpInfo32_c (1)<br />
+- FxInterpInfoU255_c (1)<br />
+- FxInterpInfo255_c (1)<br />
 - FxEmitterPrt_c (1)<br />
 - FxEmitterBP_c (9)<br />
 - FxEmitter_c (7)<br />
@@ -740,14 +744,14 @@ Last update was at Oct 23, 2026 at 20:57:39 UTC
 
 </details>
 
-#### Partially reversed categories (0/723) [0%]
+#### Partially reversed categories (0/727) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/723) [0%]
+#### Not-at-all reversed categories (0/727) [0%]
 
 <details>
 <summary>See list of categories</summary>

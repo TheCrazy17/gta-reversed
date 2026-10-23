@@ -3,6 +3,13 @@
 #include "FxInterpInfoU255.h"
 #include "FxManager.h"
 
+void FxInterpInfoU255_c::InjectHooks() {
+    RH_ScopedClass(FxInterpInfoU255_c);
+    RH_ScopedCategory("Fx");
+
+    RH_ScopedOverloadedInstall(GetVal, "outValues", 0x4A8800, void (FxInterpInfoU255_c::*)(float*, float));
+}
+
 // 0x4A87D0
 FxInterpInfoU255_c::FxInterpInfoU255_c() : FxInterpInfo_c() {
     m_Keys = nullptr;
@@ -38,5 +45,5 @@ void FxInterpInfoU255_c::Allocate(int32 count) {
 
 // 0x4A8800
 void FxInterpInfoU255_c::GetVal(float* outValues, float delta) {
-    plugin::CallMethod<0x4A8800, FxInterpInfoU255_c*, float*, float>(this, outValues, delta);
+    SampleKeys(m_Keys, outValues, delta, [](uint16 key) { return (double)key * (1.0f / 256.0f); });
 }

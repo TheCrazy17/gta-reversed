@@ -82,6 +82,10 @@
 #include "FxMemoryPool.h"
 #include "FxManager.h"
 #include "FxFrustumInfo.h"
+#include "FxInterpInfoFloat.h"
+#include "FxInterpInfo32.h"
+#include "FxInterpInfoU255.h"
+#include "FxInterpInfo255.h"
 #include "FxEmitterPrt.h"
 #include "FxEmitterBP.h"
 #include "FxEmitter.h"
@@ -1408,6 +1412,10 @@ void InjectHooksMain() {
         FxMemoryPool_c::InjectHooks();
         FxInfoManager_c::InjectHooks();
         FxManager_c::InjectHooks();
+        FxInterpInfoFloat_c::InjectHooks();
+        FxInterpInfo32_c::InjectHooks();
+        FxInterpInfoU255_c::InjectHooks();
+        FxInterpInfo255_c::InjectHooks();
         // ReversibleHooks::Install("FxFrustumInfo_c", "IsCollision", 0x4AA030, &FxFrustumInfo_c::IsCollision);
         FxEmitterPrt_c::InjectHooks();
         FxEmitterBP_c::InjectHooks();

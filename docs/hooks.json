@@ -18350,6 +18350,26 @@
     "IsReversed": true
   },
   {
+    "Category": "FxInterpInfoFloat_c",
+    "Name": "GetVal-outValues",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxInterpInfo32_c",
+    "Name": "GetVal-outValues",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxInterpInfoU255_c",
+    "Name": "GetVal-outValues",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxInterpInfo255_c",
+    "Name": "GetVal-outValues",
+    "IsReversed": true
+  },
+  {
     "Category": "FxEmitterPrt_c",
     "Name": "operator new[]",
     "IsReversed": true
