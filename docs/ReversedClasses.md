@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 11:19:36 UTC
+Last update was at Oct 23, 2026 at 11:41:50 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8319 out of 8347 functions done in 720 categories)
+## Stats (8322 out of 8347 functions done in 720 categories)
 
-#### Completely reversed categories (703/720) [98%]
+#### Completely reversed categories (705/720) [98%]
 
 <details>
 <summary>See list of categories</summary>
@@ -666,6 +666,7 @@ Last update was at Oct 23, 2026 at 11:19:36 UTC
 - CAEDoorAudioEntity (6)<br />
 - CAEExplosionAudioEntity (3)<br />
 - CAEFireAudioEntity (7)<br />
+- CAEFrontendAudioEntity (6)<br />
 - CAEGlobalWeaponAudioEntity (6)<br />
 - CAEPedAudioEntity (20)<br />
 - CAEPedlessSpeechAudioEntity (11)<br />
@@ -691,6 +692,7 @@ Last update was at Oct 23, 2026 at 11:19:36 UTC
 - CAEVorbisDecoder (13)<br />
 - CAEWaveDecoder (9)<br />
 - CAEWMADecoder (11)<br />
+- CAEAmbienceTrackManager (7)<br />
 - CAECutsceneTrackManager (8)<br />
 - CAERadioTrackManager (43)<br />
 - CAESoundManager (14)<br />
@@ -720,7 +722,7 @@ Last update was at Oct 23, 2026 at 11:19:36 UTC
 
 </details>
 
-#### Partially reversed categories (16/720) [2%]
+#### Partially reversed categories (14/720) [2%]
 
 <details>
 <summary>See list of categories</summary>
@@ -737,9 +739,7 @@ Last update was at Oct 23, 2026 at 11:19:36 UTC
 - CTaskSimpleUseGun (18/19) [95%]<br />
 - CTaskUtilityLineUpPedWithCar (4/5) [80%]<br />
 - CPedToPlayerConversations (2/3) [67%]<br />
-- CAEFrontendAudioEntity (5/6) [83%]<br />
-- CAEScriptAudioEntity (17/19) [89%]<br />
-- CAEAmbienceTrackManager (6/7) [86%]<br />
+- CAEScriptAudioEntity (18/19) [95%]<br />
 
 </details>
 

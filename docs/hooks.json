@@ -35527,7 +35527,7 @@
   {
     "Category": "CAEFrontendAudioEntity",
     "Name": "AddAudioEvent",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEFrontendAudioEntity",
@@ -36297,7 +36297,7 @@
   {
     "Category": "CAEScriptAudioEntity",
     "Name": "UpdateParameters",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAETwinLoopSoundEntity",
@@ -37917,7 +37917,7 @@
   {
     "Category": "CAEAmbienceTrackManager",
     "Name": "UpdateAmbienceTrackAndVolume",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CAEAmbienceTrackManager",

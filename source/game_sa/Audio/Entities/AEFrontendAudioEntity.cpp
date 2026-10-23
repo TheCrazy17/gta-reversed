@@ -34,712 +34,251 @@ void CAEFrontendAudioEntity::Reset() {
 
 // 0x4DD4A0
 void CAEFrontendAudioEntity::AddAudioEvent(eAudioEvents event, float fVolumeBoost, float fSpeed) {
-    return plugin::CallMethod<0x4DD4A0, CAEFrontendAudioEntity*, int32, float, float>(this, event, fVolumeBoost, fSpeed);
+    ZoneScoped;
 
-    // untested
-    CAESound sound;
-    CVector XVECP = { +1.0f, 0.0f, 0.0f };
-    CVector XVECM = { -1.0f, 0.0f, 0.0f };
-    CVector YVECP = { +0.0f, 1.0f, 0.0f };
+    constexpr CVector XVECM{ -1.0f, 0.0f, 0.0f };
+    constexpr CVector XVECP{ +1.0f, 0.0f, 0.0f };
+    constexpr CVector YVECP{ +0.0f, 1.0f, 0.0f };
 
-    const auto IncrementBulletHitsBank = [&]() {
-        m_BulletPassBank = (eSoundBank)(m_BulletPassBank + 1);
-        if (m_BulletPassBank > SND_BANK_GENRL_BULLET_PASS_LAST) {
-            m_BulletPassBank = SND_BANK_GENRL_BULLET_PASS_FIRST;
+    // The flags that the sounds use
+    constexpr uint32 FLAGS_ROLLED_OFF   = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END; // 0x151B
+    constexpr uint32 FLAGS_PAUSABLE     = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END;                   // 0x111B
+    constexpr uint32 FLAGS_UPDATES      = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_PLAY_PHYSICALLY | SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END;               // 0x110F
+    constexpr uint32 FLAGS_NOT_FORCED   = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END;                                       // 0x11B
+
+    const float volume = GetDefaultVolume(event) + fVolumeBoost;
+
+    const auto IsLoaded = [](eSoundBank bank, eSoundBankSlot slot) {
+        return AEAudioHardware.IsSoundBankLoaded(bank, slot);
+    };
+    const auto Play = [&](eSoundBankSlot slot, eSoundID sfx, const CVector& pos, uint32 flags, float speed, int32 eventId = AE_UNDEFINED, float speedVariance = 0.0f) {
+        return AESoundManager.PlaySound({
+            .BankSlotID        = slot,
+            .SoundID           = sfx,
+            .AudioEntity       = this,
+            .Pos               = pos,
+            .Volume            = volume,
+            .RollOffFactor     = 1.0f,
+            .Speed             = speed,
+            .Doppler           = 1.0f,
+            .FrameDelay        = 0,
+            .Flags             = flags,
+            .FrequencyVariance = speedVariance,
+            .PlayTime          = 0,
+            .EventID           = eventId,
+        });
+    };
+    // One sound in each of the sides
+    const auto PlayPair = [&](eSoundBankSlot slot, eSoundID sfxLeft, eSoundID sfxRight, uint32 flags, float speed, int32 eventId = AE_UNDEFINED) {
+        Play(slot, sfxLeft, XVECM, flags, speed, eventId);
+        Play(slot, sfxRight, XVECP, flags, speed, eventId);
+    };
+    const auto PlayInGameBank = [&](eSoundID sfxLeft, eSoundID sfxRight, uint32 flags, float speed) { // Does nothing if the bank is not there
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
+            PlayPair(SND_BANK_SLOT_FRONTEND_GAME, sfxLeft, sfxRight, flags, speed);
+        }
+    };
+    const auto PlayInMenuBank = [&](eSoundID sfxLeft, eSoundID sfxRight, uint32 flags) {
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
+            PlayPair(SND_BANK_SLOT_FRONTEND_MENU, sfxLeft, sfxRight, flags, fSpeed);
+        }
+    };
+    // Only one sound, in the middle
+    const auto PlayInGameBankMiddle = [&](eSoundID sfx, uint32 flags, float speed, int32 eventId = AE_UNDEFINED, float speedVariance = 0.0f) {
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
+            Play(SND_BANK_SLOT_FRONTEND_GAME, sfx, YVECP, flags, speed, eventId, speedVariance);
+        }
+    };
+    // Not too often, there has to be some frames between them
+    const auto PlayInGameBankEveryFewFrames = [&](uint32& lastFrame, eSoundID sfxLeft, eSoundID sfxRight, uint32 flags, float speed) {
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && CTimer::GetFrameCounter() >= lastFrame + 5) {
+            lastFrame = CTimer::GetFrameCounter();
+            PlayPair(SND_BANK_SLOT_FRONTEND_GAME, sfxLeft, sfxRight, flags, speed);
         }
     };
 
-    float volume = GetDefaultVolume(event) + fVolumeBoost;
+    // The bullets that fly by, from the bank that is being used for them
+    const auto BulletPass = [&](const CVector& pos, eAudioEvents bulletEvent) {
+        if (!IsLoaded(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS) || CTimer::GetFrameCounter() < m_nLastFrameBulletPass + 5) {
+            return;
+        }
+        if (m_BulletPassCount > 10) { // The next bank is loaded when nothing is using this one
+            if (AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_BULLET_PASS)) {
+                return;
+            }
+            m_BulletPassBank = (eSoundBank)(m_BulletPassBank + 1);
+            if (m_BulletPassBank > SND_BANK_GENRL_BULLET_PASS_LAST) {
+                m_BulletPassBank = SND_BANK_GENRL_BULLET_PASS_FIRST;
+            }
+            AEAudioHardware.LoadSoundBank(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS);
+            m_BulletPassCount = 0;
+            return;
+        }
+        m_nLastFrameBulletPass = CTimer::GetFrameCounter();
+        Play(SND_BANK_SLOT_BULLET_PASS, (eSoundID)CAEAudioUtility::GetRandomNumberInRange<int32>(0, 2), pos, SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END, 1.0f, bulletEvent, 0.03125f);
+        m_BulletPassCount++;
+    };
+
     switch (event) {
     case AE_FRONTEND_START:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 25,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 26,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-        }
-        return;
+        PlayInGameBank((eSoundID)25, (eSoundID)26, FLAGS_ROLLED_OFF, fSpeed);
+        break;
     case AE_FRONTEND_SELECT:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 6,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 7,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-        }
-        return;
+        PlayInMenuBank((eSoundID)6, (eSoundID)7, FLAGS_ROLLED_OFF);
+        break;
     case AE_FRONTEND_BACK:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 0,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 1,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-        }
-        return;
+        PlayInMenuBank((eSoundID)0, (eSoundID)1, FLAGS_ROLLED_OFF);
+        break;
     case AE_FRONTEND_HIGHLIGHT:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 4,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 5,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-        }
-        return;
+        PlayInMenuBank((eSoundID)4, (eSoundID)5, FLAGS_PAUSABLE);
+        break;
     case AE_FRONTEND_ERROR:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 2,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 3,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
-        }
-        return;
+        PlayInMenuBank((eSoundID)2, (eSoundID)3, FLAGS_ROLLED_OFF);
+        break;
     case AE_FRONTEND_NOISE_TEST:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_MENU,
-                .SoundID         = 8,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .Speed           = fSpeed,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_MENU, SND_BANK_SLOT_FRONTEND_MENU)) {
+            Play(SND_BANK_SLOT_FRONTEND_MENU, (eSoundID)8, YVECP, FLAGS_NOT_FORCED, fSpeed);
         }
-        return;
+        break;
     case AE_FRONTEND_PICKUP_WEAPON:
     case AE_FRONTEND_CAR_FIT_BOMB_TIMED:
     case AE_FRONTEND_CAR_FIT_BOMB_BOOBY_TRAPPED:
     case AE_FRONTEND_CAR_FIT_BOMB_REMOTE_CONTROLLED:
     case AE_FRONTEND_PURCHASE_WEAPON:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && CTimer::GetFrameCounter() >= m_nLastFrameGeneral_or_nFrameCount + 5) {
-            m_nLastFrameGeneral_or_nFrameCount = CTimer::GetFrameCounter();
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 27,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 28,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankEveryFewFrames(m_nLastFrameGeneral_or_nFrameCount, (eSoundID)27, (eSoundID)28, FLAGS_PAUSABLE, fSpeed);
+        break;
     case AE_FRONTEND_PICKUP_MONEY:
     case AE_FRONTEND_PICKUP_HEALTH:
     case AE_FRONTEND_PICKUP_ADRENALINE:
     case AE_FRONTEND_PICKUP_BODY_ARMOUR:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && CTimer::GetFrameCounter() >= m_nLastFrameGeneral_or_nFrameCount + 5) {
-            m_nLastFrameGeneral_or_nFrameCount = CTimer::GetFrameCounter();
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 16,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 17,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankEveryFewFrames(m_nLastFrameGeneral_or_nFrameCount, (eSoundID)16, (eSoundID)17, FLAGS_PAUSABLE, fSpeed);
+        break;
     case AE_FRONTEND_PICKUP_INFO:
     case AE_FRONTEND_DISPLAY_INFO:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 14,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 15,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBank((eSoundID)14, (eSoundID)15, FLAGS_ROLLED_OFF, fSpeed);
+        break;
     case AE_FRONTEND_PICKUP_DRUGS:
     case AE_FRONTEND_PICKUP_COLLECTABLE1:
     case AE_FRONTEND_PART_MISSION_COMPLETE:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && CTimer::GetFrameCounter() >= m_nLastFrameMissionComplete + 5) {
-            m_nLastFrameMissionComplete = CTimer::GetFrameCounter();
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 18,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 19,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_ROLLED_OFF | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankEveryFewFrames(m_nLastFrameMissionComplete, (eSoundID)18, (eSoundID)19, FLAGS_ROLLED_OFF, fSpeed);
+        break;
     case AE_FRONTEND_CAR_NO_CASH:
     case AE_FRONTEND_CAR_IS_HOT:
     case AE_FRONTEND_CAR_ALREADY_RIGGED:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && CTimer::GetFrameCounter() >= m_nLastFrameGeneral_or_nFrameCount + 5) {
-            m_nLastFrameGeneral_or_nFrameCount = CTimer::GetFrameCounter();
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 27,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 0.841f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 28,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 0.841f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankEveryFewFrames(m_nLastFrameGeneral_or_nFrameCount, (eSoundID)27, (eSoundID)28, FLAGS_PAUSABLE, 0.841f);
+        break;
     case AE_FRONTEND_CAR_RESPRAY:
-    {
-        if (!AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN)) {
-            return;
+        if (IsLoaded(SND_BANK_GENRL_WEAPONS, SND_BANK_SLOT_WEAPON_GEN)) {
+            // The sound of each side has its own pitch
+            const auto leftIsHigher = CAEAudioUtility::ResolveProbability(0.5f);
+            Play(SND_BANK_SLOT_WEAPON_GEN, SND_GENRL_WEAPONS_SPRAY_PAINT, XVECM, FLAGS_UPDATES, leftIsHigher ? 1.1892101f : 1.0f, AE_FRONTEND_CAR_RESPRAY);
+            Play(SND_BANK_SLOT_WEAPON_GEN, SND_GENRL_WEAPONS_SPRAY_PAINT, XVECP, FLAGS_UPDATES, leftIsHigher ? 1.0f : 1.1892101f, AE_FRONTEND_CAR_RESPRAY);
+            m_nLastTimeCarRespray = CTimer::GetTimeInMS();
         }
-
-        const auto PlaySound = [&](const CVector& position, bool choice) {
-            AESoundManager.PlaySound({
-                .BankSlotID        = SND_BANK_SLOT_WEAPON_GEN,
-                .SoundID           = SND_GENRL_WEAPONS_SPRAY_PAINT,
-                .AudioEntity       = this,
-                .Pos               = position,
-                .Volume            = volume,
-                .RollOffFactor     = 1.0f,
-                .Speed             = choice ? 1.1892101f : 1.0f,
-                .Doppler           = 1.0f,
-                .FrameDelay        = 0,
-                .Flags             = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_PLAY_PHYSICALLY | SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime          = 0
-            });
-        };
-        const auto choice = CAEAudioUtility::ResolveProbability(0.5f);
-        PlaySound(XVECM, choice);
-        PlaySound(XVECP, !choice);
-
-        m_nLastTimeCarRespray = CTimer::GetTimeInMS();
-        return;
-    }
+        break;
     case AE_FRONTEND_BULLET_PASS_LEFT_REAR:
-        if (!AEAudioHardware.IsSoundBankLoaded(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS) || CTimer::GetFrameCounter() < m_nLastFrameBulletPass + 5)
-            return;
-
-        // inlined
-        if (m_BulletPassCount > 10) {
-            if (!AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_BULLET_PASS)) {
-                IncrementBulletHitsBank();
-                AEAudioHardware.LoadSoundBank(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS);
-                m_BulletPassCount = 0;
-            }
-            return;
-        }
-
-        m_nLastFrameBulletPass = CTimer::GetFrameCounter();
-        AESoundManager.PlaySound({
-            .BankSlotID      = SND_BANK_SLOT_BULLET_PASS,
-            .SoundID         = CAEAudioUtility::GetRandomNumberInRange<eSoundID>(0, 2),
-            .AudioEntity     = this,
-            .Pos             = { -0.1f, -1.0f, 0.0f },
-            .Volume          = volume,
-            .RollOffFactor   = 1.0f,
-            .Speed           = 1.0f,
-            .Doppler         = 1.0f,
-            .FrameDelay      = 0,
-            .Flags           = SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-            .FrequencyVariance = 0.03125f,
-            .PlayTime        = 0
-        });
-        ++m_BulletPassCount;
-        return;
+        BulletPass({ -0.1f, -1.0f, 0.0f }, AE_FRONTEND_BULLET_PASS_LEFT_REAR);
+        break;
     case AE_FRONTEND_BULLET_PASS_LEFT_FRONT:
-        if (!AEAudioHardware.IsSoundBankLoaded(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS) || CTimer::GetFrameCounter() < m_nLastFrameBulletPass + 5)
-            return;
-
-        // inlined
-        if (m_BulletPassCount > 10) {
-            if (!AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_BULLET_PASS)) {
-                IncrementBulletHitsBank();
-                AEAudioHardware.LoadSoundBank(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS);
-                m_BulletPassCount = 0;
-            }
-            return;
-        }
-
-        m_nLastFrameBulletPass = CTimer::GetFrameCounter();
-        AESoundManager.PlaySound({
-            .BankSlotID      = SND_BANK_SLOT_BULLET_PASS,
-            .SoundID         = CAEAudioUtility::GetRandomNumberInRange<eSoundID>(0, 2),
-            .AudioEntity     = this,
-            .Pos             = { -0.1f, +1.0f, 0.0f },
-            .Volume          = volume,
-            .RollOffFactor   = 1.0f,
-            .Speed           = 1.0f,
-            .Doppler         = 1.0f,
-            .FrameDelay      = 0,
-            .Flags           = SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-            .FrequencyVariance = 0.03125f,
-            .PlayTime        = 0
-        });
-        ++m_BulletPassCount;
-        return;
+        BulletPass({ -0.1f, +1.0f, 0.0f }, AE_FRONTEND_BULLET_PASS_LEFT_FRONT);
+        break;
     case AE_FRONTEND_BULLET_PASS_RIGHT_REAR:
-        if (!AEAudioHardware.IsSoundBankLoaded(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS) || CTimer::GetFrameCounter() < m_nLastFrameBulletPass + 5)
-            return;
-
-        if (m_BulletPassCount <= 10) {
-            m_nLastFrameBulletPass = CTimer::GetFrameCounter();
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_BULLET_PASS,
-                .SoundID         = CAEAudioUtility::GetRandomNumberInRange<eSoundID>(0, 2),
-                .AudioEntity     = this,
-                .Pos             = { 0.1f, -1.0f, 0.0f },
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.03125f,
-                .PlayTime        = 0
-            });
-            ++m_BulletPassCount;
-            return;
-        }
-
-        if (!AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_BULLET_PASS)) {
-            // inlined
-            IncrementBulletHitsBank();
-            AEAudioHardware.LoadSoundBank(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS);
-            m_BulletPassCount = 0;
-        }
-        return;
+        BulletPass({ +0.1f, -1.0f, 0.0f }, AE_FRONTEND_BULLET_PASS_RIGHT_REAR);
+        break;
     case AE_FRONTEND_BULLET_PASS_RIGHT_FRONT:
-        if (AEAudioHardware.IsSoundBankLoaded(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS) && CTimer::GetFrameCounter() >= m_nLastFrameBulletPass + 5) {
-            if (m_BulletPassCount <= 10) {
-                m_nLastFrameBulletPass = CTimer::GetFrameCounter();
-                AESoundManager.PlaySound({
-                    .BankSlotID      = SND_BANK_SLOT_BULLET_PASS,
-                    .SoundID         = CAEAudioUtility::GetRandomNumberInRange<eSoundID>(0, 2),
-                    .AudioEntity     = this,
-                    .Pos             = { 0.1f, +1.0f, 0.0f },
-                    .Volume          = volume,
-                    .RollOffFactor   = 1.0f,
-                    .Speed           = 1.0f,
-                    .Doppler         = 1.0f,
-                    .FrameDelay      = 0,
-                    .Flags           = SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                    .FrequencyVariance = 0.03125f,
-                    .PlayTime        = 0
-                });
-                ++m_BulletPassCount;
-            } else {
-                if (!AESoundManager.AreSoundsPlayingInBankSlot(SND_BANK_SLOT_BULLET_PASS)) {
-                    // inlined
-                    IncrementBulletHitsBank();
-                    AEAudioHardware.LoadSoundBank(m_BulletPassBank, SND_BANK_SLOT_BULLET_PASS);
-                    m_BulletPassCount = 0;
-                }
-            }
-        }
-        return;
+        BulletPass({ +0.1f, +1.0f, 0.0f }, AE_FRONTEND_BULLET_PASS_RIGHT_FRONT);
+        break;
     case AE_FRONTEND_WAKEUP_AMPLIFIER:
-        if (!m_bAmplifierWakeUp && AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            m_pAmplifierWakeUp = AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 8,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
+        if (!m_bAmplifierWakeUp && IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
+            m_pAmplifierWakeUp = Play(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)8, YVECP, FLAGS_NOT_FORCED | SOUND_REQUEST_UPDATES, fSpeed);
             m_bAmplifierWakeUp = m_pAmplifierWakeUp != nullptr;
         }
-        return;
+        break;
     case AE_FRONTEND_TIMER_COUNT:
-        if (AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_TIMER_COUNT, this)) {
-            m_nLatestTimerCount = CTimer::GetTimeInMS();
-            return;
+        if (!AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_TIMER_COUNT, this)) {
+            if (!IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
+                break;
+            }
+            PlayPair(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)4, (eSoundID)5, FLAGS_UPDATES, fSpeed, AE_FRONTEND_TIMER_COUNT);
         }
-
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 4,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_PLAY_PHYSICALLY | SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 5,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_PLAY_PHYSICALLY | SOUND_REQUEST_UPDATES | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-            m_nLatestTimerCount = CTimer::GetTimeInMS();
+        m_nLatestTimerCount = CTimer::GetTimeInMS();
+        break;
+    case AE_FRONTEND_RADIO_RETUNE_START:
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
+            // The one for when the game is paused is the one that keeps going
+            auto& tune = CTimer::GetIsPaused() ? m_objRetunePaused : m_objRetune;
+            if (!tune.IsActive()) {
+                tune.Initialise(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)2, (eSoundID)1, this, 200, 650, -1, -1);
+                tune.PlayTwinLoopSound(YVECP, volume, 1.0f, 1.0f, 1.0f, (eSoundEnvironment)(CTimer::GetIsPaused() ? 0x15B : 0x14B));
+            }
         }
-        return;
+        break;
+    case AE_FRONTEND_RADIO_RETUNE_STOP:
+        if (!CTimer::GetIsPaused()) {
+            if (m_objRetune.IsActive()) {
+                m_objRetune.StopSoundAndForget();
+            }
+            break;
+        }
+        [[fallthrough]];
+    case AE_FRONTEND_RADIO_RETUNE_STOP_PAUSED:
+        if (m_objRetunePaused.IsActive()) {
+            m_objRetunePaused.StopSoundAndForget();
+        }
+        break;
     case AE_FRONTEND_RADIO_CLICK_ON:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 23,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankMiddle((eSoundID)23, FLAGS_NOT_FORCED, 1.0f);
+        break;
     case AE_FRONTEND_RADIO_CLICK_OFF:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 23,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 0.8909f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankMiddle((eSoundID)23, FLAGS_NOT_FORCED, 0.8909f);
+        break;
     case AE_FRONTEND_FIRE_FAIL_SNIPERRIFFLE:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 10,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FRONT_END | SOUND_IS_CANCELLABLE,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankMiddle((eSoundID)10, SOUND_IS_CANCELLABLE | SOUND_FRONT_END, fSpeed);
+        break;
     case AE_FRONTEND_FIRE_FAIL_ROCKET:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 11,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FRONT_END | SOUND_IS_CANCELLABLE,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankMiddle((eSoundID)11, SOUND_IS_CANCELLABLE | SOUND_FRONT_END, fSpeed);
+        break;
+    case AE_FRONTEND_RACE_321:
+        PlayInGameBank((eSoundID)6, (eSoundID)7, FLAGS_ROLLED_OFF, fSpeed);
+        break;
+    case AE_FRONTEND_RACE_GO:
+        PlayInGameBank((eSoundID)12, (eSoundID)13, FLAGS_ROLLED_OFF, fSpeed);
+        break;
     case AE_FRONTEND_BUY_CAR_MOD:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 9,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = 1.0f,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0588f,
-                .PlayTime        = 0
-            });
-        }
-        return;
+        PlayInGameBankMiddle((eSoundID)9, FLAGS_NOT_FORCED, 1.0f, AE_UNDEFINED, 0.0588f);
+        break;
     case AE_FRONTEND_SCANNER_NOISE_START:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_SCANNER_NOISE_START, this)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 3,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_SCANNER_NOISE_START, this)) {
+            Play(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)3, YVECP, SOUND_IS_DUCKABLE | SOUND_IS_CANCELLABLE | SOUND_FRONT_END, fSpeed, AE_FRONTEND_SCANNER_NOISE_START);
         }
-        return;
+        break;
+    case AE_FRONTEND_SCANNER_NOISE_STOP:
+        AESoundManager.CancelSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_SCANNER_NOISE_START, this);
+        break;
     case AE_FRONTEND_SCANNER_CLICK:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_SCANNER_CLICK, this)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 24,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_IS_CANCELLABLE | SOUND_FRONT_END
-            });
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_SCANNER_CLICK, this)) {
+            Play(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)24, YVECP, SOUND_IS_DUCKABLE | SOUND_IS_CANCELLABLE | SOUND_FRONT_END, fSpeed, AE_FRONTEND_SCANNER_CLICK);
         }
-        return;
+        break;
     case AE_FRONTEND_LOADING_TUNE_START:
-        if (   AEAudioHardware.IsSoundLoaded(SND_BANK_GENRL_LOADING, 2 * m_nbLoadingTuneSeed, SND_BANK_SLOT_COLLISIONS)
-            && AEAudioHardware.IsSoundLoaded(SND_BANK_GENRL_LOADING, 2 * m_nbLoadingTuneSeed + 1, SND_BANK_SLOT_WEAPON_GEN)
+        if (   AEAudioHardware.IsSoundLoaded(SND_BANK_GENRL_LOADING, (eSoundID)(2 * m_nbLoadingTuneSeed), SND_BANK_SLOT_COLLISIONS)
+            && AEAudioHardware.IsSoundLoaded(SND_BANK_GENRL_LOADING, (eSoundID)(2 * m_nbLoadingTuneSeed + 1), SND_BANK_SLOT_WEAPON_GEN)
             && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_LOADING_TUNE_START, this)
         ) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_WEAPON_GEN,
-                .SoundID         = 2 * m_nbLoadingTuneSeed,
-                .AudioEntity     = this,
-                .Pos             = XVECM,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
-
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_WEAPON_GEN,
-                .SoundID         = 2 * m_nbLoadingTuneSeed + 1,
-                .AudioEntity     = this,
-                .Pos             = XVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_FORCED_FRONT | SOUND_IS_DUCKABLE | SOUND_IS_PAUSABLE | SOUND_PLAY_PHYSICALLY | SOUND_IS_CANCELLABLE | SOUND_FRONT_END,
-                .FrequencyVariance = 0.0f,
-                .PlayTime        = 0
-            });
+            Play(SND_BANK_SLOT_COLLISIONS, (eSoundID)(2 * m_nbLoadingTuneSeed), XVECM, FLAGS_PAUSABLE, fSpeed, AE_FRONTEND_LOADING_TUNE_START);
+            Play(SND_BANK_SLOT_WEAPON_GEN, (eSoundID)(2 * m_nbLoadingTuneSeed + 1), XVECP, FLAGS_PAUSABLE, fSpeed, AE_FRONTEND_LOADING_TUNE_START);
         }
-        return;
+        break;
+    case AE_FRONTEND_LOADING_TUNE_STOP:
+        AESoundManager.CancelSoundsOfThisEventPlayingForThisEntity(AE_FRONTEND_LOADING_TUNE_START, this);
+        break;
     case AE_MISSILE_LOCK:
-        if (AEAudioHardware.IsSoundBankLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_MISSILE_LOCK, this)) {
-            AESoundManager.PlaySound({
-                .BankSlotID      = SND_BANK_SLOT_FRONTEND_GAME,
-                .SoundID         = 13,
-                .AudioEntity     = this,
-                .Pos             = YVECP,
-                .Volume          = volume,
-                .RollOffFactor   = 1.0f,
-                .Speed           = fSpeed,
-                .Doppler         = 1.0f,
-                .FrameDelay      = 0,
-                .Flags           = SOUND_IS_DUCKABLE | SOUND_FRONT_END
-            });
+        if (IsLoaded(SND_BANK_GENRL_FRONTEND_GAME, SND_BANK_SLOT_FRONTEND_GAME) && !AESoundManager.AreSoundsOfThisEventPlayingForThisEntity(AE_MISSILE_LOCK, this)) {
+            Play(SND_BANK_SLOT_FRONTEND_GAME, (eSoundID)13, YVECP, SOUND_IS_DUCKABLE | SOUND_FRONT_END, fSpeed, AE_MISSILE_LOCK);
         }
-        return;
+        break;
     default:
-        return;
+        break;
     }
 }
 
@@ -809,7 +348,7 @@ void CAEFrontendAudioEntity::InjectHooks() {
 
     RH_ScopedInstall(Initialise, 0x5B9AB0);
     RH_ScopedInstall(Reset, 0x4DD440);
-    RH_ScopedInstall(AddAudioEvent, 0x4DD4A0, { .Reversed = false });
+    RH_ScopedInstall(AddAudioEvent, 0x4DD4A0);
     RH_ScopedInstall(IsRadioTuneSoundActive, 0x4DD480);
     RH_ScopedInstall(IsLoadingTuneActive, 0x4DD470);
     RH_ScopedVMTInstall(UpdateParameters, 0x4DEDA0);
