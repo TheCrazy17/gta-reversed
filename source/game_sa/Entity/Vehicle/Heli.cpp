@@ -18,6 +18,9 @@ void CHeli::InjectHooks() {
     RH_ScopedInstall(SwitchPoliceHelis, 0x6C4800);
     RH_ScopedInstall(RenderAllHeliSearchLights, 0x6C7C50);
     RH_ScopedInstall(TestSniperCollision, 0x6C6890);
+    RH_ScopedInstall(UpdateHelis, 0x6C79A0);
+    RH_ScopedInstall(GenerateHeli, 0x6C6520);
+    RH_ScopedVMTInstall(BlowUpCar, 0x6C6D30);
     RH_ScopedVMTInstall(Render, 0x6C4400);
     RH_ScopedVMTInstall(Fix, 0x6C4530);
     RH_ScopedVMTInstall(BurstTyre, 0x6C4330);
@@ -198,7 +201,68 @@ void CHeli::SearchLightCone(int32 coronaIndex,
 
 // 0x6C6520
 CHeli* CHeli::GenerateHeli(CPed* target, bool newsHeli) {
-    return ((CHeli * (__cdecl*)(CPed*, bool))0x6C6520)(target, newsHeli);
+    auto* heli = new CHeli(newsHeli ? MODEL_VCNMAV : MODEL_POLMAV, PERMANENT_VEHICLE);
+
+    // The heli appears 250 units away from the target, in a random direction
+    const auto targetPos = target->GetPosition();
+    const auto angleStep = (double)(CGeneral::GetRandomNumber() & 0xFF) * 0.02453125f;
+    auto       angle     = (float)angleStep;
+    CVector    pos{
+        (float)(std::cos(angleStep) * 250.0 + targetPos.x),
+        (float)(std::sin((double)angle) * 250.0 + targetPos.y),
+        targetPos.z
+    };
+
+    // Outside of the map, so flip the direction
+    if (pos.x < -3000.0f || pos.x > 3000.0f || pos.y < -3000.0f || pos.y > 3000.0f) {
+        angle += PI;
+        pos = CVector{
+            (float)(std::cos((double)angle) * 250.0 + targetPos.x),
+            (float)(std::sin((double)angle) * 250.0 + targetPos.y),
+            targetPos.z
+        };
+    }
+    pos.z += 50.0f;
+
+    // Near Mount Chiliad the heli would spawn inside the mountain, so it appears above the target instead
+    const auto dx = (double)pos.x - -2322.0;
+    const auto dy = (double)pos.y - -1653.0;
+    if (std::sqrt(dx * dx + dy * dy) < 350.0) {
+        pos = CVector{ targetPos.x, targetPos.y, std::max(targetPos.z + 200.0f, 560.0f) };
+    }
+
+    const auto minZ = (double)CWorld::FindGroundZForCoord(pos.x, pos.y) + 20.0;
+    if ((double)pos.z <= minZ) {
+        pos.z = (float)minZ;
+    }
+    heli->GetMatrix().SetTranslate(pos);
+
+    heli->vehicleFlags.bIsLocked = true;
+    heli->SetStatus(STATUS_PHYSICS);
+
+    if (newsHeli) {
+        heli->m_autoPilot.m_nCarMission  = MISSION_HELI_NEWS_BEHAVIOUR;
+        heli->m_autoPilot.m_nCruiseSpeed = 35;
+    } else {
+        heli->m_autoPilot.m_nCarMission  = MISSION_HELI_POLICE_BEHAVIOUR;
+        heli->m_autoPilot.m_nCruiseSpeed = 70;
+    }
+    heli->m_autoPilot.m_TargetEntity = reinterpret_cast<CVehicle*>(target); // The target is a ped here
+    heli->m_fMaxAltitude             = newsHeli ? 30.0f : 20.0f;
+    heli->m_fMinAltitude             = newsHeli ? 27.0f : 12.0f;
+    heli->m_fHeliRotorSpeed          = 0.165f;
+
+    const auto heading = (double)(angle + PI);
+    const auto sinA    = (float)std::sin(heading);
+    const auto cosA    = (float)std::cos(heading);
+    auto&      matrix  = heli->GetMatrix();
+    matrix.GetRight()   = CVector{ sinA, -cosA, 0.0f };
+    matrix.GetForward() = CVector{ cosA, sinA, 0.0f };
+    matrix.GetUp()      = CVector{ 0.0f, 0.0f, 1.0f };
+
+    CWorld::Add(heli);
+    heli->SetUpDriver(-1, false, false);
+    return heli;
 }
 
 // 0x6C6890
@@ -230,7 +294,91 @@ bool CHeli::SendDownSwat() {
 void CHeli::UpdateHelis() {
     ZoneScoped;
 
-    ((void(__cdecl*)())0x6C79A0)();
+    NumberOfSearchLights = 0;
+
+    const auto IsAlive = [](CHeli* heli) { return !heli->physicalFlags.bRenderScorched && !heli->vehicleFlags.bIsDrowning; };
+
+    auto numHelisRequired = FindPlayerWanted()->NumOfHelisRequired();
+
+    // A police heli is already around, so the next one can be a news heli
+    auto wantNewsHeli = false;
+    auto numHelis     = 0;
+    for (auto* heli : pHelis) {
+        if (!heli) {
+            continue;
+        }
+        numHelis++;
+        if (heli->m_nModelIndex == MODEL_POLMAV && IsAlive(heli)) {
+            wantNewsHeli = true;
+        }
+    }
+
+    if (CCullZones::PlayerNoRain() || CGame::currArea != AREA_CODE_NORMAL_WORLD) {
+        numHelisRequired = 0;
+    }
+    if (!bPoliceHelisAllowed) {
+        numHelisRequired = 0;
+    }
+    if (CWeather::OldWeatherType == WEATHER_SANDSTORM_DESERT || CWeather::NewWeatherType == WEATHER_SANDSTORM_DESERT) {
+        numHelisRequired = 0;
+    }
+
+    for (auto* heli : pHelis) {
+        if (heli && heli->m_nModelIndex == MODEL_VCNMAV) {
+            wantNewsHeli = false;
+        }
+    }
+    if (!CWanted::UseNewsHeliInAdditionToPolice) {
+        wantNewsHeli = false;
+    }
+
+    const auto canGenerate = wantNewsHeli ? bNewsHeliGenerationAllowed : bPoliceHeliGenerationAllowed;
+    if (canGenerate && TestForNewRandomHelisTimer < CTimer::GetTimeInMS()) {
+        TestForNewRandomHelisTimer = CTimer::GetTimeInMS() + 15'000;
+        if (numHelis < numHelisRequired) {
+            auto* newHeli = GenerateHeli(FindPlayerPed(), wantNewsHeli);
+            for (auto& slot : pHelis) {
+                if (!slot) {
+                    slot = newHeli;
+                    newHeli->RegisterReference(reinterpret_cast<CEntity**>(&slot));
+                    break;
+                }
+            }
+        }
+    }
+
+    for (auto& slot : pHelis) {
+        auto* heli = slot;
+        if (!heli) {
+            continue;
+        }
+        if (!IsAlive(heli)) {
+            heli->m_autoPilot.m_nCarMission = MISSION_HELI_FLY_AWAY_FROM_PLAYER;
+            slot = nullptr;
+        } else if (heli->m_autoPilot.m_nCarMission == MISSION_HELI_FLY_AWAY_FROM_PLAYER) {
+            if ((FindPlayerCoors() - heli->GetPosition()).Magnitude() > 170.0f) {
+                CWorld::Remove(heli);
+                delete heli;
+                slot = nullptr;
+            }
+        }
+    }
+
+    // Helis that are no longer needed fly away
+    const auto FlyAwayIfNotNeeded = [&](CHeli* heli, bool countAsNeeded) {
+        if (!heli || heli->m_autoPilot.m_nCarMission == MISSION_HELI_FLY_AWAY_FROM_PLAYER) {
+            return;
+        }
+        if (numHelisRequired < 1) {
+            heli->m_autoPilot.m_nCarMission = MISSION_HELI_FLY_AWAY_FROM_PLAYER;
+            heli->m_fMinAltitude            = 100.0f;
+            heli->m_fMaxAltitude            = 100.0f;
+        } else if (countAsNeeded) {
+            numHelisRequired--;
+        }
+    };
+    FlyAwayIfNotNeeded(pHelis[0], true);
+    FlyAwayIfNotNeeded(pHelis[1], false);
 }
 
 // 0x6C7C50
@@ -260,7 +408,84 @@ void CHeli::RenderAllHeliSearchLights() {
 
 // 0x6C6D30
 void CHeli::BlowUpCar(CEntity* damager, bool bHideExplosion) {
-    plugin::CallMethod<0x6C6D30, CHeli*, CEntity*, uint8>(this, damager, bHideExplosion);
+    if (!vehicleFlags.bCanBeDamaged) {
+        return;
+    }
+
+    const auto isRCModel = notsa::contains({ MODEL_RCRAIDER, MODEL_RCGOBLIN }, GetModelId());
+
+    // AI controlled helis crash and burn first, they blow up once they hit something afterwards
+    if (GetStatus() != STATUS_PLAYER && m_autoPilot.m_nCarMission != MISSION_HELI_CRASH_AND_BURN && !isRCModel) {
+        m_autoPilot.SetCarMission(MISSION_HELI_CRASH_AND_BURN);
+        m_fHealth = 0.0f;
+        return;
+    }
+
+    if (damager == FindPlayerPed() || damager == FindPlayerVehicle()) {
+        auto& playerInfo = FindPlayerInfo();
+        playerInfo.m_nHavocCaused += 20;
+        playerInfo.m_fCurrentChaseValue += 10.0f;
+        CStats::IncrementStat(STAT_COST_OF_PROPERTY_DAMAGED, (float)(CGeneral::GetRandomNumber() % 6000 + 4000));
+    }
+
+    if (m_nModelIndex == MODEL_VCNMAV) {
+        CWanted::UseNewsHeliInAdditionToPolice = false;
+    }
+
+    if (GetStatus() == STATUS_PLAYER) {
+        m_bUsesCollision = false;
+        m_bIsVisible     = false;
+        m_vecMoveSpeed   = CVector{};
+        m_vecTurnSpeed   = CVector{};
+    }
+
+    SetStatus(STATUS_WRECKED);
+    physicalFlags.bRenderScorched = true;
+    m_nTimeWhenBlowedUp           = CTimer::GetTimeInMS();
+
+    CVisibilityPlugins::SetClumpForAllAtomicsFlag(GetRpClump(), eAtomicComponentFlag::ATOMIC_PIPE_NO_EXTRA_PASSES);
+    m_damageManager.FuckCarCompletely(false);
+
+    if (!isRCModel) {
+        for (auto bumper : { FRONT_BUMPER, REAR_BUMPER }) {
+            SetBumperDamage(bumper, false);
+        }
+        for (auto door : { DOOR_BONNET, DOOR_BOOT, DOOR_LEFT_FRONT, DOOR_RIGHT_FRONT, DOOR_LEFT_REAR, DOOR_RIGHT_REAR }) {
+            SetDoorDamage(door, false);
+        }
+        SpawnFlyingComponent(CAR_WHEEL_LF, 1);
+        if (const auto atomic = GetCurrentAtomicObject(m_aCarNodes[CAR_WHEEL_LF])) {
+            RpAtomicSetFlags(atomic, 0);
+        }
+    }
+
+    m_nBombOnBoard = 0;
+    m_fHealth      = 0.0f;
+    m_wBombTimer   = 0;
+
+    TheCamera.CamShake(0.4f, GetPosition());
+    KillPedsInVehicle();
+
+    vehicleFlags.bLightsOn     = false;
+    vehicleFlags.bEngineOn     = false;
+    vehicleFlags.bSirenOrAlarm = false;
+    m_nOverrideLights          = NO_CAR_LIGHT_OVERRIDE;
+    autoFlags.bTaxiLight       = false;
+
+    if (vehicleFlags.bIsAmbulanceOnDuty) {
+        vehicleFlags.bIsAmbulanceOnDuty = false;
+        CCarCtrl::NumAmbulancesOnDuty--;
+    }
+    if (vehicleFlags.bIsFireTruckOnDuty) {
+        vehicleFlags.bIsFireTruckOnDuty = false;
+        CCarCtrl::NumFireTrucksOnDuty--;
+    }
+
+    ChangeLawEnforcerState(false);
+
+    gFireManager.StartFire(this, damager);
+    CDarkel::RegisterCarBlownUpByPlayer(*this, 0);
+    CExplosion::AddExplosion(this, damager, isRCModel ? EXPLOSION_RC_VEHICLE : EXPLOSION_AIRCRAFT, GetPosition(), 0, true, -1.0f, false);
 }
 
 // 0x6C4530

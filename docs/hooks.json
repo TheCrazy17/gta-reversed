@@ -39511,6 +39511,21 @@
   },
   {
     "Category": "CHeli",
+    "Name": "UpdateHelis",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
+    "Name": "GenerateHeli",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
+    "Name": "BlowUpCar",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
     "Name": "Render",
     "IsReversed": true
   },
