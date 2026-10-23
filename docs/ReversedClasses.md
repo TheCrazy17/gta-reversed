@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 15:41:07 UTC
+Last update was at Oct 23, 2026 at 18:10:29 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8339 out of 8339 functions done in 719 categories)
+## Stats (8340 out of 8340 functions done in 719 categories)
 
 #### Completely reversed categories (719/719) [100%]
 
@@ -81,7 +81,7 @@ Last update was at Oct 23, 2026 at 15:41:07 UTC
 - CDirectory (10)<br />
 - CBulletTraces (5)<br />
 - CDebug (1)<br />
-- CGame (22)<br />
+- CGame (23)<br />
 - CControllerState (2)<br />
 - CKeyboardState (1)<br />
 - CMouseControllerState (3)<br />

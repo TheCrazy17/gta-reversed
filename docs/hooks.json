@@ -4975,6 +4975,11 @@
     "IsReversed": true
   },
   {
+    "Category": "CGame",
+    "Name": "D3DDeviceRestoreCallback",
+    "IsReversed": true
+  },
+  {
     "Category": "CControllerState",
     "Name": "Clear",
     "IsReversed": true

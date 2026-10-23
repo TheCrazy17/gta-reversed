@@ -760,7 +760,7 @@ void CAutomobile::ProcessControl()
 
         float traction = m_pHandlingData->m_fTractionMultiplier / 250.0f; // (0.004f * mult)
         if (GetStatus() == STATUS_PHYSICS)
-            traction = 250.0f / m_fCarTraction * m_pHandlingData->m_fTractionMultiplier;
+            traction = m_fCarTraction * m_pHandlingData->m_fTractionMultiplier / 250.0f;
         traction *= 0.25f / m_fVelocityFrequency;
         CPlane* vortex = AsPlane();
         if (CCheat::IsActive(CHEAT_PERFECT_HANDLING) || m_nModelIndex == MODEL_VORTEX && vortex->m_fAccelerationBreakStatus == 0.0f)
@@ -2592,13 +2592,12 @@ void CAutomobile::SetupSuspensionLines() {
     // 0x6A681C
     // This was probably inlined? Not sure..
     if (cd.m_pLines[0].m_vecEnd.z < cm.m_boundBox.m_vecMin.z) {
-        // V570 The 'wcd.m_pLines[0].m_vecEnd.z' variable is assigned to itself.
-        // todo: figure out what they want
-        // wcd.m_pLines[0].m_vecEnd.z = wcd.m_pLines[0].m_vecEnd.z; // Adjust bounding box
-
-        // Adjust bounding sphere radius - Originally outside this `if`, but that's pointless - This was most likely inlined.
-        cm.m_boundSphere.m_fRadius = std::max({ cm.m_boundSphere.m_fRadius, cm.m_boundBox.m_vecMin.Magnitude(), cm.m_boundBox.m_vecMax.Magnitude() });
+        cm.m_boundBox.m_vecMin.z = cd.m_pLines[0].m_vecEnd.z; // Adjust bounding box
     }
+
+    // 0x6A6836
+    // Adjust bounding sphere radius - This was most likely inlined.
+    cm.m_boundSphere.m_fRadius = std::max({ cm.m_boundSphere.m_fRadius, cm.m_boundBox.m_vecMin.Magnitude(), cm.m_boundBox.m_vecMax.Magnitude() });
 
     // 0x6A68C1
     // Adjust sphere sizes for rcbandit
@@ -2617,9 +2616,9 @@ void CAutomobile::SetupSuspensionLines() {
             const auto sphBottomZ = sph.m_vecCenter.z - sph.m_fRadius;
             if (sphBottomZ < sphBottomMinZ) {
                 if (sph.m_fRadius > 0.4f) {
-                    sph.m_fRadius = std::max(0.4f, sphBottomZ);
-                    sph.m_vecCenter.z = sphBottomZ + sph.m_fRadius;
+                    sph.m_fRadius = std::max(0.4f, sph.m_vecCenter.z - sphBottomMinZ);
                 }
+                sph.m_vecCenter.z = sphBottomMinZ + sph.m_fRadius;
             }
         }
     }
@@ -3752,8 +3751,11 @@ bool CAutomobile::UpdateMovingCollision(float angle) {
                     colAngleMult *= -1;
             }
 
-            m_wMiscComponentAngle += static_cast<uint16>(((float)pad->GetCarGunUpDown() / 128.0f) * colAngleMult * CTimer::GetTimeStep());
-            m_wMiscComponentAngle = std::clamp<uint16>(m_wMiscComponentAngle, 0, DEFAULT_COLLISION_EXTENDLIMIT);
+            m_wMiscComponentAngle = static_cast<uint16>(std::clamp<int32>( // 0x6A16C0
+                m_wMiscComponentAngle + static_cast<int16>(((float)pad->GetCarGunUpDown() / 128.0f) * colAngleMult * CTimer::GetTimeStep()),
+                0,
+                DEFAULT_COLLISION_EXTENDLIMIT
+            ));
         }
 
         CMatrix rotMatrix;
@@ -4887,13 +4889,12 @@ void CAutomobile::ProcessCarOnFireAndExplode(bool bExplodeImmediately) {
     };
 
     const auto CreateFx = [&, this](size_t typ) {
-        auto pos = GetDummyPosition(DUMMY_ENGINE);
         if (const auto mat = GetModellingMatrix()) {
             m_pFireParticle = g_fxMan.CreateFxSystem(
                 typ == 1
                     ? "fire_car"
                     : "fire_large",
-                pos,
+                GetDummyPositionObjSpace(DUMMY_ENGINE),
                 mat
             );
         }
@@ -4969,16 +4970,21 @@ void CAutomobile::ProcessCarOnFireAndExplode(bool bExplodeImmediately) {
                 }
                 CreateFx(partFxToUse);
                 SetFxVelocity();
+            } else {
+                BlowUpCar(m_pExplosionVictim, false);
+                SetFxVelocity();
             }
+            return;
         } else {
             m_fBurnTimer += floorTsMS;
             if (m_fBurnTimer > 5000.f) {
                 BlowUpCar(m_pExplosionVictim, false);
             }
-            if (partFxToUse == 0) {
-                SetFxVelocity();
-                return;
+            if (partFxToUse != 0) {
+                CreateFx(partFxToUse);
             }
+            SetFxVelocity();
+            return;
         }
     }
 
@@ -5093,15 +5099,12 @@ CObject* CAutomobile::SpawnFlyingComponent(eCarNodes nodeIndex, uint32 collision
         obj->m_nRemovalTime = CTimer::GetTimeInMS() + 4'000;
     }
 
+    const auto isBonnetBootOrWindscreen = collisionType == 3 || collisionType == 4 || nodeIndex == eCarNodes::CAR_WINDSCREEN;
+
     const auto GetMoveSpeedZ = [&, this] {
         if (m_vecMoveSpeed.z <= 0.f) {
-            if (m_matrix->GetUp().z < 0.f /*flipped*/) {
-                switch (collisionType) {
-                case 3:
-                case 4:
-                case 18:
-                    return 0.04f - m_vecMoveSpeed.z * 1.5f;
-                }
+            if (m_matrix->GetUp().z > 0.f && isBonnetBootOrWindscreen) {
+                return 0.04f - m_vecMoveSpeed.z * 1.5f;
             }
             return m_vecMoveSpeed.z / 4.f;
         } else {
@@ -5112,16 +5115,11 @@ CObject* CAutomobile::SpawnFlyingComponent(eCarNodes nodeIndex, uint32 collision
     obj->m_vecTurnSpeed = m_vecTurnSpeed * 2.f;
 
     auto objDir = Normalized(obj->GetPosition() - GetPosition());
-    switch (collisionType) {
-    case 3:
-    case 4:
-    case 18: {
+    if (isBonnetBootOrWindscreen) {
         objDir += m_matrix->GetUp();
         if (m_matrix->GetUp().z > 0.f/*not flipped*/) {
             obj->m_matrix->GetPosition() += m_matrix->GetUp() * m_vecMoveSpeed.Magnitude2D();
         }
-        break;
-    }
     }
 
     obj->ApplyMoveForce(objDir);
