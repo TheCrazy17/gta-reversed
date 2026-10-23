@@ -446,18 +446,16 @@ void CBmx::PreRender() {
 
             const auto leanSign = m_RideAnimData.LeanAngle <= 0.0f ? 1.0f : -1.0f;
 
-            // NOTSA: forwards to the original (still-unreversed internally) wheel-effects dispatcher
-            // with its real 11-dword argument list (confirmed via a fresh decompile of this call site).
-            plugin::Call<0x405876, tWheelState, uint8, float, float, CVector*, CVector*, float, int32, eSkidmarkType, bool*, int32>(
+            AddSingleWheelParticles(
                 m_WheelStates[wheelIdx],
                 m_nWheelStatus[wheelIdx],
                 m_aRatioHistory[selIdx],
                 speed,
-                &wheelPos,
+                &m_aWheelColPoints[selIdx],
                 &effectOffset,
                 leanSign,
                 wheelIdx,
-                m_aWheelSkidmarkType[wheelIdx],
+                (uint32)m_aWheelSkidmarkType[wheelIdx],
                 &m_bWheelBloody[wheelIdx],
                 flags
             );
@@ -488,8 +486,7 @@ void CBmx::PreRender() {
 
     m_bLeanMatrixCalculated = false;
 
-    // NOTSA: forwards to the original (still-unreversed internally) crank/fork one-time matrix setup helper.
-    plugin::CallMethod<0x4019FC, CBmx*>(this);
+    CalculateLeanMatrix();
 
     CShadows::StoreShadowForVehicle(this, VEH_SHD_BIKE);
 
@@ -724,7 +721,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         extraHandlingFlags += 2;
         break;
     case STATUS_SIMPLE: {
-        plugin::CallMethod<0x403C48, CBmx*>(this); // NOTSA: shared AI dispatcher, unreversible/SecuROM internals - forwarded only
+        CCarAI::UpdateCarAI(this);
         CPhysical::ProcessControl();
         CCarCtrl::UpdateCarOnRails(this);
 
@@ -746,7 +743,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         break;
     }
     case STATUS_PHYSICS: {
-        plugin::CallMethod<0x403C48, CBmx*>(this); // NOTSA: shared AI dispatcher, unreversible/SecuROM internals - forwarded only
+        CCarAI::UpdateCarAI(this);
         CCarCtrl::SteerAICarWithPhysics(this);
         PlayHornIfNecessary();
         extraHandlingFlags += 2;
