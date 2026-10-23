@@ -18426,7 +18426,27 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddWheelGrass",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddWheelGravel",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddWheelMud",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "TriggerWaterHydrant",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "TriggerGunshot",
     "IsReversed": true
   },
   {

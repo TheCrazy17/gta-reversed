@@ -45,13 +45,13 @@ void Fx_c::InjectHooks() {
     RH_ScopedInstall(AddDebris, 0x49F750);
     RH_ScopedInstall(AddGlass, 0x49F970);
     // RH_ScopedInstall(AddWheelSpray, 0x49FB30);
-    // RH_ScopedInstall(AddWheelGrass, 0x49FF20);
-    // RH_ScopedInstall(AddWheelGravel, 0x4A0170);
-    // RH_ScopedInstall(AddWheelMud, 0x4A03C0);
+    RH_ScopedInstall(AddWheelGrass, 0x49FF20);
+    RH_ScopedInstall(AddWheelGravel, 0x4A0170);
+    RH_ScopedInstall(AddWheelMud, 0x4A03C0);
     // RH_ScopedInstall(AddWheelSand, 0x4A0610);
     // RH_ScopedInstall(AddWheelDust, 0x4A09C0);
     RH_ScopedInstall(TriggerWaterHydrant, 0x4A0D70);
-    // RH_ScopedInstall(TriggerGunshot, 0x4A0DE0);
+    RH_ScopedInstall(TriggerGunshot, 0x4A0DE0);
     RH_ScopedInstall(TriggerTankFire, 0x4A0FA0);
     RH_ScopedInstall(TriggerWaterSplash, 0x4A1070);
     RH_ScopedInstall(TriggerBulletSplash, 0x4A10E0);
@@ -456,19 +456,58 @@ void Fx_c::AddWheelSpray(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, b
     ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, uint8, float))0x49FB30)(this, vehicle, pos, bWheelsSpinning, bInWater, lightMult);
 }
 
+// NOTSA - The bodies of `AddWheelGrass`, `AddWheelGravel` and `AddWheelMud` only differ in the particle colour
+static void AddWheelGroundParticles(Fx_c& fx, CVehicle* vehicle, const CVector& pos, float lightMult, CVector color) {
+    // Only for vehicles driven by one of the players
+    if (vehicle->m_pDriver != FindPlayerPed(0) && vehicle->m_pDriver != FindPlayerPed(1)) {
+        return;
+    }
+
+    const auto playerVeh = FindPlayerVehicle(-1, false);
+    const auto distSq    = DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos);
+    if (!(distSq <= 625.0f)) {
+        return;
+    }
+
+    // Further away vehicles spawn their particles less often
+    const auto forceSpawn = distSq <= 64.0f && playerVeh;
+    if (!forceSpawn) {
+        const auto mask = distSq <= 400.0f ? 1u : 3u;
+        if ((((uint8)vehicle->m_nModelIndex + CTimer::GetFrameCounter()) & mask) != 0) {
+            return;
+        }
+    }
+
+    FxPrtMult_c prtMult{ color.x, color.y, color.z, 1.0f, 0.0f, 0.0f, 0.05f };
+    const auto RandNorm = [] { return (float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL; };
+    for (auto i = 0; i < 3; i++) {
+        prtMult.m_fSize = RandNorm() * 0.03f + 0.03f;
+
+        CVector vel;
+        vel.x = RandNorm() * vehicle->m_vecMoveSpeed.x * -1.5f;
+        vel.y = RandNorm() * vehicle->m_vecMoveSpeed.y * -1.5f;
+        vel.z = RandNorm() * 1.5f + 2.0f;
+
+        CVector particlePos = pos;
+        particlePos.x = (RandNorm() * 0.4f + particlePos.x) - 0.2f;
+        particlePos.y = (RandNorm() * 0.4f + particlePos.y) - 0.2f;
+        fx.m_WheelDirt->AddParticle(particlePos, vel, 0.0f, prtMult, -1.0f, lightMult, 0.6f);
+    }
+}
+
 // 0x49FF20
 void Fx_c::AddWheelGrass(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, float))0x49FF20)(this, vehicle, pos, bWheelsSpinning, lightMult);
+    AddWheelGroundParticles(*this, vehicle, pos, lightMult, { 0.03f, 0.09f, 0.03f });
 }
 
 // 0x4A0170
 void Fx_c::AddWheelGravel(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, float))0x4A0170)(this, vehicle, pos, bWheelsSpinning, lightMult);
+    AddWheelGroundParticles(*this, vehicle, pos, lightMult, { 0.25f, 0.25f, 0.25f });
 }
 
 // 0x4A03C0
 void Fx_c::AddWheelMud(CVehicle* vehicle, CVector pos, bool bWheelsSpinning, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, CVehicle*, CVector, uint8, float))0x4A03C0)(this, vehicle, pos, bWheelsSpinning, lightMult);
+    AddWheelGroundParticles(*this, vehicle, pos, lightMult, { 0.25f, 0.12f, 0.06f });
 }
 
 // 0x4A0610
@@ -488,7 +527,43 @@ void Fx_c::TriggerWaterHydrant(const CVector& pos) {
 
 // 0x4A0DE0
 void Fx_c::TriggerGunshot(CEntity* entity, const CVector& origin, const CVector& target, bool doGunflash) {
-    ((void(__thiscall*)(Fx_c*, CEntity*, const CVector&, const CVector&, bool))0x4A0DE0)(this, entity, origin, target, doGunflash);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), origin) > 625.0f) {
+        return;
+    }
+
+    RwMatrix* tempMat{};
+    RwMatrix* attachTo{};
+    CVector   fxPos{};
+    if (!entity) {
+        tempMat = attachTo = g_fxMan.FxRwMatrixCreate();
+        CreateMatFromVec(tempMat, &origin, &target);
+    } else {
+        const auto originToEntity = origin - entity->GetPosition();
+        fxPos = entity->GetMatrix().InverseTransformVector(originToEntity);
+        if (!entity->GetRwObject()) {
+            return;
+        }
+        attachTo = RwFrameGetMatrix(RwFrameGetParent(entity->GetRwObject()));
+    }
+
+    if (attachTo) {
+        const auto CreateAndPlay = [&](const char* name) {
+            if (auto* const fx = g_fxMan.CreateFxSystem(name, fxPos, attachTo, false)) {
+                if (!entity) {
+                    fx->CopyParentMatrix();
+                }
+                fx->PlayAndKill();
+            }
+        };
+        if (doGunflash) {
+            CreateAndPlay("gunflash");
+        }
+        CreateAndPlay("gunsmoke");
+    }
+
+    if (tempMat) {
+        g_fxMan.FxRwMatrixDestroy(tempMat);
+    }
 }
 
 // 0x4A0FA0
