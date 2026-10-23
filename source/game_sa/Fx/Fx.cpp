@@ -36,13 +36,13 @@ void Fx_c::InjectHooks() {
     // + RH_ScopedInstall(SetFxQuality, 0x49EA40);
     // + RH_ScopedInstall(GetFxQuality, 0x49EA50);
     // RH_ScopedInstall(AddBlood, 0x49EB00);
-    // RH_ScopedInstall(AddWood, 0x49EE10);
+    RH_ScopedInstall(AddWood, 0x49EE10);
     RH_ScopedInstall(AddSparks, 0x49F040);
     RH_ScopedInstall(AddTyreBurst, 0x49F300);
     // RH_ScopedInstall(AddBulletImpact, 0x49F3D0);
     RH_ScopedInstall(AddPunchImpact, 0x49F670);
-    // RH_ScopedInstall(AddDebris, 0x49F750);
-    // RH_ScopedInstall(AddGlass, 0x49F970);
+    RH_ScopedInstall(AddDebris, 0x49F750);
+    RH_ScopedInstall(AddGlass, 0x49F970);
     // RH_ScopedInstall(AddWheelSpray, 0x49FB30);
     // RH_ScopedInstall(AddWheelGrass, 0x49FF20);
     // RH_ScopedInstall(AddWheelGravel, 0x4A0170);
@@ -232,6 +232,27 @@ FxQuality_e Fx_c::GetFxQuality() const {
     return m_FxQuality;
 }
 
+// NOTSA - Shared by `AddDebris` and `AddGlass`
+static void SetDebrisOrGlassPrtMult(FxPrtMult_c& prtMult, const RwRGBA& color, float scale) {
+    prtMult.m_Color.red   = (float)color.red * 0.003921569f;
+    prtMult.m_fSize       = scale;
+    prtMult.m_Color.green = (float)color.green * 0.003921569f;
+    prtMult.m_Color.blue  = (float)color.blue * 0.003921569f;
+    prtMult.m_Color.alpha = (float)color.alpha * 0.003921569f;
+    prtMult.m_Rot         = ((float)(CGeneral::GetRandomNumber() % 10000) * 0.0001f + 1.0f) * 0.5f;
+    prtMult.m_fLife       = 0.2f;
+}
+
+// NOTSA - Shared by `AddDebris` and `AddGlass`
+static CVector RandomDebrisOrGlassVelocity() {
+    const auto RandNorm = [] { return (float)CGeneral::GetRandomNumber() * RAND_MAX_FLOAT_RECIPROCAL; };
+    CVector vel;
+    vel.x = RandNorm() * 0.5f * 20.0f - 5.0f;
+    vel.y = RandNorm() * 0.5f * 20.0f - 5.0f;
+    vel.z = RandNorm() * 0.15f * 20.0f + 2.0f;
+    return vel;
+}
+
 // 0x49EB00
 void Fx_c::AddBlood(const CVector& pos, const CVector& direction, int32 amount, float lightMult) {
     ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32, float))0x49EB00)(this, pos, direction, amount, lightMult);
@@ -239,7 +260,24 @@ void Fx_c::AddBlood(const CVector& pos, const CVector& direction, int32 amount, 
 
 // 0x49EE10
 void Fx_c::AddWood(const CVector& pos, const CVector& direction, int32 amount, float lightMult) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const CVector&, int32, float))0x49EE10)(this, pos, direction, amount, lightMult);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+
+    FxPrtMult_c prtMult{ 0.5f, 0.25f, 0.0f, 1.0f, 0.3f, 0.0f, 1.0f };
+    const auto Rand10000 = [] { return (float)(CGeneral::GetRandomNumber() % 10000); };
+    for (auto i = 0; i < amount; i++) {
+        prtMult.m_Color.red   = Rand10000() * 0.0001f * 0.12f + 0.13f;
+        prtMult.m_Color.green = Rand10000() * 0.0001f * 0.03f + 0.12f;
+        prtMult.m_Color.blue  = Rand10000() * 0.0001f * 0.03f + 0.04f;
+        prtMult.m_fSize       = Rand10000() * 0.0001f * 0.3f + 0.7f;
+
+        CVector vel = direction * 4.0f;
+        vel.x = (Rand10000() * 0.0001f * 4.0f - 2.0f) + vel.x;
+        vel.y = (Rand10000() * 0.0001f * 4.0f - 2.0f) + vel.y;
+        vel.z = (Rand10000() * 0.0001f * 4.0f - 2.0f) + vel.z;
+        m_Blood->AddParticle(pos, vel, 0.0f, prtMult, -1.0f, lightMult, 0.6f);
+    }
 }
 
 // 0x49F040 (real body at 0x49F045)
@@ -304,12 +342,36 @@ void Fx_c::AddPunchImpact(const CVector& pos, const CVector& velocity, int32 num
 
 // 0x49F750
 void Fx_c::AddDebris(const CVector& pos, const RwRGBA& color, float scale, int32 amount) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const RwRGBA&, float, int32))0x49F750)(this, pos, color, scale, amount);
+    static auto& s_DebrisPrimIdx = StaticRef<int32>(0xA9ADE4);
+
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+
+    FxPrtMult_c prtMult{};
+    SetDebrisOrGlassPrtMult(prtMult, color, scale);
+    for (auto i = 0; i < amount; i++) {
+        const auto vel = RandomDebrisOrGlassVelocity();
+        for (auto prim = 0; prim < 4; prim++) {
+            m_Cardebris->EnablePrim(prim, false);
+        }
+        m_Cardebris->EnablePrim(s_DebrisPrimIdx, true);
+        m_Cardebris->AddParticle(pos, vel, 0.0f, prtMult);
+        s_DebrisPrimIdx = (s_DebrisPrimIdx + 1) & 3;
+    }
 }
 
 // 0x49F970
 void Fx_c::AddGlass(const CVector& pos, const RwRGBA& color, float scale, int32 amount) {
-    ((void(__thiscall*)(Fx_c*, const CVector&, const RwRGBA&, float, int32))0x49F970)(this, pos, color, scale, amount);
+    if (DistanceBetweenPointsSquared(TheCamera.GetPosition(), pos) > 625.0f) {
+        return;
+    }
+
+    FxPrtMult_c prtMult{};
+    SetDebrisOrGlassPrtMult(prtMult, color, scale);
+    for (auto i = 0; i < amount; i++) {
+        m_Glass->AddParticle(pos, RandomDebrisOrGlassVelocity(), 0.0f, prtMult);
+    }
 }
 
 // 0x49FB30

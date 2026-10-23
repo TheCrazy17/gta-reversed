@@ -18386,6 +18386,11 @@
   },
   {
     "Category": "Fx_c",
+    "Name": "AddWood",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
     "Name": "AddSparks",
     "IsReversed": true
   },
@@ -18397,6 +18402,16 @@
   {
     "Category": "Fx_c",
     "Name": "AddPunchImpact",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddDebris",
+    "IsReversed": true
+  },
+  {
+    "Category": "Fx_c",
+    "Name": "AddGlass",
     "IsReversed": true
   },
   {
