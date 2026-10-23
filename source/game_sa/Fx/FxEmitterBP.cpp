@@ -14,6 +14,9 @@
 #include "FxSystemBP.h"
 #include "FxTools.h"
 #include "Fx.h"
+#include "General.h"
+#include "Timer.h"
+#include "Camera.h"
 
 void FxEmitterBP_c::InjectHooks() {
     RH_ScopedVirtualClass(FxEmitterBP_c, 0x85A788, 7);
@@ -26,7 +29,7 @@ void FxEmitterBP_c::InjectHooks() {
     RH_ScopedVMTInstall(Update, 0x4A2BC0);
     RH_ScopedVMTInstall(Load, 0x5C25F0);
     RH_ScopedVMTInstall(LoadTextures, 0x5C0A30);
-    RH_ScopedVMTInstall(Render, 0x4A2C40, { .Reversed = false });
+    RH_ScopedVMTInstall(Render, 0x4A2C40);
     RH_ScopedVMTInstall(FreePrtFromPrim, 0x4A2510);
 }
 
@@ -34,6 +37,135 @@ void FxEmitterBP_c::InjectHooks() {
 FxEmitterBP_c::FxEmitterBP_c() : FxPrimBP_c() {
     m_Type = 0;
 }
+
+namespace {
+// The axes of a sprite, `at` is the axis it is spun around
+struct ParticleAxes {
+    CVector right, up, at;
+};
+
+// For a sprite that stands along `dir` and turns to the camera as much as it can
+ParticleAxes GetAxesAlongDir(CVector dir, CVector toCam) {
+    RwV3dNormalize(&dir, &dir);
+    RwV3dNormalize(&toCam, &toCam);
+
+    ParticleAxes axes;
+    axes.right = CVector{
+        toCam.z * dir.y - toCam.y * dir.z,
+        toCam.x * dir.z - toCam.z * dir.x,
+        toCam.y * dir.x - toCam.x * dir.y
+    };
+    axes.at = CVector{
+        axes.right.z * dir.y - axes.right.y * dir.z,
+        axes.right.x * dir.z - axes.right.z * dir.x,
+        axes.right.y * dir.x - axes.right.x * dir.y
+    };
+    axes.up = dir;
+    return axes;
+}
+
+// Turns the sprite by the rotation of the particle, which is kept in degrees in the range [0, 360)
+void SpinParticleAxes(FxEmitterPrt_c* prt, ParticleAxes& axes) {
+    if (prt->m_RotZ != -1) {
+        prt->m_CurrentRotation = (float)(uint8)prt->m_RotZ * 2.0f;
+    }
+    while (prt->m_CurrentRotation < 0.0f) {
+        prt->m_CurrentRotation += 360.0f;
+    }
+    while (prt->m_CurrentRotation >= 360.0f) {
+        prt->m_CurrentRotation -= 360.0f;
+    }
+    if (prt->m_CurrentRotation > 0.0f) {
+        CVector rotatedRight;
+        RotateVecAboutVec(rotatedRight, axes.right, axes.at, prt->m_CurrentRotation * 0.01745328f);
+        axes.right = rotatedRight;
+        axes.up    = CVector{
+            axes.at.y * axes.right.z - axes.at.z * axes.right.y,
+            axes.at.z * axes.right.x - axes.at.x * axes.right.z,
+            axes.at.x * axes.right.y - axes.at.y * axes.right.x
+        };
+    }
+}
+
+// The size varies a bit between particles, and it can be scaled down
+CVector2D GetParticleSize(const FxEmitterPrt_c* prt, const RenderInfo_t& renderInfo) {
+    CVector2D size{
+        ((float)prt->m_RandR * 0.003921569f - 0.5f) * renderInfo.m_fSizeXBias + renderInfo.m_fSizeX,
+        ((float)prt->m_RandG * 0.003921569f - 0.5f) * renderInfo.m_fSizeYBias + renderInfo.m_fSizeY
+    };
+    if (const auto multSize = std::bit_cast<uint8>(prt->m_MultSize); multSize != 0xFF) {
+        size.x = (float)multSize * 0.003921569f * size.x;
+        size.y = (float)multSize * 0.003921569f * size.y;
+    }
+    return size;
+}
+
+// The texture can change over the life of the particle
+RwRaster* GetParticleRaster(const std::array<RwTexture*, 4>& textures, const RenderInfo_t& renderInfo, RwRaster* current) {
+    auto* tex = textures[0];
+    if (renderInfo.m_bHasAnimTextures) {
+        const auto id = renderInfo.m_nCurrentTexId;
+        if (id >= 2 && id <= 4) {
+            if (textures[id - 1]) {
+                tex = textures[id - 1];
+            }
+        } else if (id != 1) {
+            return current; // Not a texture, the original used whatever was on the stack
+        }
+    }
+    return RwTextureGetRaster(tex);
+}
+
+// Two triangles for the sprite, the sides are scaled by the size
+void AddParticleQuad(const CVector& pos, const ParticleAxes& axes, const CVector2D& size, float top, float bottom, float left, float right, const CRGBA& color) {
+    const auto& [ax, up, at] = axes;
+    const auto kt = top * size.y;
+    const auto kb = bottom * size.y;
+    const auto kl = left * size.x;
+    const auto kr = right * size.x;
+
+    const CVector bottomUp{ up.x * kb, up.y * kb, kb * up.z };
+    const CVector leftRight{ ax.x * kl, ax.y * kl, kl * ax.z };
+    const CVector rightRight{ ax.x * kr, ax.y * kr, 0.0f }; // The height is added where used
+
+    const CVector topLeft{
+        (leftRight.x + up.x * kt) + pos.x,
+        (leftRight.y + kt * up.y) + pos.y,
+        (leftRight.z + kt * up.z) + pos.z
+    };
+    const CVector bottomRight{
+        (rightRight.x + bottomUp.x) + pos.x,
+        (rightRight.y + bottomUp.y) + pos.y,
+        (bottomUp.z + kr * ax.z) + pos.z
+    };
+    const CVector topRight{
+        (rightRight.x + up.x * kt) + pos.x,
+        (rightRight.y + kt * up.y) + pos.y,
+        (kr * ax.z + kt * up.z) + pos.z
+    };
+    const CVector bottomLeft{
+        (leftRight.x + bottomUp.x) + pos.x,
+        (leftRight.y + bottomUp.y) + pos.y,
+        (leftRight.z + bottomUp.z) + pos.z
+    };
+
+    RenderAddTri(topLeft,     bottomRight, topRight,   { 0.0f, 0.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, color, color, color);
+    RenderAddTri(bottomRight, topLeft,     bottomLeft, { 1.0f, 1.0f }, { 0.0f, 0.0f }, { 0.0f, 1.0f }, color, color, color);
+}
+
+// Where the particle is in the world
+CVector GetParticleWorldPos(const FxEmitterPrt_c* prt) {
+    if (!prt->m_bLocalToSystem) {
+        return prt->m_Pos;
+    }
+    CVector pos;
+    auto* const mat = g_fxMan.FxRwMatrixCreate();
+    prt->m_System->GetCompositeMatrix(mat);
+    RwV3dTransformPoints(&pos, &prt->m_Pos, 1, mat);
+    g_fxMan.FxRwMatrixDestroy(mat);
+    return pos;
+}
+} // namespace
 
 // 0x4A1940
 void FxEmitterBP_c::RenderHeatHaze(RwCamera* camera, uint32 txdHashKey, float brightness) {
@@ -50,19 +182,11 @@ void FxEmitterBP_c::RenderHeatHaze(RwCamera* camera, uint32 txdHashKey, float br
     RenderBegin(curRaster, nullptr, rwIM3D_VERTEXUV);
 
     const auto& camMat = *RwFrameGetMatrix(RwCameraGetFrame(camera));
+    const CVector camPos{ camMat.pos };
 
     for (auto* it = m_Particles.GetHead(); it; it = m_Particles.GetNext(it)) {
-        auto* const prt = it->AsFxEmitterPrt();
-
-        CVector prtPos;
-        if (prt->m_bLocalToSystem) {
-            auto* const mat = g_fxMan.FxRwMatrixCreate();
-            prt->m_System->GetCompositeMatrix(mat);
-            RwV3dTransformPoints(&prtPos, &prt->m_Pos, 1, mat);
-            g_fxMan.FxRwMatrixDestroy(mat);
-        } else {
-            prtPos = prt->m_Pos;
-        }
+        auto* const prt    = it->AsFxEmitterPrt();
+        const auto  prtPos = GetParticleWorldPos(prt);
 
         RenderInfo_t renderInfo;
         m_FxInfoManager.ProcessRenderInfo(
@@ -74,111 +198,28 @@ void FxEmitterBP_c::RenderHeatHaze(RwCamera* camera, uint32 txdHashKey, float br
             &renderInfo
         );
 
-        // Where the particle faces: `at` is the axis it spins around, `right` and `up` span the sprite
-        CVector right, up, at;
+        ParticleAxes axes;
         if (!renderInfo.m_bHasDir) {
             const auto& faceMat = renderInfo.m_bIsFlat ? renderInfo.m_FlatMatrix : camMat;
-            right = faceMat.right;
-            up    = faceMat.up;
-            at    = faceMat.at;
+            axes = { CVector{ faceMat.right }, CVector{ faceMat.up }, CVector{ faceMat.at } };
         } else {
-            // Stands along a direction, turned to the camera as much as it can
-            CVector dir = renderInfo.m_bUseVel ? prt->m_Velocity : renderInfo.m_Direction;
-            RwV3dNormalize(&dir, &dir);
+            axes = GetAxesAlongDir(renderInfo.m_bUseVel ? prt->m_Velocity : renderInfo.m_Direction, prtPos - camPos);
+        }
+        SpinParticleAxes(prt, axes);
 
-            CVector toCam{ prtPos.x - camMat.pos.x, prtPos.y - camMat.pos.y, prtPos.z - camMat.pos.z };
-            RwV3dNormalize(&toCam, &toCam);
-
-            right = CVector{
-                toCam.z * dir.y - toCam.y * dir.z,
-                toCam.x * dir.z - toCam.z * dir.x,
-                toCam.y * dir.x - toCam.x * dir.y
-            };
-            at = CVector{
-                right.z * dir.y - right.y * dir.z,
-                right.x * dir.z - right.z * dir.x,
-                right.y * dir.x - right.x * dir.y
-            };
-            up = dir;
-        }
-
-        // Rotation is kept in degrees, in the range [0, 360)
-        if (prt->m_RotZ != -1) {
-            prt->m_CurrentRotation = (float)(uint8)prt->m_RotZ * 2.0f;
-        }
-        while (prt->m_CurrentRotation < 0.0f) {
-            prt->m_CurrentRotation += 360.0f;
-        }
-        while (prt->m_CurrentRotation >= 360.0f) {
-            prt->m_CurrentRotation -= 360.0f;
-        }
-        if (prt->m_CurrentRotation > 0.0f) {
-            CVector rotatedRight;
-            RotateVecAboutVec(rotatedRight, right, at, prt->m_CurrentRotation * 0.01745328f);
-            right = rotatedRight;
-            up    = CVector{
-                at.y * right.z - at.z * right.y,
-                at.z * right.x - at.x * right.z,
-                at.x * right.y - at.y * right.x
-            };
-        }
-
-        // The size varies a bit between particles, and it can be scaled down
-        auto sizeX = ((float)prt->m_RandR * 0.003921569f - 0.5f) * renderInfo.m_fSizeXBias + renderInfo.m_fSizeX;
-        auto sizeY = ((float)prt->m_RandG * 0.003921569f - 0.5f) * renderInfo.m_fSizeYBias + renderInfo.m_fSizeY;
-        if (const auto multSize = std::bit_cast<uint8>(prt->m_MultSize); multSize != 0xFF) {
-            sizeX = (float)multSize * 0.003921569f * sizeX;
-            sizeY = (float)multSize * 0.003921569f * sizeY;
-        }
-
-        // The texture can change over the life of the particle
-        const auto texId = renderInfo.m_nCurrentTexId;
-        auto*      tex   = m_apTextures[0];
-        if (renderInfo.m_bHasAnimTextures && texId >= 2 && texId <= 4 && m_apTextures[texId - 1]) {
-            tex = m_apTextures[texId - 1];
-        }
-        auto* const raster = RwTextureGetRaster(tex);
+        auto* const raster = GetParticleRaster(m_apTextures, renderInfo, curRaster);
         if (raster != curRaster) {
             RenderEnd();
             curRaster = raster;
             RenderBegin(raster, nullptr, rwIM3D_VERTEXUV);
         }
 
-        // Sides of the sprite, scaled by the size
-        const auto top    = renderInfo.m_fSpriteTop * sizeY;
-        const auto bottom = renderInfo.m_fSpriteBottom * sizeY;
-        const auto left   = renderInfo.m_fSpriteLeft * sizeX;
-        const auto rightK = renderInfo.m_fSpriteRight * sizeX;
-
-        const CVector bottomUp{ up.x * bottom, up.y * bottom, bottom * up.z };
-        const CVector leftRight{ right.x * left, right.y * left, left * right.z };
-        const CVector rightRight{ right.x * rightK, right.y * rightK, 0.0f }; // The height is left out, it is added where used
-
-        const CVector topLeft{
-            (leftRight.x + up.x * top) + prtPos.x,
-            prtPos.y + (leftRight.y + top * up.y),
-            prtPos.z + (leftRight.z + top * up.z)
-        };
-        const CVector bottomRight{
-            (rightRight.x + bottomUp.x) + prtPos.x,
-            prtPos.y + (rightRight.y + bottomUp.y),
-            prtPos.z + (bottomUp.z + rightK * right.z)
-        };
-        const CVector topRight{
-            (rightRight.x + up.x * top) + prtPos.x,
-            (rightRight.y + top * up.y) + prtPos.y,
-            (rightK * right.z + top * up.z) + prtPos.z
-        };
-        const CVector bottomLeft{
-            (leftRight.x + bottomUp.x) + prtPos.x,
-            (leftRight.y + bottomUp.y) + prtPos.y,
-            (leftRight.z + bottomUp.z) + prtPos.z
-        };
-
         // Black, only the alpha matters
-        const CRGBA color{ 0, 0, 0, renderInfo.m_Color1.alpha };
-        RenderAddTri(topLeft,     bottomRight, topRight,   { 0.0f, 0.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, color, color, color);
-        RenderAddTri(bottomRight, topLeft,     bottomLeft, { 1.0f, 1.0f }, { 0.0f, 0.0f }, { 0.0f, 1.0f }, color, color, color);
+        AddParticleQuad(
+            prtPos, axes, GetParticleSize(prt, renderInfo),
+            renderInfo.m_fSpriteTop, renderInfo.m_fSpriteBottom, renderInfo.m_fSpriteLeft, renderInfo.m_fSpriteRight,
+            CRGBA{ 0, 0, 0, renderInfo.m_Color1.alpha }
+        );
     }
 
     RenderEnd();
@@ -318,55 +359,46 @@ bool FxEmitterBP_c::LoadTextures(FxName32_t* textureNames, int32 version) {
 }
 
 // 0x4A2C40
-
-
 void FxEmitterBP_c::Render(RwCamera* camera, uint32 txdHashKey, float brightness, bool doHeatHaze) {
-    return plugin::CallMethod<0x4A2C40, FxEmitterBP_c*, RwCamera*, uint32, float, bool>(this, camera, txdHashKey, brightness, doHeatHaze);
-
-    /*
-    static constexpr RwBlendFunction g_BlendFunctions[] = {
+    static constexpr RwBlendFunction BLEND_FUNCTIONS[] = {
         rwBLENDZERO,      rwBLENDONE,          rwBLENDSRCCOLOR,  rwBLENDINVSRCCOLOR,  rwBLENDSRCALPHA, rwBLENDINVSRCALPHA,
         rwBLENDDESTALPHA, rwBLENDINVDESTALPHA, rwBLENDDESTCOLOR, rwBLENDINVDESTCOLOR, rwBLENDSRCALPHASAT
     };
 
     if (doHeatHaze) {
-        if (m_FxInfoManager.m_bHasHeatHazeParticleEmitter)
+        if (m_FxInfoManager.m_bHasHeatHazeParticleEmitter) {
             RenderHeatHaze(camera, txdHashKey, brightness);
+        }
         return;
     }
 
+    // The heat haze is drawn in a pass of its own, here it is only asked for
     if (IsFxInfoPresent(FX_INFO_HEATHAZE_DATA)) {
-        if (m_Particles.GetNumItems())
+        if (m_Particles.GetNumItems() > 0) {
             g_fxMan.m_bHeatHazeEnabled = true;
+        }
         return;
     }
 
-    if (!m_Particles.GetNumItems())
+    if (!m_Particles.GetNumItems()) {
         return;
+    }
+
+    auto* curRaster = RwTextureGetRaster(m_apTextures[0]);
 
     RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(m_bAlphaOn));
-    RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(g_BlendFunctions[m_bAlphaOn ? m_nSrcBlendId : 1]));
-    RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(g_BlendFunctions[m_bAlphaOn ? m_nDstBlendId : 0]));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(BLEND_FUNCTIONS[m_bAlphaOn ? m_nSrcBlendId : 1]));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(BLEND_FUNCTIONS[m_bAlphaOn ? m_nDstBlendId : 0]));
+    RenderBegin(curRaster, nullptr, rwIM3D_VERTEXUV);
 
-    auto* raster = RwTextureGetRaster(m_apTextures[0]);
-    RenderBegin(raster, nullptr, rwIM3D_VERTEXUV);
+    const auto& camMat = *RwFrameGetMatrix(RwCameraGetFrame(camera));
+    const CVector camPos{ camMat.pos };
 
-    for (auto* prt = (FxEmitterPrt_c*)m_Particles.GetHead(); prt; prt = (FxEmitterPrt_c*)m_Particles.GetNext(prt)) {
-        const auto pos = [prt] {
-            if (prt->m_bLocalToSystem) {
-                // Get updated matrix position.
-                CVector out{};
-                auto* mat = g_fxMan.FxRwMatrixCreate();
-                prt->m_System->GetCompositeMatrix(mat);
-                RwV3dTransformPoint(&out, &prt->m_Pos, mat); // SA: RwV3dTransformPoints(...,...,1,...)
-                g_fxMan.FxRwMatrixDestroy(mat);
-                return out;
-            } else {
-                return prt->m_Pos;
-            }
-        }();
+    for (auto* it = m_Particles.GetHead(); it; it = m_Particles.GetNext(it)) {
+        auto* const prt    = it->AsFxEmitterPrt();
+        const auto  prtPos = GetParticleWorldPos(prt);
 
-        RenderInfo_t renderInfo{};
+        RenderInfo_t renderInfo;
         m_FxInfoManager.ProcessRenderInfo(
             prt->m_System->m_fCurrentTime,
             prt->m_fCurrentLife / prt->m_fTotalLife,
@@ -377,13 +409,112 @@ void FxEmitterBP_c::Render(RwCamera* camera, uint32 txdHashKey, float brightness
         );
 
         if (renderInfo.m_SmokeType > -1) {
-            // RenderSmoke();
-            CGeneral::GetRandomNumberInRange(0.0f, 1.0f) *
+            // Puffs of smoke are left behind, the color varies a bit
+            const auto variation = CGeneral::GetRandomNumberInRange(-renderInfo.m_SmokeBrightness, renderInfo.m_SmokeBrightness) * 0.003921569f;
+            const auto Channel   = [&](float value) {
+                return std::clamp(value * 0.003921569f + variation, 0.0f, 1.0f);
+            };
+            const FxPrtMult_c smokeMult{
+                Channel(renderInfo.m_SmokeColor.red),
+                Channel(renderInfo.m_SmokeColor.green),
+                Channel(renderInfo.m_SmokeColor.blue),
+                renderInfo.m_SmokeColor.alpha * 0.003921569f,
+                renderInfo.m_SmokeSize,
+                1.0f,
+                renderInfo.m_SmokeLife
+            };
+            g_fx.m_SmokeHuge->AddParticle(prt->m_Pos, CVector{ 0.0f, 0.0f, 0.0f }, 0.0f, smokeMult, -1.0f, 1.2f, 0.6f, false);
         }
+
+        // The trail and the direction work with the position of the particle in its own space,
+        // even if it's not in the same one as the camera
+        const CVector& rawPos = prt->m_Pos;
+
+        ParticleAxes axes;
+        float        trailLength = 0.0f;
+        if (renderInfo.m_nTrailScreenMode > 0) {
+            CVector trail;
+            if (renderInfo.m_nTrailScreenMode == 2) {
+                // Takes the movement of the camera since the last frame into account
+                const auto step   = CTimer::GetTimeStep() * 0.02f;
+                const auto toCam  = rawPos - camPos;
+                const auto before = (rawPos - prt->m_Velocity * step) - TheCamera.m_mCameraMatrixOld.GetPosition();
+                trail             = (toCam - before) * renderInfo.m_fTrailTime;
+            } else {
+                trail = rawPos - (rawPos - prt->m_Velocity * renderInfo.m_fTrailTime);
+            }
+            trailLength = RwV3dLength(&trail);
+            if (trail.IsZero()) {
+                trail.z = 1.0f;
+            }
+            axes = GetAxesAlongDir(trail, rawPos - camPos);
+        } else if (renderInfo.m_bHasDir) {
+            CVector dir = renderInfo.m_bUseVel ? prt->m_Velocity : renderInfo.m_Direction;
+            if (renderInfo.m_bUseVel && dir.IsZero()) {
+                dir.z = 1.0f;
+            }
+            axes = GetAxesAlongDir(dir, prtPos - camPos);
+        } else {
+            const auto& faceMat = renderInfo.m_bIsFlat ? renderInfo.m_FlatMatrix : camMat;
+            axes = { CVector{ faceMat.right }, CVector{ faceMat.up }, CVector{ faceMat.at } };
+        }
+        SpinParticleAxes(prt, axes);
+
+        const auto size = GetParticleSize(prt, renderInfo);
+
+        // The color, it can vary with the particle
+        float red   = renderInfo.m_Color1.red;
+        float green = renderInfo.m_Color1.green;
+        float blue  = renderInfo.m_Color1.blue;
+        float alpha = renderInfo.m_Color1.alpha;
+        switch (renderInfo.m_nColorType) {
+        case ERenderColorType::RANGE:
+            red   = ((float)renderInfo.m_Color2.red - red) * ((float)prt->m_RandR * 0.003921569f) + red;
+            green = ((float)renderInfo.m_Color2.green - green) * ((float)prt->m_RandG * 0.003921569f) + green;
+            blue  = ((float)renderInfo.m_Color2.blue - blue) * ((float)prt->m_RandB * 0.003921569f) + blue;
+            break;
+        case ERenderColorType::BRIGHT: {
+            const auto delta = ((float)prt->m_RandR * 0.0078125f - 1.0f) * (float)renderInfo.m_Color2.alpha;
+            red   = std::clamp(red + delta, 0.0f, 255.0f);
+            green = std::clamp(green + delta, 0.0f, 255.0f);
+            blue  = std::clamp(blue + delta, 0.0f, 255.0f);
+            break;
+        }
+        default:
+            break;
+        }
+        if (prt->m_MultColor.r < 0xFF) { red   = (float)prt->m_MultColor.r * 0.003921569f * red; }
+        if (prt->m_MultColor.g < 0xFF) { green = (float)prt->m_MultColor.g * 0.003921569f * green; }
+        if (prt->m_MultColor.b < 0xFF) { blue  = (float)prt->m_MultColor.b * 0.003921569f * blue; }
+        if (prt->m_MultColor.a < 0xFF) { alpha = (float)prt->m_MultColor.a * 0.003921569f * alpha; }
+
+        // Not lit by itself, so the brightness of the particle goes in. It stays for the next
+        // particles, if the brightness of one of them is out of range
+        float litRed = red, litGreen = green, litBlue = blue;
+        if (!renderInfo.m_bSelfLit) {
+            if (const auto particleBrightness = std::bit_cast<uint8>(prt->m_Brightness); particleBrightness <= 100) {
+                brightness = (float)particleBrightness * 0.01f;
+            }
+            litRed   = red * brightness;
+            litGreen = green * brightness;
+            litBlue  = blue * brightness;
+        }
+        const CRGBA color{ (uint8)(int32)litRed, (uint8)(int32)litGreen, (uint8)(int32)litBlue, (uint8)(int32)alpha };
+
+        auto* const raster = GetParticleRaster(m_apTextures, renderInfo, curRaster);
+        if (raster != curRaster) {
+            RenderEnd();
+            curRaster = raster;
+            RenderBegin(raster, nullptr, rwIM3D_VERTEXUV);
+        }
+
+        // A trail is as long as the movement, and starts where the particle is
+        const auto top    = renderInfo.m_nTrailScreenMode > 0 ? trailLength : renderInfo.m_fSpriteTop;
+        const auto bottom = renderInfo.m_nTrailScreenMode > 0 ? 0.0f : renderInfo.m_fSpriteBottom;
+        AddParticleQuad(prtPos, axes, size, top, bottom, renderInfo.m_fSpriteLeft, renderInfo.m_fSpriteRight, color);
     }
 
     RenderEnd();
-    */
 }
 
 // 0x4A2510

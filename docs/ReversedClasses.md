@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 13:15:19 UTC
+Last update was at Oct 23, 2026 at 13:29:22 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8334 out of 8339 functions done in 719 categories)
+## Stats (8335 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (714/719) [99%]
+#### Completely reversed categories (715/719) [99%]
 
 <details>
 <summary>See list of categories</summary>
@@ -241,6 +241,7 @@ Last update was at Oct 23, 2026 at 13:15:19 UTC
 - FxInfoManager_c (5)<br />
 - FxManager_c (25)<br />
 - FxEmitterPrt_c (1)<br />
+- FxEmitterBP_c (9)<br />
 - FxEmitter_c (1)<br />
 - Fx_c (9)<br />
 - CPedAttractorPedPlacer (1)<br />
@@ -731,14 +732,13 @@ Last update was at Oct 23, 2026 at 13:15:19 UTC
 
 </details>
 
-#### Partially reversed categories (5/719) [0.7%]
+#### Partially reversed categories (4/719) [0.6%]
 
 <details>
 <summary>See list of categories</summary>
 - CPopulation (65/66) [98%]<br />
 - CWeapon (40/41) [98%]<br />
 - CStats (50/51) [98%]<br />
-- FxEmitterBP_c (8/9) [89%]<br />
 - CTaskSimpleUseGun (18/19) [95%]<br />
 
 </details>
