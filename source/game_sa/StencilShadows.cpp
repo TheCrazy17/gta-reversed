@@ -16,7 +16,7 @@ void CStencilShadows::InjectHooks() {
     RH_ScopedInstall(Process, 0x711D90);
     RH_ScopedInstall(GraphicsHighQuality, 0x70F9B0);
     RH_ScopedInstall(UpdateHierarchy, 0x710BC0);
-    RH_ScopedInstall(RegisterStencilShadows, 0x711760, {.Reversed = false});
+    RH_ScopedInstall(RegisterStencilShadows, 0x711760);
     RH_ScopedInstall(RenderStencilShadows, 0x7113B0);
     RH_ScopedInstall(RenderForVehicle, 0x70FAE0);
     RH_ScopedInstall(RenderForObject, 0x710310);
@@ -440,4 +440,150 @@ void CStencilShadows::UpdateHierarchy(CStencilShadowObject*& firstAvailable, CSt
 
 // 0x711760
 void CStencilShadows::RegisterStencilShadows(CVector& cameraPos, bool doNotCreateNew) {
+    ZoneScoped;
+
+    // The owner is gone, or it is an object that is not in the world anymore
+    const auto IsOwnerUnusable = [](CEntity* entity) {
+        if (!entity) {
+            return true;
+        }
+        if (entity->GetIsTypeObject()) {
+            const auto& flags = entity->AsObject()->objectFlags;
+            return !entity->m_bIsVisible || flags.bIsExploded || flags.bIsBroken;
+        }
+        return false;
+    };
+
+    // How far the entity is from the camera (Squared), from the bounding sphere of it and not the center
+    const auto DistanceSq = [&](CEntity* entity) {
+        auto* const colModel = entity->GetColModel();
+        const auto  center   = entity->TransformFromObjectSpace(colModel->m_boundSphere.m_vecCenter);
+        const auto  toCamera = cameraPos - center;
+        const auto  dist     = toCamera.Magnitude();
+        const auto  radius   = colModel->m_boundSphere.m_fRadius;
+        const auto  sign     = dist < radius ? -1.0f : 1.0f;
+        return sign * (dist - radius) * (dist - radius);
+    };
+
+    // The next one is taken before, because the object is taken out of the list when it is destroyed
+    const auto ForEachActiveObject = [](auto&& fn) {
+        for (auto* obj = pFirstActiveStencilShadowObject; obj;) {
+            auto* const next = obj->m_pNext;
+            fn(obj);
+            obj = next;
+        }
+    };
+
+    if (doNotCreateNew) {
+        ForEachActiveObject([&](CStencilShadowObject* obj) {
+            if (IsOwnerUnusable(obj->m_pOwner)) {
+                obj->Destroy();
+            }
+        });
+        return;
+    }
+
+    // The ones that are too far, or are in another area, are not needed anymore
+    ForEachActiveObject([&](CStencilShadowObject* obj) {
+        auto* const entity = obj->m_pOwner;
+
+        const auto remove = IsOwnerUnusable(entity) || [&] {
+            switch (obj->m_Type) {
+            case eStencilShadowObjType::OBJECT:  return DistanceSq(entity) > 2500.0f || !entity->IsInCurrentArea();
+            case eStencilShadowObjType::VEHICLE: return DistanceSq(entity) > 2500.0f;
+            default:                             return false;
+            }
+        }();
+        if (remove) {
+            obj->Destroy();
+        }
+    });
+
+    if (!pFirstAvailableStencilShadowObject) {
+        return;
+    }
+
+    const auto HasShadowInfo = [](CEntity* entity) {
+        auto* const colModel = entity->GetColModel();
+        return colModel && colModel->m_pColData && colModel->m_pColData->bHasShadowInfo;
+    };
+    const auto HasShadowObject = [](CEntity* entity) {
+        for (auto* obj = pFirstActiveStencilShadowObject; obj; obj = obj->m_pNext) {
+            if (obj->m_pOwner == entity) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Returns false when there are no more shadow objects to give
+    const auto CreateFor = [&](CEntity* entity, eStencilShadowObjType type) {
+        if (!pFirstAvailableStencilShadowObject) {
+            return false;
+        }
+        pFirstAvailableStencilShadowObject->Create(entity, type);
+        return pFirstAvailableStencilShadowObject != nullptr;
+    };
+
+    for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+        if (HasShadowInfo(&vehicle) && vehicle.m_pCollisionList.m_node && !HasShadowObject(&vehicle) && DistanceSq(&vehicle) <= 2500.0f) {
+            if (!CreateFor(&vehicle, eStencilShadowObjType::VEHICLE)) {
+                return;
+            }
+        }
+    }
+    if (!pFirstAvailableStencilShadowObject) {
+        return;
+    }
+
+    // The objects close to the camera that have a shadow
+    const auto SectorCoord = [](float v) {
+        return (int32)std::floor((v - 50.0f) * 0.02f + 60.0f);
+    };
+    const auto startX = std::max(SectorCoord(cameraPos.x), 0);
+    const auto startY = std::max(SectorCoord(cameraPos.y), 0);
+    const auto endX   = std::min((int32)std::floor((cameraPos.x + 50.0f) * 0.02f + 60.0f), 119);
+    const auto endY   = std::min((int32)std::floor((cameraPos.y + 50.0f) * 0.02f + 60.0f), 119);
+
+    CWorld::AdvanceCurrentScanCode();
+
+    // Returns false when there are no more shadow objects to give
+    const auto ProcessEntity = [&](CEntity* entity) {
+        if (entity->m_bIsProcObject) {
+            return true;
+        }
+        if (entity->GetIsTypeObject() && IsOwnerUnusable(entity)) {
+            return true;
+        }
+        if (!HasShadowInfo(entity) || entity->IsScanCodeCurrent()) {
+            return true;
+        }
+        entity->SetCurrentScanCode();
+
+        if (!entity->IsInCurrentArea() || CModelInfo::GetModelInfo(entity->m_nModelIndex)->GetModelType() != MODEL_INFO_ATOMIC) {
+            return true;
+        }
+        if (HasShadowObject(entity) || DistanceSq(entity) > 2500.0f) {
+            return true;
+        }
+        return CreateFor(entity, eStencilShadowObjType::OBJECT);
+    };
+
+    for (auto sy = startY; sy <= endY; sy++) {
+        for (auto sx = startX; sx <= endX; sx++) {
+            const auto x = std::min(std::max(sx, 0), 119);
+            const auto y = std::min(std::max(sy, 0), 119);
+
+            for (auto* node = CWorld::GetSector(x, y).Buildings.GetNode(), *next = node ? node->Next : nullptr; node; node = next, next = node ? node->Next : nullptr) {
+                if (!ProcessEntity(node->Item)) {
+                    return;
+                }
+            }
+            for (auto* node = CWorld::GetRepeatSector(sx, sy).Objects.GetNode(), *next = node ? node->Next : nullptr; node; node = next, next = node ? node->Next : nullptr) {
+                if (!ProcessEntity(node->Item)) {
+                    return;
+                }
+            }
+        }
+    }
 }

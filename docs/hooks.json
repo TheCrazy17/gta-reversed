@@ -10465,6 +10465,11 @@
     "IsReversed": true
   },
   {
+    "Category": "CStencilShadowObject",
+    "Name": "Create",
+    "IsReversed": true
+  },
+  {
     "Category": "CStencilShadows",
     "Name": "Init",
     "IsReversed": true
@@ -10492,7 +10497,7 @@
   {
     "Category": "CStencilShadows",
     "Name": "RegisterStencilShadows",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CStencilShadows",

@@ -24,6 +24,7 @@ public:
     ~CStencilShadowObject() = default; // 0x70F8E0
 
     void Destroy();
+    CStencilShadowObject* Create(CEntity* entity, eStencilShadowObjType type);
 
 private:
     CStencilShadowObject* Constructor() {
