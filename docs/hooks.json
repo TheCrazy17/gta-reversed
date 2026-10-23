@@ -18371,7 +18371,37 @@
   },
   {
     "Category": "FxEmitter_c",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
+    "Name": "Update",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
+    "Name": "Reset",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
+    "Name": "AddParticle-matrix",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
+    "Name": "AddParticle-pos",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
     "Name": "CreateParticles",
+    "IsReversed": true
+  },
+  {
+    "Category": "FxEmitter_c",
+    "Name": "CreateParticle",
     "IsReversed": true
   },
   {
