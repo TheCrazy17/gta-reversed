@@ -2042,8 +2042,8 @@ void CAutomobile::ProcessControlInputs(uint8 playerNum) {
     //> 0x6ADD28 - Rear wheel steer
     if (m_pHandlingData->m_bHbRearwheelSteer) {
         m_f2ndSteerAngle = vehicleFlags.bIsHandbrakeOn
-            ? lerp(m_f2ndSteerAngle, -m_fSteerAngle, 0.9f) // TODO/NOTE: `lerp`'s `from` and `to` arguments must be constant, this is textbook bad practice!
-            : m_f2ndSteerAngle * 0.9f; // TODO/NOTE: Seems incorrect, maybe they meant `m_fSteerAngle * 0.9f`?
+            ? m_f2ndSteerAngle * 0.9f - (1.f - 0.9f) * m_fSteerAngle // 0x6ADD39
+            : m_f2ndSteerAngle * 0.9f;
     }
 
     //> 0x6ADD81 - Comedy controls stuff

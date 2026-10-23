@@ -801,7 +801,7 @@ void CShopping::Load() {
     }
 
     CGenericGameStorage::LoadDataFromWorkBuffer(ms_numBuyableItems);
-    CGenericGameStorage::LoadDataFromWorkBuffer(&ms_bHasBought, ms_numBuyableItems); // TODO: This looks funky, check if we don't have a bug on our hands
+    CGenericGameStorage::LoadDataFromWorkBuffer(&ms_bHasBought, ms_numBuyableItems);
 }
 
 // 0x5D3DE0
@@ -812,5 +812,5 @@ void CShopping::Save() {
     }
 
     CGenericGameStorage::SaveDataToWorkBuffer(ms_numBuyableItems);
-    CGenericGameStorage::SaveDataToWorkBuffer(&ms_bHasBought, ms_numBuyableItems); // TODO: This looks funky, check if we don't have a bug on our hands
+    CGenericGameStorage::SaveDataToWorkBuffer(&ms_bHasBought, ms_numBuyableItems);
 }

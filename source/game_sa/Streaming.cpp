@@ -637,9 +637,7 @@ bool CStreaming::ConvertBufferToObject(uint8* fileBuffer, int32 modelId) {
             break;
         default: {
             if (auto* ami = mi->AsAtomicModelInfoPtr()) {
-                // TODO: What the fuck... 0x40CAFA
-                // From what I understand its either -1 or -0, which, when casted to uint8, becomes 128 or 129
-                // Doesnt make a lot of sense to me
+                // 0x40CAFA
                 ami->m_nAlpha = -((streamingInfo.GetFlags() & (STREAMING_LOADING_SCENE | STREAMING_MISSION_REQUIRED)) != 0);
             }
 
@@ -753,7 +751,7 @@ void CStreaming::DeleteRwObjectsAfterDeath(const CVector& point) {
 }
 
 // 0x40D7C0
-// TODO: Decode this, no clue whats going on here..
+// Walks the sectors around the camera (the ones behind it first, then the ones outside of the frustum) and removes the RW objects of buildings, dummies and objects until enough memory has been freed
 void CStreaming::DeleteRwObjectsBehindCamera(size_t memoryToCleanInBytes) {
     if (ms_memoryUsedBytes < memoryToCleanInBytes)
         return;
@@ -3643,7 +3641,7 @@ void CStreaming::StreamZoneModels_Gangs(const CVector& unused) {
 
         // FileID vehicle models
         CLoadedCarGroup& loadedGangCarGroup = CPopulation::m_LoadedGangCars[gangId];
-        if (loadedGangCarGroup.CountMembers() < 1) { // TODO: Bug? Probably meant to be `>= 1`
+        if (loadedGangCarGroup.CountMembers() < 1) {
             if (!(gangsNeeded & gangBit) || (ms_loadedGangCars & gangBit)) /*gang not needed or is loaded*/ {
                 if (!(gangsNeeded & gangBit) && (ms_loadedGangCars & gangBit)) /*gang not needed but is loaded*/ {
                     // Unload all car models related to this gang which are not needed.

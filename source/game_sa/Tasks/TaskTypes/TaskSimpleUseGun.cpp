@@ -342,7 +342,7 @@ void CTaskSimpleUseGun::AimGun(CPed* ped) {
 
             ped->m_pedIK.RotateTorsoForArm(target);
         } else if (!m_IsArmIKInUse || !m_IsLookIKInUse) { // 0x61F144 - Neither pointing with arm, or looking at anything -> Just look somewhere...
-            if (m_TargetPos.x == 0.f || m_TargetPos.y == 0.f) { // TODO/NOTE: Bug? Perhaps they meant &&?
+            if (m_TargetPos.x == 0.f || m_TargetPos.y == 0.f) {
                 CVector target{0.f, 2.f, 0.f};
 
                 if (m_Anim->GetBlendAmount() > 0.98f) {

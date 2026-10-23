@@ -370,7 +370,6 @@ float CCarAI::GetCarToGoToCoorsStraightLine(CVehicle* veh, const CVector& coors,
         }
         ap->m_vecDestinationCoors = coors;
         ap->SetCarMission(MISSION_GOTOCOORDINATES_STRAIGHTLINE, 0);
-        // TODO/BUG: No `CCarCtrl::JoinCarWithRoadSystemGotoCoors` ?
         break;
     }
     }
