@@ -10996,6 +10996,31 @@
   },
   {
     "Category": "CCamera",
+    "Name": "ProcessObbeCinemaCameraPlane",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
+    "Name": "ProcessObbeCinemaCameraTrain",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
+    "Name": "ProcessObbeCinemaCameraBoat",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
+    "Name": "ProcessObbeCinemaCameraCar",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
+    "Name": "ProcessObbeCinemaCameraHeli",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
     "Name": "ProcessWideScreenOn",
     "IsReversed": true
   },

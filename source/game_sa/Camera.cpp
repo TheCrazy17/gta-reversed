@@ -53,6 +53,11 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(GetRoughDistanceToGround, 0x516B00);
     RH_ScopedInstall(InitialiseCameraForDebugMode, 0x50AF90);
     RH_ScopedInstall(ProcessObbeCinemaCameraPed, 0x50B880);
+    RH_ScopedInstall(ProcessObbeCinemaCameraPlane, 0x526C80);
+    RH_ScopedInstall(ProcessObbeCinemaCameraTrain, 0x526950);
+    RH_ScopedInstall(ProcessObbeCinemaCameraBoat, 0x526E20);
+    RH_ScopedInstall(ProcessObbeCinemaCameraCar, 0x5267C0);
+    RH_ScopedInstall(ProcessObbeCinemaCameraHeli, 0x526AE0);
     RH_ScopedInstall(ProcessWideScreenOn, 0x50B890);
     RH_ScopedInstall(RenderMotionBlur, 0x50B8F0);
     RH_ScopedInstall(SetCameraDirectlyBehindForFollowPed_CamOnAString, 0x50BD40);
@@ -1589,14 +1594,95 @@ void CCamera::ProcessObbeCinemaCameraPed() {
     // NOP
 }
 
-//
-void CCamera::ProcessObbeCinemaCameraPlane() {
-    assert(0);
+// 0x51D770
+bool CCamera::IsItTimeForNewCamera(int32 camSequence, int32 startTime) {
+    return plugin::CallMethodAndReturn<bool, 0x51D770, CCamera*, int32, int32>(this, camSequence, startTime);
 }
 
-//
+// NOTSA - Shared by the 5 `ProcessObbeCinemaCamera*` selectors, they only differ in the table of cam requests,
+// the statics they keep and a few small details (see `eCinemaFallback` / `checkUnderwater`)
+enum class eCinemaFallback {
+    ALWAYS_TRY_LAST_TABLE_ENTRY, // Car, train: try the entry after the last one, and always remember the time
+    CAM_ON_A_STRING_IF_NOT_ALREADY, // Heli, plane, boat: switch to `CAM_REQUEST_CAM_ON_A_STRING` unless the active cam is already on a string
+};
+static void ProcessObbeCinemaCameraSelector(
+    CCamera&                  cam,
+    std::span<const int32>    requests,       // The last entry is only used for `ALWAYS_TRY_LAST_TABLE_ENTRY`
+    int32&                    currentIdx,
+    uint32&                   lastChangeTime,
+    bool                      checkUnderwater,
+    eCinemaFallback           fallback
+) {
+    static auto& s_Direction            = StaticRef<int8>(0x8CC471); // 1
+    static auto& s_CinematicProcessed   = StaticRef<bool>(0xB6EC34);
+    const auto numModes = (int32)requests.size() - (fallback == eCinemaFallback::ALWAYS_TRY_LAST_TABLE_ENTRY ? 1 : 0);
+
+    const auto Advance = [&] {
+        currentIdx = (s_Direction + currentIdx) % numModes;
+        if (currentIdx < 0) {
+            currentIdx = numModes - 1;
+        } else if (currentIdx > numModes - 1) {
+            currentIdx = 0;
+        }
+    };
+
+    if (!CCamera::bDidWeProcessAnyCinemaCam) {
+        currentIdx = -1;
+        if (gbCineyCamMessageDisplayed > 0 && !cam.m_bCinemaCamera) {
+            gbCineyCamMessageDisplayed--;
+            CHud::SetHelpMessage(TheText.Get("CINCAM"), true, false, false);
+        }
+        s_CinematicProcessed = true;
+    } else {
+        const auto keepCurrent = checkUnderwater
+            ? !cam.IsActiveCamUnderwater() && !cam.IsItTimeForNewCamera(requests[currentIdx], lastChangeTime)
+            : !cam.IsItTimeForNewCamera(requests[currentIdx], lastChangeTime);
+        if (keepCurrent) {
+            cam.m_nModeObbeCamIsInForCar = currentIdx;
+            CCamera::bDidWeProcessAnyCinemaCam = true;
+            return;
+        }
+    }
+
+    // Find the next request the camera accepts
+    Advance();
+    auto numTries = 0;
+    auto accepted = cam.TryToStartNewCamMode(requests[currentIdx]);
+    while (!accepted && numTries <= numModes) {
+        Advance();
+        numTries++;
+        accepted = cam.TryToStartNewCamMode(requests[currentIdx]);
+    }
+
+    if (fallback == eCinemaFallback::ALWAYS_TRY_LAST_TABLE_ENTRY) {
+        lastChangeTime = CTimer::GetTimeInMS();
+        if (numTries >= numModes) {
+            currentIdx = numModes;
+            cam.TryToStartNewCamMode(requests[currentIdx]);
+        }
+    } else if (numTries < numModes) {
+        lastChangeTime = CTimer::GetTimeInMS();
+    } else {
+        currentIdx = numModes;
+        if (cam.GetActiveCam().m_nMode != MODE_CAM_ON_A_STRING) {
+            cam.TryToStartNewCamMode(CAM_REQUEST_CAM_ON_A_STRING);
+            lastChangeTime = CTimer::GetTimeInMS();
+        }
+    }
+    cam.m_nModeObbeCamIsInForCar = currentIdx;
+    CCamera::bDidWeProcessAnyCinemaCam = true;
+}
+
+// 0x526C80
+void CCamera::ProcessObbeCinemaCameraPlane() {
+    static constexpr int32 requests[]{ 26, 27, 20, 22, 28, 23 };
+    ProcessObbeCinemaCameraSelector(*this, requests, StaticRef<int32>(0x8CCEF8), StaticRef<uint32>(0xB7012C), true, eCinemaFallback::CAM_ON_A_STRING_IF_NOT_ALREADY);
+}
+
+// 0x526950
 void CCamera::ProcessObbeCinemaCameraTrain() {
-    assert(0);
+    static constexpr int32 requests[]{ 20, 22, 2, 21, 3, 0, 0 };
+    ProcessObbeCinemaCameraSelector(*this, requests, StaticRef<int32>(0x8CCEF0), StaticRef<uint32>(0xB70124), false, eCinemaFallback::ALWAYS_TRY_LAST_TABLE_ENTRY);
 }
 
 // 0x50B890
@@ -1633,19 +1719,22 @@ void CCamera::ProcessVectorTrackLinear(float ratio) {
     m_vecTrackLinear = (m_vecTrackLinearStartPoint - m_vecTrackLinearEndPoint) * progress + m_vecTrackLinearEndPoint;
 }
 
-//
+// 0x526E20
 void CCamera::ProcessObbeCinemaCameraBoat() {
-    assert(0);
+    static constexpr int32 requests[]{ 20, 3, 18 };
+    ProcessObbeCinemaCameraSelector(*this, requests, StaticRef<int32>(0x8CCEFC), StaticRef<uint32>(0xB70130), false, eCinemaFallback::CAM_ON_A_STRING_IF_NOT_ALREADY);
 }
 
-//
+// 0x5267C0
 void CCamera::ProcessObbeCinemaCameraCar() {
-    assert(0);
+    static constexpr int32 requests[]{ 20, 22, 7, 3, 22, 1, 21, 8, 2, 22, 5, 6 };
+    ProcessObbeCinemaCameraSelector(*this, requests, StaticRef<int32>(0x8CCEEC), StaticRef<uint32>(0xB70120), false, eCinemaFallback::ALWAYS_TRY_LAST_TABLE_ENTRY);
 }
 
-//
+// 0x526AE0
 void CCamera::ProcessObbeCinemaCameraHeli() {
-    assert(0);
+    static constexpr int32 requests[]{ 26, 27, 23, 20, 22, 28, 23 };
+    ProcessObbeCinemaCameraSelector(*this, requests, StaticRef<int32>(0x8CCEF4), StaticRef<uint32>(0xB70128), true, eCinemaFallback::CAM_ON_A_STRING_IF_NOT_ALREADY);
 }
 
 // 0x50D430
@@ -3233,17 +3322,16 @@ void CCamera::CamControl() {
         CPostEffects::m_bSpeedFXUserFlagCurrentFrame = false;
         if (m_pTargetEntity->GetIsTypeVehicle()) {
             auto* vehicle = m_pTargetEntity->AsVehicle();
-            // These cinematic selectors have not yet been reversed.
             if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE) {
-                plugin::CallMethod<0x526C80, CCamera*>(this);
+                ProcessObbeCinemaCameraPlane();
             } else if (vehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI) {
-                plugin::CallMethod<0x526AE0, CCamera*>(this);
+                ProcessObbeCinemaCameraHeli();
             } else if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_BOAT) {
-                plugin::CallMethod<0x526E20, CCamera*>(this);
+                ProcessObbeCinemaCameraBoat();
             } else if (vehicle->m_nVehicleSubType == VEHICLE_TYPE_TRAIN) {
-                plugin::CallMethod<0x526950, CCamera*>(this);
+                ProcessObbeCinemaCameraTrain();
             } else {
-                plugin::CallMethod<0x5267C0, CCamera*>(this);
+                ProcessObbeCinemaCameraCar();
             }
         }
     }
