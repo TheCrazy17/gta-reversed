@@ -11011,6 +11011,11 @@
   },
   {
     "Category": "CCamera",
+    "Name": "IsItTimeForNewCamera",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCamera",
     "Name": "ProcessObbeCinemaCameraCar",
     "IsReversed": true
   },

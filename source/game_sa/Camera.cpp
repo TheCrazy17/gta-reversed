@@ -56,6 +56,7 @@ void CCamera::InjectHooks() {
     RH_ScopedInstall(ProcessObbeCinemaCameraPlane, 0x526C80);
     RH_ScopedInstall(ProcessObbeCinemaCameraTrain, 0x526950);
     RH_ScopedInstall(ProcessObbeCinemaCameraBoat, 0x526E20);
+    RH_ScopedInstall(IsItTimeForNewCamera, 0x51D770);
     RH_ScopedInstall(ProcessObbeCinemaCameraCar, 0x5267C0);
     RH_ScopedInstall(ProcessObbeCinemaCameraHeli, 0x526AE0);
     RH_ScopedInstall(ProcessWideScreenOn, 0x50B890);
@@ -1596,7 +1597,223 @@ void CCamera::ProcessObbeCinemaCameraPed() {
 
 // 0x51D770
 bool CCamera::IsItTimeForNewCamera(int32 camSequence, int32 startTime) {
-    return plugin::CallMethodAndReturn<bool, 0x51D770, CCamera*, int32, int32>(this, camSequence, startTime);
+    static auto& s_StickWasCentered = StaticRef<bool>(0x8CCDF4);
+    static auto& s_Direction        = StaticRef<int8>(0x8CC471);
+
+    constexpr float MAX_TIME_SINCE_START_SHORT = 15000.0f;
+    constexpr float MAX_TIME_SINCE_START       = 20000.0f;
+
+    if (camSequence < 0) {
+        return true;
+    }
+
+    const auto timeSinceStart = (float)((double)CTimer::GetTimeInMS() - (double)startTime);
+    if (timeSinceStart > MAX_TIME_SINCE_START) {
+        return true;
+    }
+
+    // Pushing the right stick all the way asks for the next/previous camera
+    const auto stickX = (float)CPad::GetPad(0)->NewState.RightStickX;
+    if (std::abs(stickX) <= 32.0f) {
+        s_StickWasCentered = true;
+    } else if (std::abs(stickX) > 96.0f && s_StickWasCentered) {
+        s_Direction        = stickX > 0.0f ? 1 : -1;
+        s_StickWasCentered = false;
+        return true;
+    }
+
+    const auto HasElapsed = [&](uint32 ms) { return (uint32)startTime + ms < CTimer::GetTimeInMS(); };
+    const auto HasShortTimeoutElapsed = [&] { return timeSinceStart > MAX_TIME_SINCE_START_SHORT; };
+
+    // The camera can't follow a boat unless the target is a skimmer
+    const auto IsFollowingBoat = [&] {
+        const auto* vehicle = FindPlayerVehicle();
+        return vehicle && vehicle->IsBoat() && m_pTargetEntity->m_nModelIndex != MODEL_SKIMMER;
+    };
+    const auto IsTargetInSight = [&] {
+        return CWorld::GetIsLineOfSightClear(m_pTargetEntity->GetPosition(), GetActiveCam().m_vecSource, true, false, false, false, false, false, false);
+    };
+
+    // Fixed cams are placed at `m_vecFixedModeSource`
+    const auto IsPlayerInSightOfFixedSource = [&] {
+        return CWorld::GetIsLineOfSightClear(FindPlayerCoors(), m_vecFixedModeSource, true, false, false, false, false, false, false);
+    };
+    const auto PlayerOffsetToFixedSource = [&] {
+        const auto offset = FindPlayerCoors() - m_vecFixedModeSource;
+        return CVector{ offset.x, offset.y, 0.0f };
+    };
+    const auto IsPlayerMovingAwayFrom = [&](const CVector& offset) {
+        const auto& speed = FindPlayerSpeed();
+        return (double)offset.y * speed.y + (double)speed.z * 0.0 + (double)offset.x * speed.x > 0.0;
+    };
+    const auto SetNearClip = [&](float nearClip) {
+        m_fNearClipScript    = nearClip;
+        m_bUseNearClipScript = true;
+    };
+    const auto ResetNearClip = [] {
+        RwCameraSetNearClipPlane(Scene.m_pRwCamera, 0.15f);
+    };
+
+    switch (camSequence) {
+    case 0: {
+        if (const auto* vehicle = FindPlayerVehicle()) {
+            if (IsFollowingBoat() || vehicle->m_nModelIndex == MODEL_RHINO) {
+                return true;
+            }
+            if (!IsTargetInSight()) {
+                return true;
+            }
+        }
+        if (HasElapsed(5000)) {
+            return true;
+        }
+        ResetNearClip();
+        return false;
+    }
+    case 1: {
+        if (HasShortTimeoutElapsed() || IsFollowingBoat() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 40.0f && IsPlayerMovingAwayFrom(offset)) {
+            return true;
+        }
+        return offset.Magnitude() < 4.5f;
+    }
+    case 2: {
+        if (HasShortTimeoutElapsed() || IsFollowingBoat() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() < 2.0f) {
+            SetNearClip(std::max(offset.Magnitude() * 0.5f, 0.05f));
+        }
+        if (offset.Magnitude() > 29.0f && IsPlayerMovingAwayFrom(offset)) {
+            return true;
+        }
+        if (offset.Magnitude() < 2.0f) {
+            return true;
+        }
+        ResetNearClip();
+        return false;
+    }
+    case 3: {
+        if (HasShortTimeoutElapsed() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 48.0f && IsPlayerMovingAwayFrom(offset)) {
+            return true;
+        }
+        ResetNearClip();
+        return false;
+    }
+    case 4:
+    case 6:
+        return HasElapsed(3000);
+    case 5: {
+        if (HasShortTimeoutElapsed() || IsFollowingBoat() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        return offset.Magnitude() > 38.0f && IsPlayerMovingAwayFrom(offset);
+    }
+    case 7: {
+        if (HasElapsed(2000)) {
+            auto* vehicle = FindPlayerVehicle();
+            return !vehicle || !vehicle->GetIsOnScreen();
+        }
+        return false;
+    }
+    case 8: {
+        if (HasShortTimeoutElapsed() || IsFollowingBoat() || !IsTargetInSight() || HasElapsed(1000)) {
+            return true;
+        }
+        SetNearClip(0.6f);
+        return false;
+    }
+    case 0xF: {
+        if (HasShortTimeoutElapsed()) {
+            return true;
+        }
+        if (!FindPlayerVehicle()) {
+            return false;
+        }
+        if (!IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 44.0f && IsPlayerMovingAwayFrom(offset)) {
+            return true;
+        }
+        return offset.Magnitude() < 3.0f;
+    }
+    case 0x10: {
+        if (HasShortTimeoutElapsed()) {
+            return true;
+        }
+        if (!FindPlayerVehicle()) {
+            return false;
+        }
+        if (!IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 50.0f) {
+            return true;
+        }
+        return offset.Magnitude() < 3.0f;
+    }
+    case 0x11: {
+        if (HasShortTimeoutElapsed()) {
+            return true;
+        }
+        if (!FindPlayerVehicle()) {
+            return false;
+        }
+        if (!IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 50.0f && IsPlayerMovingAwayFrom(offset)) {
+            return true;
+        }
+        return offset.Magnitude() < 2.0f;
+    }
+    case 0x12: {
+        if (HasShortTimeoutElapsed() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto distance = (FindPlayerCoors() - m_vecFixedModeSource).Magnitude();
+        if (distance > 57.0f) {
+            return true;
+        }
+        return distance < 1.0f;
+    }
+    case 0x13: {
+        if (HasShortTimeoutElapsed() || !IsPlayerInSightOfFixedSource()) {
+            return true;
+        }
+        const auto offset = PlayerOffsetToFixedSource();
+        if (offset.Magnitude() > 36.0f) {
+            return true;
+        }
+        return offset.Magnitude() < 2.0f;
+    }
+    case CAM_REQUEST_DW_HELI_CHASE:    return !GetActiveCam().Process_DW_HeliChaseCam(true);
+    case CAM_REQUEST_DW_CAM_MAN:       return !GetActiveCam().Process_DW_CamManCam(true);
+    case CAM_REQUEST_DW_BIRDY:         return !GetActiveCam().Process_DW_BirdyCam(true);
+    case CAM_REQUEST_DW_PLANE_SPOTTER: return !GetActiveCam().Process_DW_PlaneSpotterCam(true);
+    case CAM_REQUEST_DW_DOG_FIGHT:
+    case CAM_REQUEST_DW_FISH:
+        TheCamera.m_bUseNearClipScript = false;
+        return true;
+    case CAM_REQUEST_DW_PLANE_CAM_1:   return !GetActiveCam().Process_DW_PlaneCam1(true);
+    case CAM_REQUEST_DW_PLANE_CAM_2:   return !GetActiveCam().Process_DW_PlaneCam2(true);
+    case CAM_REQUEST_DW_PLANE_CAM_3:   return !GetActiveCam().Process_DW_PlaneCam3(true);
+    case CAM_REQUEST_CAM_ON_A_STRING:  return HasElapsed(5000);
+    default:                           return false;
+    }
 }
 
 // NOTSA - Shared by the 5 `ProcessObbeCinemaCamera*` selectors, they only differ in the table of cam requests,

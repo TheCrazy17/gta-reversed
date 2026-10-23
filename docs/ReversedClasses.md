@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 20:46:44 UTC
+Last update was at Oct 23, 2026 at 20:57:39 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8395 out of 8395 functions done in 723 categories)
+## Stats (8396 out of 8396 functions done in 723 categories)
 
 #### Completely reversed categories (723/723) [100%]
 
@@ -139,7 +139,7 @@ Last update was at Oct 23, 2026 at 20:46:44 UTC
 - CGameLogic (27)<br />
 - CStuckCarCheck (8)<br />
 - CUpsideDownCarCheck (5)<br />
-- CCamera (120)<br />
+- CCamera (121)<br />
 - CMessages (28)<br />
 - CGangWars (35)<br />
 - CPlayerPedData (5)<br />
