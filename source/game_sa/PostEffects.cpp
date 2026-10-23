@@ -54,7 +54,7 @@ void CPostEffects::InjectHooks() {
     RH_ScopedInstall(SpeedFX, 0x7030A0);
     RH_ScopedInstall(DarknessFilter, 0x702F00);
     RH_ScopedInstall(ColourFilter, 0x703650);
-    RH_ScopedInstall(Radiosity, 0x702080, { .Reversed = false });
+    RH_ScopedInstall(Radiosity, 0x702080);
     RH_ScopedInstall(SetSpeedFXManualSpeedCurrentFrame, 0x700BE0);
     RH_ScopedInstall(Render, 0x7046E0);
 }
@@ -1164,7 +1164,119 @@ void CPostEffects::ColourFilter(RwRGBA pass1, RwRGBA pass2) {
 
 // 0x702080
 void CPostEffects::Radiosity(int32 intensityLimit, int32 filterPasses, int32 renderPasses, int32 intensity) {
-    plugin::Call<0x702080>();
+    auto* const raster   = pRasterFrontBuffer;
+    const auto  recipNear = 1.0f / RwCameraGetNearClipPlane(Scene.m_pRwCamera);
+
+    // Both vertices of each pair are two corners of the quad, so only the fields the game writes are set,
+    // the rest keeps what was left in the buffer
+    auto* const verts = aRadiosityVertexBuffer;
+    const auto  SetCorner = [&](RwD3D9Vertex& v, float x, float y) {
+        v.x   = x;
+        v.y   = y;
+        v.z   = 0.0f;
+        v.rhw = recipNear;
+    };
+    const auto  SetCornerUV = [](RwD3D9Vertex& v, float u, float vv) {
+        v.u = u;
+        v.v = vv;
+    };
+    const auto  DrawStored = [&] {
+        if (uiTempBufferVerticesStored > 2) {
+            RwIm2DRenderPrimitive(rwPRIMTYPETRISTRIP, reinterpret_cast<RwIm2DVertex*>(verts), uiTempBufferVerticesStored);
+        }
+    };
+
+    auto width  = (int32)m_RadiosityPixelsX;
+    auto height = (int32)m_RadiosityPixelsY;
+
+    RwRenderStateSet(rwRENDERSTATETEXTUREFILTER,     RWRSTATE(rwFILTERNEAREST));
+    RwRenderStateSet(rwRENDERSTATEFOGENABLE,         RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER,     RWRSTATE(raster));
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(rwBLENDINVSRCALPHA));
+
+    // The first pair is the whole screen, and the ones of the filter passes are made from it
+    SetCorner(verts[0], 0.0f, 0.0f);
+    SetCornerUV(verts[0], 0.0f, 0.0f);
+    SetCornerUV(verts[1], 1.0f, 1.0f);
+    if (m_bRadiosityStripCopyMode) {
+        SetCorner(verts[1], (float)RsGlobal.maximumWidth, (float)RsGlobal.maximumHeight);
+    } else {
+        SetCorner(verts[1], (float)width, (float)height);
+    }
+    uiTempBufferVerticesStored = 0;
+
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE, RWRSTATE(TRUE));
+    if (filterPasses > 0) {
+        RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, RWRSTATE(rwFILTERLINEAR));
+        for (auto i = 0; i < filterPasses; i++) {
+            auto& v0 = verts[uiTempBufferVerticesStored];
+            auto& v1 = verts[uiTempBufferVerticesStored + 1];
+
+            const auto halfWidth  = width / 2;
+            const auto halfHeight = height / 2;
+
+            SetCorner(v0, 0.0f, 0.0f);
+            SetCornerUV(v0, (float)m_RadiosityFilterUCorrection / (float)raster->width, (float)m_RadiosityFilterVCorrection / (float)raster->height);
+            SetCorner(v1, (float)(halfWidth + 1), (float)(halfHeight + 1));
+            SetCornerUV(v1, (float)width / (float)raster->width, (float)height / (float)raster->height);
+            v0.emissiveColor = v1.emissiveColor = 0xFFFFFFFF;
+
+            uiTempBufferVerticesStored += 2;
+            width  = halfWidth;
+            height = halfHeight;
+        }
+    }
+
+    // The last pair is what is left of the filter, it is the one that brings the intensity limit
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,  RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND, RWRSTATE(rwBLENDINVSRCALPHA));
+    {
+        auto& v0 = verts[uiTempBufferVerticesStored];
+        auto& v1 = verts[uiTempBufferVerticesStored + 1];
+        SetCorner(v0, 0.0f, 0.0f);
+        SetCorner(v1, (float)(width + 1), (float)(height + 1));
+
+        const auto limit = (uint32)intensityLimit;
+        v0.emissiveColor = v1.emissiveColor = ((((limit | 0xFFFF8000u) << 8) | limit) << 8) | limit;
+        uiTempBufferVerticesStored += 2;
+    }
+
+    if (renderPasses > 0) {
+        DrawStored();
+        uiTempBufferVerticesStored = 0;
+
+        RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, RWRSTATE(m_bRadiosityLinearFilter ? rwFILTERLINEAR : rwFILTERMIPNEAREST));
+
+        // The filtered one is drawn over the screen, as many times as asked
+        const auto color = (!m_bRadiosityStripCopyMode && m_bRadiosityDebug) ? 0xFFFFFFFFu : (uint32)intensity << 24;
+        for (auto i = 0; i < renderPasses; i++) {
+            auto& v0 = verts[uiTempBufferVerticesStored];
+            auto& v1 = verts[uiTempBufferVerticesStored + 1];
+
+            SetCorner(v0, 0.0f, 0.0f);
+            SetCornerUV(v0, 0.0f, 0.0f);
+            SetCorner(v1, (float)RsGlobal.maximumWidth, (float)RsGlobal.maximumHeight);
+            SetCornerUV(v1, (float)width / (float)raster->width, (float)height / (float)raster->height);
+            v0.emissiveColor = v1.emissiveColor = color;
+
+            uiTempBufferVerticesStored += 2;
+        }
+    }
+
+    DrawStored();
+    uiTempBufferVerticesStored = 0;
+
+    RwRenderStateSet(rwRENDERSTATEFOGENABLE,         RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      RWRSTATE(TRUE));
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER,     RWRSTATE(NULL));
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, RWRSTATE(FALSE));
+    RwRenderStateSet(rwRENDERSTATESRCBLEND,          RWRSTATE(rwBLENDSRCALPHA));
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND,         RWRSTATE(rwBLENDINVSRCALPHA));
 }
 
 // 0x700BE0

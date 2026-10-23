@@ -10432,7 +10432,7 @@
   {
     "Category": "CPostEffects",
     "Name": "Radiosity",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPostEffects",
