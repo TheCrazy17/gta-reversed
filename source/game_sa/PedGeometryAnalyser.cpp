@@ -36,7 +36,7 @@ void CPedGeometryAnalyser::InjectHooks() {
     RH_ScopedOverloadedInstall(ComputePedHitSide, "posn", 0x5F1E70, int32(*)(const CPed&,const CVector&));
     RH_ScopedInstall(ComputePedShotSide, 0x5F13F0);
     RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "1", 0x5F6110, int32(*)(const CPed&,CEntity&,const CVector&,CPointRoute&,int32));
-    RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32), { .Reversed = false });
+    RH_ScopedOverloadedInstall(ComputeRouteRoundEntityBoundingBox, "2", 0x5F3DD0, int32(*)(const CPed&,const CVector&,CEntity&,const CVector&,CPointRoute&,int32));
     RH_ScopedInstall(ComputeRouteRoundSphere, 0x5F1890);
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "ped", 0x5F5A30, bool(*)(const CPed&,const CVector&,CEntity&,float&));
     RH_ScopedOverloadedInstall(GetIsLineOfSightClear, "v3d", 0x5F2F00, bool(*)(const CVector&,const CVector&,CEntity&));
@@ -628,8 +628,272 @@ int32 CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(const CPed& ped, 
 }
 
 // 0x5F3DD0
-int32 CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(const CPed& ped, const CVector& a2, CEntity& entity, const CVector& a4, CPointRoute& pointRoute, int32 a6){
-    return plugin::CallAndReturn<int32, 0x5F3DD0, const CPed&, const CVector&, CEntity&, const CVector&, CPointRoute&, int32>(ped, a2, entity, a4, pointRoute, a6);
+int32 CPedGeometryAnalyser::ComputeRouteRoundEntityBoundingBox(const CPed& ped, const CVector& a2, CEntity& entity, const CVector& a4, CPointRoute& route, int32 a6) {
+    static_assert(offsetof(CPed, m_nMoveState) == 0x534);
+
+    route.Clear();
+
+    const auto pedZ = ped.GetPosition().z;
+
+    // The box is a bit smaller while checking if the line is even close to it
+    CVector corners[4];
+    CVector planes[4];
+    float   planesDot[4];
+    const auto ComputeBox = [&] {
+        ComputeEntityBoundingBoxCornersUncached(pedZ, entity, corners);
+        ComputeEntityBoundingBoxPlanesUncached(pedZ, corners, &planes, planesDot);
+    };
+    const auto savedTolerance = ms_BoundingBoxTolerance;
+    ms_BoundingBoxTolerance = 0.175f;
+    ComputeBox();
+    ms_BoundingBoxTolerance = savedTolerance;
+
+    // Both ends are out of the same side of the box
+    for (auto i = 0; i < 4; i++) {
+        if (DotProduct(a2, planes[i]) + planesDot[i] > 0.0f && DotProduct(a4, planes[i]) + planesDot[i] > 0.0f) {
+            return 0;
+        }
+    }
+
+    // Both ends are at the same side of the center of the box
+    CVector segPlanes[4];
+    float   segPlanesDot[4];
+    ComputeEntityBoundingBoxSegmentPlanesUncachedAll(pedZ, entity, segPlanes, segPlanesDot);
+    if (ComputeEntityHitSide(a2, segPlanes, segPlanesDot) == ComputeEntityHitSide(a4, segPlanes, segPlanesDot)) {
+        return 0;
+    }
+
+    ComputeBox();
+
+    // Cut the line with the planes of the box, so only what is close to it is left
+    static constexpr auto TOLERANCE = 0.2f;
+    const auto Classify = [](float dist) {
+        if (dist > TOLERANCE) {
+            return 1;
+        }
+        return !(dist < -TOLERANCE) ? 0 : -1;
+    };
+
+    CVector p0 = a2, p1 = a4;
+    auto    dir = p1 - p0;
+    dir.Normalise();
+    const auto CrossingWith = [&](const CVector& from, const CVector& plane, float planeDot) {
+        return from + dir * -((DotProduct(from, plane) + planeDot) / DotProduct(dir, plane));
+    };
+
+    auto isOutsideOfAPlane = false;
+    for (auto i = 0; i < 4; i++) {
+        const auto& plane = planes[i];
+        const auto  dist0 = DotProduct(p0, plane) + planesDot[i];
+        const auto  dist1 = DotProduct(p1, plane) + planesDot[i];
+        const auto  side0 = Classify(dist0);
+        const auto  side1 = Classify(dist1);
+        if (side0 == -1) {
+            if (side1 == 1) {
+                p1 = CrossingWith(a2, plane, planesDot[i]);
+            }
+        } else if (side1 == -1) {
+            if (side0 == 1) {
+                p0 = CrossingWith(a2, plane, planesDot[i]);
+            }
+        } else {
+            isOutsideOfAPlane = true;
+            if (side0 == 0) {
+                p0 += plane * (TOLERANCE - dist0);
+            }
+            if (side1 == 0) {
+                p1 += plane * (TOLERANCE - dist1);
+            }
+        }
+    }
+
+    // The line goes through the box, so the sphere around it is what is used for where it enters and exits
+    if (!isOutsideOfAPlane) {
+        CColSphere sphere;
+        ComputeEntityBoundingSphere(ped, entity, sphere);
+
+        CVector dir2D{ a4.x - a2.x, a4.y - a2.y, 0.0f };
+        if (dir2D.Magnitude2D() == 0.0f) {
+            return 0;
+        }
+        dir2D.Normalise();
+
+        if (!sphere.IntersectRay(a2, dir2D, p0, p1)) {
+            return 0;
+        }
+    }
+
+    // Which side of the box has the line to enter, and which one to exit
+    const CVector enterFrom = p0;
+    dir = p1 - p0;
+    dir.Normalise();
+
+    auto exitSide  = -1;
+    auto entrySide = -1;
+    for (auto i = 0; i < 4; i++) {
+        const auto& plane = planes[i];
+        const auto  dist0 = DotProduct(p0, plane) + planesDot[i];
+        const auto  dist1 = DotProduct(p1, plane) + planesDot[i];
+        if (dist0 == 0.0f && dist1 == 0.0f) {
+            continue;
+        }
+        if (dist0 < 0.0f || 0.0f <= dist1) {
+            if (!std::isnan(dist0) && dist0 <= 0.0f && 0.0f <= dist1) {
+                exitSide = i;
+                p1       = CrossingWith(enterFrom, plane, planesDot[i]);
+            }
+        } else {
+            entrySide = i;
+            p0        = CrossingWith(enterFrom, plane, planesDot[i]);
+        }
+    }
+    if (exitSide < 0 || entrySide < 0) {
+        return 0;
+    }
+
+    // There are two ways around the box, one for each way around its corners
+    std::array<CVector, 6> way1, way2;
+    auto                   numWay1 = 0u, numWay2 = 0u;
+
+    way1[numWay1++] = a2;
+    auto corner     = (entrySide + 3) & 3;
+    way1[numWay1++] = corners[corner];
+    while (corner != exitSide) {
+        corner          = (corner + 3) & 3;
+        way1[numWay1++] = corners[corner];
+    }
+    way1[numWay1++] = a4;
+
+    way2[numWay2++] = a2;
+    corner          = entrySide;
+    way2[numWay2++] = corners[corner];
+    while (corner != ((exitSide + 3) & 3)) {
+        corner          = (corner + 1) & 3;
+        way2[numWay2++] = corners[corner];
+    }
+    way2[numWay2++] = a4;
+
+    const auto useWay1 = [&] {
+        // Forced by the caller
+        if (a6 != 0) {
+            return a6 == 1;
+        }
+
+        CVector center{ 0.0f, 0.0f, 0.0f };
+        for (const auto& c : corners) {
+            center += c;
+        }
+        center *= 0.25f;
+
+        struct WayInfo {
+            bool     IsClear{ true };
+            uint32   BlockedAt{};
+            CEntity* Blocker{};
+            float    Length{};
+        };
+        const auto Examine = [&](std::span<const CVector> way) {
+            WayInfo info{ .BlockedAt = (uint32)way.size() };
+
+            CEntity* hit{};
+            for (auto i = 1u; i < way.size(); i++) {
+                const auto& prev = way[i - 1];
+                const auto& cur  = way[i];
+
+                // The side of the segment that is away from the box is also checked
+                CVector segDir{ cur.x - prev.x, cur.y - prev.y, 0.0f };
+                segDir.Normalise();
+                CVector side{ segDir.y * 0.5f, -segDir.x * 0.5f, 0.0f };
+                if ((cur.y - center.y) * side.y + (cur.x - center.x) * side.x < 0.0f) {
+                    side = -side;
+                }
+
+                CColPoint colPoint;
+                if (   !CWorld::ProcessLineOfSight(prev, cur, colPoint, hit, true, true, true, true, false, false, false, false)
+                    && !CWorld::ProcessLineOfSight(prev + side, cur + side, colPoint, hit, true, true, true, true, false, false, false, false)
+                ) {
+                    continue;
+                }
+
+                if (hit == &entity || hit == &ped) {
+                    hit = nullptr;
+                    continue;
+                }
+
+                // Peds that are moving the same way as the route are not in the way
+                if (hit->GetIsTypePed() && hit->AsPed()->m_nMoveState != PEDMOVE_STILL) {
+                    if (!hit->m_matrix) {
+                        hit->AllocateMatrix();
+                        hit->m_placement.UpdateMatrix(hit->m_matrix);
+                    }
+                    if (DotProduct(cur - prev, hit->m_matrix->GetForward()) >= 0.0f) {
+                        continue;
+                    }
+                }
+
+                info.IsClear   = false;
+                info.BlockedAt = i;
+                break;
+            }
+            info.Blocker = hit;
+
+            for (auto i = 1u; i < way.size(); i++) {
+                info.Length += (way[i] - way[i - 1]).Magnitude();
+            }
+            return info;
+        };
+        const auto info1 = Examine({ way1.data(), numWay1 });
+        const auto info2 = Examine({ way2.data(), numWay2 });
+
+        // The one that is blocked by the smaller thing
+        const auto IsBlockerSmaller = [&] {
+            if (info1.Blocker == info2.Blocker || !info1.Blocker || !info2.Blocker) {
+                return info1.Length < info2.Length;
+            }
+            const auto Radius = [](const CEntity* e) { return CModelInfo::GetModelInfo(e->m_nModelIndex)->GetColModel()->GetBoundRadius(); };
+            return Radius(info1.Blocker) < Radius(info2.Blocker);
+        };
+
+        if (info1.IsClear) {
+            return info2.IsClear ? info1.Length < info2.Length : true;
+        }
+        if (info2.IsClear) {
+            return false;
+        }
+        if (info1.BlockedAt == 1) {
+            return info2.BlockedAt < 2 ? IsBlockerSmaller() : false;
+        }
+        if (info1.BlockedAt > 1 && info2.BlockedAt == 1) {
+            return true;
+        }
+        return IsBlockerSmaller();
+    }();
+
+    const auto& way    = useWay1 ? way1 : way2;
+    const auto  numWay = useWay1 ? numWay1 : numWay2;
+    for (auto i = 1u; i + 1 < numWay; i++) {
+        route.AddUnlessFull(way[i]);
+    }
+    route.AddUnlessFull(a4);
+
+    // The first point is not needed when it already is at the side the route starts from
+    if (route.GetSize() > 1) {
+        ComputeEntityBoundingBoxSegmentPlanesUncachedAll(a2.z, entity, segPlanes, segPlanesDot);
+        const auto startSide = ComputeEntityHitSide(a2, segPlanes, segPlanesDot);
+
+        const auto& second = route.m_Entries[1];
+        ComputeEntityBoundingBoxSegmentPlanesUncachedAll(second.z, entity, segPlanes, segPlanesDot);
+        if (startSide == ComputeEntityHitSide(second, segPlanes, segPlanesDot)) {
+            for (auto i = 0u; i + 1 < route.GetSize(); i++) {
+                route.m_Entries[i] = route.m_Entries[i + 1];
+            }
+            route.m_NumEntries--;
+        }
+    }
+
+    // The target itself is not part of the route
+    route.m_NumEntries--;
+
+    return useWay1 ? 1 : 2;
 }
 
 // 0x5F1890

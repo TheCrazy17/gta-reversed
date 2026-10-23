@@ -15037,7 +15037,7 @@
   {
     "Category": "CPedGeometryAnalyser",
     "Name": "ComputeRouteRoundEntityBoundingBox-2",
-    "IsReversed": false
+    "IsReversed": true
   },
   {
     "Category": "CPedGeometryAnalyser",
