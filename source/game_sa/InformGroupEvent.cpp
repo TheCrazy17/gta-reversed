@@ -22,7 +22,6 @@ CInformGroupEvent::~CInformGroupEvent() {
 // 0x4B29E0
 void CInformGroupEvent::Process() {
     if (m_Ped) {
-        // FIXME: This cast isn't safe. Also in CInformFriendsEventQueue::Process.
         if (static_cast<uint32>(m_Time) >= CTimer::GetTimeInMS()) {
             return;
         }
