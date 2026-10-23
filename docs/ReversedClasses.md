@@ -1,16 +1,16 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 23, 2026 at 14:48:04 UTC
+Last update was at Oct 23, 2026 at 15:41:07 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8338 out of 8339 functions done in 719 categories)
+## Stats (8339 out of 8339 functions done in 719 categories)
 
-#### Completely reversed categories (718/719) [100%]
+#### Completely reversed categories (719/719) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -112,6 +112,7 @@ Last update was at Oct 23, 2026 at 14:48:04 UTC
 - CWanted (33)<br />
 - CCrime (2)<br />
 - CEscalators (4)<br />
+- CWeapon (41)<br />
 - cTransmission (4)<br />
 - CStats (51)<br />
 - CCarCtrl (111)<br />
@@ -735,11 +736,10 @@ Last update was at Oct 23, 2026 at 14:48:04 UTC
 
 </details>
 
-#### Partially reversed categories (1/719) [0.1%]
+#### Partially reversed categories (0/719) [0%]
 
 <details>
 <summary>See list of categories</summary>
-- CWeapon (40/41) [98%]<br />
 
 </details>
 
