@@ -26,6 +26,7 @@
 #include "TaskComplexEnterCarAsDriver.h"
 #include "TaskComplexEnterCarAsPassenger.h"
 #include "Shadows.h"
+#include "Trailer.h"
 #include "PedClothesDesc.h"
 #include "VisibilityPlugins.h"
 
@@ -197,8 +198,8 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(GetSpecialColModel, 0x6DF3D0);
     RH_ScopedInstall(RemoveVehicleUpgrade, 0x6DF930);
     RH_ScopedInstall(AddUpgrade, 0x6DFA20);
-    // RH_ScopedInstall(UpdateTrailerLink, 0x6DFC50);
-    // RH_ScopedInstall(UpdateTractorLink, 0x6E0050);
+    RH_ScopedInstall(UpdateTrailerLink, 0x6DFC50);
+    RH_ScopedInstall(UpdateTractorLink, 0x6E0050);
     // RH_ScopedInstall(ScanAndMarkTargetForHeatSeekingMissile, 0x6E0400);
     RH_ScopedInstall(FireHeatSeakingMissile, 0x6E05C0);
     RH_ScopedInstall(PossiblyDropFreeFallBombForPlayer, 0x6E07E0);
@@ -4883,23 +4884,94 @@ void CVehicle::AddUpgrade(int32 modelIndex, int32 upgradeIndex) {
 
 // 0x6DFC50
 void CVehicle::UpdateTrailerLink(bool arg0, bool arg1) {
-    ((void(__thiscall*)(CVehicle*, bool, bool))0x6DFC50)(this, arg0, arg1);
+    auto* const tractor = m_pTowingVehicle;
+
+    CVector hitchPos{}, barPos{};
+    const auto isTowed = GetStatus() == STATUS_IS_TOWED || GetStatus() == STATUS_IS_SIMPLE_TOWED;
+    if (!tractor || !isTowed || !GetTowHitchPos(hitchPos, true, tractor) || !tractor->GetTowBarPos(barPos, true, this)) {
+        BreakTowLink();
+        return;
+    }
+
+    // The link breaks if the ends are too far apart or the vehicles are not facing the right way
+    const auto gap     = barPos - hitchPos;
+    const auto gapDist = std::sqrt((double)(float)((double)gap.z * gap.z + (double)gap.y * gap.y + (double)gap.x * gap.x));
+    if (std::max(CTimer::GetTimeStep(), 0.7f) < gapDist
+        || DotProduct(tractor->GetMatrix().GetForward(), GetMatrix().GetForward()) < -0.3f
+        || DotProduct(tractor->GetMatrix().GetUp(), GetMatrix().GetUp()) < 0.0f
+    ) {
+        BreakTowLink();
+        return;
+    }
+
+    if ((tractor->m_nModelIndex == MODEL_TOWTRUCK || tractor->m_nModelIndex == MODEL_TRACTOR)
+        && (int32)tractor->AsAutomobile()->m_wMiscComponentAngle > (int32)TOWTRUCK_HOIST_DOWN_LIMIT - 100
+    ) {
+        return;
+    }
+
+    const auto hitchRel    = hitchPos - GetPosition();
+    const auto barRel      = barPos - tractor->GetPosition();
+    const auto hitchSpeed  = GetSpeed(hitchRel);
+    const auto barSpeed    = tractor->GetSpeed(barRel);
+    auto       speedDiff   = barSpeed - hitchSpeed;
+    if (!arg0 && arg1) {
+        speedDiff = gap * 0.3f / std::max(1.0f, CTimer::GetTimeStep());
+    }
+    if (IsSubTrailer() && static_cast<CTrailer*>(this)->m_fTrailerTowedRatio == -1000.0f) { // Baggage trailer
+        speedDiff -= GetMatrix().GetUp() * DotProduct(speedDiff, GetMatrix().GetUp());
+    }
+
+    const auto centreOfMassWS = GetMatrix().TransformVector(m_vecCentreOfMass);
+    auto       direction      = speedDiff;
+    direction.Normalise();
+    const auto lever         = hitchRel - centreOfMassWS;
+    const auto effectiveMass = 1.0f / (1.0f / m_fMass + CrossProduct(lever, direction).SquaredMagnitude() / m_fTurnMass);
+    ApplyForce(speedDiff * effectiveMass, hitchRel, true);
 }
 
 // 0x6E0050
 void CVehicle::UpdateTractorLink(bool arg0, bool arg1) {
-    ((void(__thiscall*)(CVehicle*, bool, bool))0x6E0050)(this, arg0, arg1);
-}
-
-// NOTSA - Rumble the pad of the player who fired an ordnance from this vehicle
-static void ShakePadOfPlayerDriver(CVehicle& vehicle) {
-    if (!vehicle.m_pDriver || !vehicle.m_pDriver->IsPlayer()) {
+    auto* const trailer = m_pVehicleBeingTowed;
+    if (!trailer) {
         return;
     }
-    switch (vehicle.m_pDriver->m_nPedType) {
-    case PED_TYPE_PLAYER1: CPad::GetPad(0)->StartShake(240, 160, 0); break;
-    case PED_TYPE_PLAYER2: CPad::GetPad(1)->StartShake(240, 160, 0); break;
+
+    CVector hitchPos{}, barPos{};
+    if (!trailer->GetTowHitchPos(hitchPos, true, this) || !GetTowBarPos(barPos, true, trailer)) {
+        return;
     }
+    const auto gap = hitchPos - barPos;
+
+    if ((m_nModelIndex == MODEL_TOWTRUCK || m_nModelIndex == MODEL_TRACTOR)
+        && (int32)AsAutomobile()->m_wMiscComponentAngle > (int32)TOWTRUCK_HOIST_DOWN_LIMIT - 100
+    ) {
+        return;
+    }
+
+    const auto hitchRel      = hitchPos - trailer->GetPosition();
+    const auto barRel        = barPos - GetPosition();
+    const auto trailerSpeed  = trailer->GetSpeed(hitchRel);
+    const auto barSpeed      = GetSpeed(barRel);
+    auto       speedDiff     = trailerSpeed - barSpeed;
+    if (!arg0) {
+        // The heavier the trailer, the more of the speed difference the tractor takes
+        speedDiff *= (1.0f - m_fMass / (trailer->m_fMass + m_fMass)) * 0.5f;
+        if (arg1) {
+            speedDiff = gap * 0.1f / std::max(1.0f, CTimer::GetTimeStep());
+        }
+    }
+    if (trailer->IsSubTrailer() && static_cast<CTrailer*>(trailer)->m_fTrailerTowedRatio == -1000.0f) { // Baggage trailer
+        speedDiff -= trailer->GetMatrix().GetUp() * DotProduct(speedDiff, trailer->GetMatrix().GetUp());
+    }
+
+    const auto centreOfMassWS = GetMatrix().TransformVector(m_vecCentreOfMass);
+    auto       direction      = speedDiff;
+    direction.Normalise();
+    const auto lever         = barRel - centreOfMassWS;
+    const auto effectiveMass = 1.0f / (1.0f / m_fMass + CrossProduct(lever, direction).SquaredMagnitude() / m_fTurnMass);
+    ApplyForce(speedDiff * effectiveMass, barRel, true);
+    m_nFakePhysics = 0;
 }
 
 // 0x6E0400
@@ -4926,7 +4998,9 @@ void CVehicle::FireHeatSeakingMissile(CEntity* targetEntity, eOrdnanceType type,
     const auto  origin       = GetPosition() + offset + direction * forwardSpeed * CTimer::GetTimeStep();
     CProjectileInfo::AddProjectile(this, WEAPON_ROCKET_HS, origin, 0.0f, &direction, targetEntity);
 
-    ShakePadOfPlayerDriver(*this);
+    if (m_pDriver && m_pDriver->IsPlayer()) {
+        CPad::GetPad(m_pDriver->GetPadNumber())->StartShake(240, 160, 0);
+    }
     lastFiredAt = CTimer::GetTimeInMS();
 }
 
@@ -4945,7 +5019,9 @@ void CVehicle::PossiblyDropFreeFallBombForPlayer(eOrdnanceType type, bool checkT
 
     CProjectileInfo::AddProjectile(this, WEAPON_FREEFALL_BOMB, GetPosition() + offset, 0.0f, &GetMatrix().GetForward(), nullptr);
 
-    ShakePadOfPlayerDriver(*this);
+    if (m_pDriver && m_pDriver->IsPlayer()) {
+        CPad::GetPad(m_pDriver->GetPadNumber())->StartShake(240, 160, 0);
+    }
     lastDroppedAt = CTimer::GetTimeInMS();
 }
 
