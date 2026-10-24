@@ -38876,6 +38876,11 @@
   },
   {
     "Category": "CAutomobile",
+    "Name": "HasCarStoppedBecauseOfLight",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
     "Name": "ProcessCarOnFireAndExplode",
     "IsReversed": true
   },
