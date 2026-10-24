@@ -6676,9 +6676,9 @@ void CAutomobile::PreRender() {
 void CAutomobile::Render() {
     m_nTimeTillWeNeedThisCar = CTimer::GetTimeInMS() + 3000;
 
-    RwCullMode cullMode = rwCULLMODECULLNONE;
-    RwRenderStateGet(rwRENDERSTATECULLMODE, &cullMode);
-    RwRenderStateSet(rwRENDERSTATECULLMODE, RWRSTATE(rwCULLMODECULLNONE));
+    uint32 alphaTestRef = 1;
+    RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTIONREF, &alphaTestRef);
+    RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, RWRSTATE(1));
 
     if (CCheat::IsActive(CHEAT_INVISIBLE_CAR)) { // Only the wheels are drawn
         for (const auto nodeId : { CAR_WHEEL_RB, CAR_WHEEL_LB, CAR_WHEEL_RF, CAR_WHEEL_LF }) {
@@ -6728,10 +6728,10 @@ void CAutomobile::Render() {
         }
     }
 
-    RwRenderStateSet(rwRENDERSTATECULLMODE, RWRSTATE(cullMode));
+    RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, RWRSTATE(alphaTestRef));
 
     if (m_nModelIndex != MODEL_RCBANDIT
-        && m_nModelIndex != UNLOAD_MODEL
+        && m_nModelIndex != (uint16)UNLOAD_MODEL
         && m_nModelIndex != MODEL_RHINO
         && !vehicleFlags.bIsRCVehicle
         && GetVehicleAppearance() != VEHICLE_APPEARANCE_HELI
