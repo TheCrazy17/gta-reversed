@@ -39521,6 +39521,21 @@
   },
   {
     "Category": "CHeli",
+    "Name": "SendDownSwat",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
+    "Name": "ProcessControlInputs",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
+    "Name": "PreRender",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
     "Name": "BlowUpCar",
     "IsReversed": true
   },

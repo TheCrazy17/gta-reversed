@@ -91,6 +91,7 @@ public:
     float        field_A14;
 
     static inline auto& bPoliceHelisAllowed = StaticRef<bool>(0x8D338C); // 1
+    static inline auto& bSwatAllowed = StaticRef<bool>(0x8E6314); // 1
     static inline auto& bNewsHeliGenerationAllowed = StaticRef<bool>(0x8E72F0); // 1
     static inline auto& bPoliceHeliGenerationAllowed = StaticRef<bool>(0x8E73A4); // 1
     static inline auto& TestForNewRandomHelisTimer = StaticRef<uint32>(0xC1C960);

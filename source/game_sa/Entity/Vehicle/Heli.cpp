@@ -7,6 +7,9 @@
 #include "StdInc.h"
 
 #include "Shadows.h"
+#include "Ropes.h"
+#include "Tasks/TaskTypes/TaskComplexUseSwatRope.h"
+#include "Tasks/TaskTypes/TaskComplexWanderCop.h"
 
 void CHeli::InjectHooks() {
     RH_ScopedVirtualClass(CHeli, 0x871680, 71);
@@ -22,6 +25,8 @@ void CHeli::InjectHooks() {
     RH_ScopedInstall(TestSniperCollision, 0x6C6890);
     RH_ScopedInstall(UpdateHelis, 0x6C79A0);
     RH_ScopedInstall(GenerateHeli, 0x6C6520);
+    RH_ScopedInstall(SendDownSwat, 0x6C69C0);
+    RH_ScopedVMTInstall(ProcessControlInputs, 0x6C4830);
     RH_ScopedVMTInstall(PreRender, 0x6C5420);
     RH_ScopedVMTInstall(BlowUpCar, 0x6C6D30);
     RH_ScopedVMTInstall(Render, 0x6C4400);
@@ -290,7 +295,47 @@ void CHeli::TestSniperCollision(CVector* origin, CVector* target) {
 
 // 0x6C69C0
 bool CHeli::SendDownSwat() {
-    return ((bool(__thiscall*)(CHeli*))0x6C69C0)(this);
+    const auto targetPos = m_autoPilot.m_TargetEntity->GetPosition();
+
+    if (m_nNumSwatOccupants == 0 || physicalFlags.bSubmergedInWater || !bSwatAllowed || (CGeneral::GetRandomNumber() & 0x7F) != 0) {
+        return false;
+    }
+
+    // Only when hovering close to the target
+    const auto heliPos = GetPosition();
+    if ((heliPos - targetPos).Magnitude() > 50.0f || GetMoveSpeed().Magnitude() > 0.1f) {
+        return false;
+    }
+
+    const auto swatIndex = m_nNumSwatOccupants - 1;
+    const auto spawnPos  = heliPos + GetMatrix().TransformVector(FindSwatPositionRelativeToHeli(swatIndex));
+
+    // The ground below must be close to the target, and not underwater
+    const auto groundZ = CWorld::FindGroundZFor3DCoord(spawnPos);
+    if (std::abs(targetPos.z - groundZ) >= 2.5f) {
+        return false;
+    }
+    float waterLevel;
+    if (CWaterLevel::GetWaterLevelNoWaves(spawnPos, &waterLevel) && !(waterLevel < groundZ)) {
+        return false;
+    }
+
+    const auto ropeId = (uint32)this + swatIndex;
+    CRopes::RegisterRope(ropeId, 8, spawnPos, false, 0, 0, nullptr, 20'000);
+
+    auto* swat = CPopulation::AddPed(PED_TYPE_COP, (eModelID)COP_TYPE_SWAT2, spawnPos, true);
+
+    auto* sequence = new CTaskComplexSequence();
+    sequence->AddTask(new CTaskComplexUseSwatRope(ropeId, this));
+    sequence->AddTask(new CTaskComplexWanderCop(PEDMOVE_WALK, (uint8)CGeneral::GetRandomNumberInRange(0, 8)));
+    swat->GetTaskManager().SetTask(sequence, TASK_PRIMARY_PRIMARY, false);
+    swat->m_bUsesCollision = false;
+
+    m_nNumSwatOccupants--;
+    m_aSwatState[m_nNumSwatOccupants] = 0xAA;
+
+    CAnimManager::BlendAnimation(swat->GetRpClump(), ANIM_GROUP_DEFAULT, ANIM_ID_ABSEIL, 4.0f);
+    return true;
 }
 
 // 0x6C79A0
@@ -509,7 +554,88 @@ bool CHeli::SetUpWheelColModel(CColModel* wheelCol) {
 
 // 0x6C4830
 void CHeli::ProcessControlInputs(uint8 playerNum) {
-    plugin::CallMethod<0x6C4830, CHeli*, uint8>(this, playerNum);
+    auto* pad = CPad::GetPad(playerNum);
+
+    m_fAccelerationBreakStatus = (float)(pad->GetAccelerate() - pad->GetBrake()) * (1.0f / 255.0f);
+
+    const auto SetSteeringFromPad = [&] {
+        m_fSteeringUpDown    = (float)pad->GetSteeringUpDown() * (1.0f / 128.0f);
+        m_fSteeringLeftRight = (float)-pad->GetSteeringLeftRight() * (1.0f / 128.0f);
+    };
+
+    if (CCamera::m_bUseMouse3rdPerson && m_bEnableMouseFlying) {
+        const auto& mouse = CPad::NewMouseControllerState.m_AmountMoved;
+
+        // Mouse steering is used once the mouse moves, and kept until the pad is touched
+        auto useMouse = mouse.x != 0.0f || mouse.y != 0.0f;
+        if (!useMouse && (std::abs(m_fSteeringLeftRight) > 0.0f || std::abs(m_fSteeringUpDown) > 0.0f) && m_nLastControlInput == eControllerType::MOUSE) {
+            useMouse = pad->GetSteeringLeftRight() == 0 && pad->GetSteeringUpDown() == 0;
+        }
+
+        if (useMouse) {
+            m_nLastControlInput = eControllerType::MOUSE;
+            if (!pad->NewState.m_bVehicleMouseLook) {
+                m_fSteeringLeftRight -= mouse.x * 0.0025f;
+                m_fSteeringUpDown += mouse.y * 0.0025f;
+            }
+
+            // Steering returns to the center
+            if (std::abs(m_fSteeringLeftRight) < 0.5f) {
+                m_fSteeringLeftRight = (float)((double)m_fSteeringLeftRight * std::pow(0.98f, (double)CTimer::GetTimeStep()));
+            }
+            if (std::abs(m_fSteeringUpDown) < 0.5f) {
+                m_fSteeringUpDown = (float)((double)m_fSteeringUpDown * std::pow(0.98f, (double)CTimer::GetTimeStep()));
+            }
+        } else if (pad->GetSteeringLeftRight() != 0 || pad->GetSteeringUpDown() != 0 || m_nLastControlInput != eControllerType::MOUSE) {
+            m_nLastControlInput = eControllerType::KEYBOARD;
+            SetSteeringFromPad();
+        }
+    } else {
+        m_nLastControlInput = eControllerType::KEYBOARD;
+        SetSteeringFromPad();
+    }
+
+    m_fSteeringUpDown    = std::clamp(m_fSteeringUpDown, -1.0f, 1.0f);
+    m_fSteeringLeftRight = std::clamp(m_fSteeringLeftRight, -1.0f, 1.0f);
+
+    m_fLeftRightSkid = (float)pad->GetLookRight();
+    if (pad->GetLookLeft()) {
+        m_fLeftRightSkid = -1.0f;
+    }
+
+    // Holding the horn levels the heli out
+    if (pad->GetHorn() && GetMatrix().GetUp().z > 0.0f) {
+        m_fLeftRightSkid = 0.0f;
+
+        const auto speed = GetMoveSpeed();
+        const auto Counteract = [&](CVector dir, float stability) {
+            dir.Normalise();
+            const auto along = (double)dir.y * speed.y + (double)dir.z * speed.z + (double)dir.x * speed.x;
+            return (float)std::clamp(along * stability, -2.0, 2.0);
+        };
+        m_fSteeringUpDown    = Counteract(CrossProduct(CVector{ 0.0f, 0.0f, 1.0f }, GetMatrix().GetRight()), m_pFlyingHandlingData->m_fPitchStab);
+        m_fSteeringLeftRight = Counteract(CrossProduct(GetMatrix().GetForward(), CVector{ 0.0f, 0.0f, 1.0f }), m_pFlyingHandlingData->m_fRollStab);
+    }
+
+    vehicleFlags.bIsHandbrakeOn = false;
+    m_fSteerAngle               = 0.0f;
+    m_GasPedal                  = 0.0f;
+    m_BrakePedal                = 1.0f;
+
+    if (pad->DisablePlayerControls) {
+        FindPlayerPed()->KeepAreaAroundPlayerClear();
+
+        const auto speed = GetMoveSpeed().Magnitude();
+        if (speed > 0.28f) {
+            GetMoveSpeed() *= 0.28f / speed;
+        }
+    }
+
+    // A badly damaged heli loses control
+    if (m_fHealth < 250.0f) {
+        m_fAccelerationBreakStatus = -0.1f;
+        m_fLeftRightSkid += 0.5f;
+    }
 }
 
 // 0x6C4400
