@@ -40726,6 +40726,11 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "ScanAndMarkTargetForHeatSeekingMissile",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "FireHeatSeakingMissile",
     "IsReversed": true
   },
@@ -40787,6 +40792,16 @@
   {
     "Category": "CVehicle",
     "Name": "SetupUpgradesAfterLoad",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "GetPlaneWeaponFiringStatus",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "ProcessWeapons",
     "IsReversed": true
   },
   {
