@@ -39491,6 +39491,11 @@
   },
   {
     "Category": "CHeli",
+    "Name": "SearchLightCone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CHeli",
     "Name": "FindSwatPositionRelativeToHeli",
     "IsReversed": true
   },

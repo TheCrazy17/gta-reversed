@@ -20,6 +20,7 @@ void CHeli::InjectHooks() {
     RH_ScopedInstall(AddHeliSearchLight, 0x6C45B0);
     RH_ScopedInstall(Pre_SearchLightCone, 0x6C4650);
     RH_ScopedInstall(Post_SearchLightCone, 0x6C46E0);
+    RH_ScopedInstall(SearchLightCone, 0x6C58E0);
     RH_ScopedInstall(FindSwatPositionRelativeToHeli, 0x6C4760);
     RH_ScopedInstall(SwitchPoliceHelis, 0x6C4800);
     RH_ScopedInstall(RenderAllHeliSearchLights, 0x6C7C50);
@@ -195,18 +196,203 @@ void CHeli::SearchLightCone(int32 coronaIndex,
                             CVector target,
                             float targetRadius,
                             float power,
-                            uint8 unknownFlag,
+                            uint8 clipIfColliding,
                             uint8 drawShadow,
-                            CVector& useless0,
-                            CVector& useless1,
-                            CVector& useless2,
+                            CVector& outTarget,
+                            CVector& outEdge1,
+                            CVector& outEdge2,
                             bool a11,
                             float baseRadius,
                             float a13,
                             float a14,
                             float a15
 ) {
-    ((void(__cdecl*)(int32, CVector, CVector, float, float, uint8, uint8, CVector&, CVector&, CVector&, bool, float, float, float, float))0x6C58E0)(coronaIndex, origin, target, targetRadius, power, unknownFlag, drawShadow, useless0, useless1, useless2, a11, baseRadius, a13, a14, a15);
+    // Like `_ftol`, an out of range value gives `INT_MIN`
+    const auto ToInt = [](double value) {
+        return value > -2147483649.0 && value < 2147483648.0 ? (int32)value : INT32_MIN;
+    };
+    const auto PackColor = [&](double value) {
+        const auto lo = (uint32)ToInt(value * 200.0) & 0xFF;
+        const auto hi = (uint32)ToInt(value * 255.0) & 0xFF;
+        return (lo << 16) | (lo << 8) | hi;
+    };
+
+    // The beam stops 3 units behind the first thing it hits
+    auto dir = target - origin;
+    dir.Normalise();
+    target += dir * 3.0f;
+
+    CColPoint colPoint;
+    CEntity*  hitEntity{};
+    if (CWorld::ProcessLineOfSight(origin, target, colPoint, hitEntity, true, false, false, false, false, false, false, false)) {
+        target = colPoint.m_vecPoint;
+    }
+
+    const auto farCenter = origin + dir * 100.0f;
+
+    auto toCamera = TheCamera.GetPosition() - origin;
+    toCamera.Normalise();
+
+    // The light source is brightest when looking straight at it
+    const auto facing   = std::max(DotProduct(dir, toCamera), 0.0f);
+    auto       facing6 = (double)facing;
+    for (auto i = 0; i < 5; i++) {
+        facing6 *= facing;
+    }
+    CCoronas::RegisterCorona(
+        coronaIndex,
+        nullptr,
+        200, 200, 255, (uint8)ToInt(facing6 * 255.0),
+        origin,
+        (float)(facing6 * 20.0),
+        100.0f,
+        (RwTexture*)nullptr,
+        FLARETYPE_NONE,
+        CORREFL_SIMPLE,
+        LOSCHECK_OFF,
+        TRAIL_OFF,
+        0.0f,
+        false,
+        1.5f,
+        false,
+        15.0f,
+        false,
+        false
+    );
+
+    uiTempBufferIndicesStored  = 0;
+    uiTempBufferVerticesStored = 0;
+
+    // Two vertices for every angle: one at the lamp, one where the beam meets the ground
+    auto sideAxis = CrossProduct(dir, CVector{ 0.0f, 0.0f, 1.0f });
+    sideAxis.Normalise();
+    auto upAxis = CrossProduct(sideAxis, dir);
+    upAxis.Normalise();
+
+    static auto& s_BrightnessMult = StaticRef<float>(0x8D12C0);
+    const auto   baseBrightness   = (float)((double)s_BrightnessMult * 0.15f + 0.1f);
+
+    constexpr auto NUM_ANGLES = 41;
+    std::array<float, NUM_ANGLES * 2> brightness{};
+    std::array<float, NUM_ANGLES * 2> facings{};
+    float                             maxFacing{};
+    CVector                           edge1{}, edge2{};
+
+    for (auto i = 0; i < NUM_ANGLES; i++) {
+        const auto angle = (double)i * 0.15707964f;
+        const auto s     = (float)std::sin(angle);
+        const auto c     = (float)std::cos(angle);
+
+        const auto Point = [&](float radius, const CVector& center) {
+            const auto side = sideAxis * s * radius;
+            const auto up   = upAxis * c * radius;
+            return CVector{
+                (float)(((double)side.x + center.x) + up.x),
+                (float)(((double)side.y + center.y) + up.y),
+                (float)(((double)side.z + center.z) + up.z)
+            };
+        };
+        const auto nearPoint = Point(baseRadius, origin);
+        const auto farPoint  = Point(targetRadius, farCenter);
+
+        // Where the edge of the beam meets the ground below the target
+        const auto t           = (float)(((double)nearPoint.z - target.z) / ((double)nearPoint.z - farPoint.z));
+        auto       groundPoint = CVector{
+            (float)((double)(float)(((double)farPoint.x - nearPoint.x) * t) + nearPoint.x),
+            (float)((double)(float)(((double)farPoint.y - nearPoint.y) * t) + nearPoint.y),
+            (float)((((double)farPoint.z - nearPoint.z) * t) + nearPoint.z)
+        };
+        if (i == 20) {
+            edge1 = groundPoint;
+        } else if (i == 30) {
+            edge2 = groundPoint;
+        }
+
+        auto beam = groundPoint - nearPoint;
+        if (beam.Magnitude() > 100.0f) {
+            beam.Normalise();
+            groundPoint = nearPoint + beam * 100.0f;
+        }
+
+        const auto vertexIdx = uiTempBufferVerticesStored;
+        TempBufferVertices.m_3d[vertexIdx].objVertex     = { nearPoint.x, nearPoint.y, nearPoint.z };
+        TempBufferVertices.m_3d[vertexIdx + 1].objVertex = { groundPoint.x, groundPoint.y, groundPoint.z };
+
+        auto toNearPoint = nearPoint - origin;
+        toNearPoint.Normalise();
+        const auto lookingAt = std::abs(DotProduct(toNearPoint, toCamera));
+        const auto facingNow = lookingAt * lookingAt;
+        maxFacing            = std::max(maxFacing, facingNow);
+
+        brightness[vertexIdx]     = baseBrightness;
+        brightness[vertexIdx + 1] = 0.0f;
+        facings[vertexIdx]        = facingNow;
+        facings[vertexIdx + 1]    = facingNow;
+
+        if (i != NUM_ANGLES - 1) {
+            auto& numIndices                 = uiTempBufferIndicesStored;
+            aTempBufferIndices[numIndices++] = (RxVertexIndex)vertexIdx;
+            aTempBufferIndices[numIndices++] = (RxVertexIndex)(vertexIdx + 3);
+            aTempBufferIndices[numIndices++] = (RxVertexIndex)(vertexIdx + 1);
+            if (baseRadius > 0.0f) {
+                aTempBufferIndices[numIndices++] = (RxVertexIndex)vertexIdx;
+                aTempBufferIndices[numIndices++] = (RxVertexIndex)(vertexIdx + 2);
+                aTempBufferIndices[numIndices++] = (RxVertexIndex)(vertexIdx + 3);
+            }
+        }
+        uiTempBufferVerticesStored += 2;
+    }
+
+    // The most visible part of the beam is fully lit
+    const auto numVertices = uiTempBufferVerticesStored;
+    const auto normalize   = 1.0 / maxFacing;
+    for (auto i = 0; i < numVertices; i++) {
+        TempBufferVertices.m_3d[i].color = PackColor((double)facings[i] * brightness[i] * normalize);
+    }
+
+    if (uiTempBufferIndicesStored > 0 && RwIm3DTransform(TempBufferVertices.m_3d, numVertices, nullptr, rwIM3D_VERTEXXYZ | rwIM3D_VERTEXRGBA)) {
+        RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, aTempBufferIndices, uiTempBufferIndicesStored);
+        RwIm3DEnd();
+    }
+
+    outTarget = target;
+    outEdge1  = edge1 - target;
+    outEdge2  = edge2 - target;
+
+    if (!drawShadow) {
+        return;
+    }
+
+    // The beam also lights the ground, but only when it is close enough to be seen
+    const auto front = CVector2D{ edge1.x - target.x, edge1.y - target.y } * 1.2f;
+    const auto side  = CVector2D{ edge2.x - target.x, edge2.y - target.y } * 1.2f;
+    if (!(front.Magnitude() < 100.0f) || !(side.Magnitude() < 100.0f)) {
+        return;
+    }
+
+    const auto cameraPos      = TheCamera.GetPosition();
+    const auto distFromCamera = std::sqrt((double)(target.x - cameraPos.x) * (target.x - cameraPos.x) + (double)(target.y - cameraPos.y) * (target.y - cameraPos.y));
+    if (distFromCamera > 25.0) {
+        return;
+    }
+
+    const auto shadowStrength = (1.0 - distFromCamera * 0.04f) * power * 0.5f;
+    const auto lo             = (uint8)ToInt(shadowStrength * 200.0);
+    const auto hi             = (uint8)ToInt(shadowStrength * 255.0);
+    CShadows::StoreShadowToBeRendered(
+        2,
+        gpShadowExplosionTex,
+        CVector{ target.x, target.y, target.z + 5.0f },
+        front.x, front.y,
+        side.x, side.y,
+        (int16)ToInt(shadowStrength * 128.0),
+        lo, lo, hi,
+        15.0f,
+        true,
+        1.0f,
+        nullptr,
+        false
+    );
 }
 
 // 0x6C6520
