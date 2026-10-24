@@ -16,6 +16,7 @@
 #include "Skidmarks.h"
 #include "CarCtrl.h"
 #include "Glass.h"
+#include "Shadows.h"
 #include "ModelIndices.h"
 #include "InterestingEvents.h"
 #include "VehicleRecording.h"
@@ -106,6 +107,7 @@ void CAutomobile::InjectHooks()
     RH_ScopedInstall(HasCarStoppedBecauseOfLight, 0x44D520);
     RH_ScopedInstall(UpdateWheelMatrix, 0x6AA290);
     RH_ScopedVMTInstall(Render, 0x6A2B10);
+    RH_ScopedVMTInstall(PreRender, 0x6AAB50);
     RH_ScopedInstall(ProcessCarOnFireAndExplode, 0x6A7090);
     RH_ScopedInstall(DoHeliDustEffect, 0x6B0690);
 
@@ -6669,7 +6671,490 @@ CBouncingPanel* CAutomobile::CheckIfExistsGetFree(eCarNodes nodeIdx) {
 
 // 0x6AAB50
 void CAutomobile::PreRender() {
-    plugin::CallMethod<0x6AAB50, CAutomobile*>(this);
+    CVehicle::PreRender();
+
+    if (CCheat::IsActive(CHEAT_CARS_ON_WATER)) {
+        DoHoverSuspensionRatios();
+    }
+
+    const auto* const colData = GetColModel()->m_pColData;
+    if (vehicleFlags.bVehicleColProcessed && m_nVehicleSubType != VEHICLE_TYPE_MTRUCK) {
+        DoBurstAndSoftGroundRatios();
+
+        // The visible position of the wheels follows the suspension
+        for (auto i = 0; i < 4; i++) {
+            const auto ratio = 1.0f - m_aSuspensionSpringLength[i] / m_aSuspensionLineLength[i];
+            const auto t     = (m_fWheelsSuspensionCompression[i] - ratio) / (1.0f - ratio);
+            auto       z     = colData->m_pLines[i].m_vecStart.z;
+            if (t > 0.0f) {
+                z -= t * m_aSuspensionSpringLength[i];
+            }
+            if (!(m_fWheelsSuspensionCompression[i] < 1.0f) || !(z > m_wheelPosition[i])) {
+                z = (z - m_wheelPosition[i]) * 0.75f + m_wheelPosition[i];
+            }
+            m_wheelPosition[i] = z;
+        }
+    }
+
+    const auto forwardSpeed = (m_vecMoveSpeed.z * GetMatrix().GetForward().z + m_vecMoveSpeed.y * GetMatrix().GetForward().y + m_vecMoveSpeed.x * GetMatrix().GetForward().x) / 0.00555556f;
+    const auto speed        = m_vecMoveSpeed.Magnitude();
+
+    if (m_nModelIndex != (uint16)UNLOAD_MODEL && m_nModelIndex != MODEL_VORTEX && m_nModelIndex != MODEL_RCBANDIT) {
+        if (GetStatus() == STATUS_SIMPLE) {
+            // Wheels of simple vehicles have no collision, so their contact points are placed from the suspension
+            struct { eCarNodes node; eCarWheel wheel; } const wheels[]{
+                { CAR_WHEEL_RB, CAR_WHEEL_REAR_RIGHT },
+                { CAR_WHEEL_LB, CAR_WHEEL_REAR_LEFT },
+                { CAR_WHEEL_RF, CAR_WHEEL_FRONT_RIGHT },
+                { CAR_WHEEL_LF, CAR_WHEEL_FRONT_LEFT },
+            };
+            for (const auto& [nodeId, wheel] : wheels) {
+                CMatrix wheelMat(&m_aCarNodes[nodeId]->modelling, false);
+                m_wheelColPoint[wheel].m_vecPoint         = GetMatrix() * CVector{ wheelMat.GetPosition().x, wheelMat.GetPosition().y, m_wheelPosition[wheel] * 1.5f };
+                m_wheelColPoint[wheel].m_nSurfaceTypeB = SURFACE_DEFAULT;
+            }
+        }
+
+        if (GetStatus() == STATUS_PHYSICS || GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_PLAYBACK_FROM_BUFFER || GetStatus() == STATUS_SIMPLE) {
+            const auto rearSkidding = m_WheelStates[CAR_WHEEL_REAR_LEFT] == WHEEL_STATE_SKIDDING || m_WheelStates[CAR_WHEEL_REAR_RIGHT] == WHEEL_STATE_SKIDDING;
+            for (auto i = 0; i < 4; i++) {
+                uint32 flags = 0;
+                if ((i == CAR_WHEEL_FRONT_LEFT || i == CAR_WHEEL_FRONT_RIGHT) && !rearSkidding) {
+                    flags = 4;
+                }
+                if (m_wheelSkidmarkBloodState[i]) {
+                    flags += 1;
+                }
+                if (m_wheelSkidmarkMuddy[i]) {
+                    flags += 2;
+                }
+                AddSingleWheelParticles(
+                    m_WheelStates[i],
+                    m_damageManager.GetWheelStatus((eCarWheel)i),
+                    m_fWheelsSuspensionCompressionPrev[i],
+                    speed,
+                    &m_wheelColPoint[i],
+                    &m_wheelColPoint[i].m_vecPoint,
+                    (i == CAR_WHEEL_FRONT_LEFT || i == CAR_WHEEL_REAR_LEFT) ? -1.0f : 1.0f,
+                    i,
+                    (uint32)m_wheelSkidmarkType[i],
+                    &m_wheelSkidmarkBloodState[i],
+                    flags
+                );
+            }
+        }
+    }
+
+    // The middle wheels of the vehicles that have them
+    if (m_aCarNodes[CAR_WHEEL_RM]) {
+        uint32 flags = m_wheelSkidmarkBloodState[1] ? 1 : 0;
+        if (m_wheelSkidmarkMuddy[1]) {
+            flags += 2;
+        }
+        auto pos = m_wheelColPoint[CAR_WHEEL_REAR_LEFT].m_vecPoint + GetMatrix().GetForward() * 2.0f;
+        AddSingleWheelParticles(m_WheelStates[1], m_damageManager.GetWheelStatus(CAR_WHEEL_REAR_LEFT), m_fWheelsSuspensionCompressionPrev[1], speed, &m_wheelColPoint[CAR_WHEEL_REAR_LEFT], &pos, 1.0f, 5, (uint32)m_wheelSkidmarkType[1], &m_wheelSkidmarkBloodState[1], flags);
+
+        flags = m_wheelSkidmarkBloodState[3] ? 1 : 0;
+        if (m_wheelSkidmarkMuddy[3]) {
+            flags += 2;
+        }
+        auto pos2 = m_wheelColPoint[CAR_WHEEL_REAR_RIGHT].m_vecPoint + GetMatrix().GetForward() * 2.0f;
+        AddSingleWheelParticles(m_WheelStates[3], m_damageManager.GetWheelStatus(CAR_WHEEL_REAR_RIGHT), m_fWheelsSuspensionCompressionPrev[3], speed, &m_wheelColPoint[CAR_WHEEL_REAR_RIGHT], &pos2, 1.0f, 6, (uint32)m_wheelSkidmarkType[3], &m_wheelSkidmarkBloodState[3], flags);
+    }
+
+    if (!CCullZones::CamNoRain() && !CCullZones::PlayerNoRain() && std::fabs(forwardSpeed) < 20.0f && CWeather::Rain > 0.02f && CGame::currArea == AREA_CODE_NORMAL_WORLD) {
+        AddWaterSplashParticles();
+    }
+
+    if (vehicleFlags.bEngineOn && !m_pHandlingData->m_bNoExhaust && forwardSpeed < 130.0f && !vehicleFlags.bIsDrowning && !vehicleFlags.bDisableParticles) {
+        AddExhaustParticles();
+    }
+
+    AddDamagedVehicleParticles();
+
+    // Siren and taxi lights
+    switch (m_nModelIndex) {
+    case MODEL_FIRETRUK:
+    case MODEL_AMBULAN:
+    case MODEL_ENFORCER:
+    case MODEL_COPCARLA:
+    case MODEL_COPCARSF:
+    case MODEL_COPCARVG:
+    case MODEL_COPCARRU: {
+        if (!vehicleFlags.bSirenOrAlarm) {
+            break;
+        }
+
+        CVector lightRight, lightLeft;
+        uint8   mainRed = 0, red = 0, green = 0, blue = 0;
+        switch (m_nModelIndex) {
+        case MODEL_FIRETRUK:
+            lightRight = CVector{ 0.9f, 3.2f, 1.3f };
+            lightLeft  = CVector{ -0.9f, 3.2f, 1.3f };
+            mainRed    = 0xFF;
+            red        = 0xFF;
+            green      = 0xFF;
+            blue       = 0;
+            break;
+        case MODEL_AMBULAN:
+            lightRight = CVector{ 0.6f, 0.9f, 1.2f };
+            lightLeft  = CVector{ -0.6f, 0.9f, 1.2f };
+            mainRed    = 0xFF;
+            red        = 0xFF;
+            green      = 0xFF;
+            blue       = 0xFF;
+            break;
+        case MODEL_ENFORCER:
+            lightRight = CVector{ 0.55f, 1.1f, 1.4f };
+            lightLeft  = CVector{ -0.55f, 1.1f, 1.4f };
+            mainRed    = 0xFF;
+            blue       = 0xFF;
+            break;
+        case MODEL_COPCARLA:
+        case MODEL_COPCARSF:
+        case MODEL_COPCARVG:
+            lightRight = CVector{ 0.7f, -0.4f, 1.0f };
+            lightLeft  = CVector{ -0.7f, -0.4f, 1.0f };
+            mainRed    = 0xFF;
+            blue       = 0xFF;
+            break;
+        case MODEL_COPCARRU:
+            lightRight = CVector{ 0.7f, -0.1f, 1.2f };
+            lightLeft  = CVector{ -0.7f, -0.1f, 1.2f };
+            mainRed    = 0xFF;
+            blue       = 0xFF;
+            break;
+        }
+
+        // Red for the first half of the cycle, then the second colour
+        const auto now = CTimer::GetTimeInMS();
+        uint8      lightRed, lightGreen, lightBlue;
+        if ((now & 0x3FF) < 0x200) {
+            lightRed   = mainRed / 6;
+            lightGreen = 0;
+            lightBlue  = 0;
+        } else {
+            lightRed   = red / 6;
+            lightGreen = green / 6;
+            lightBlue  = blue / 6;
+        }
+
+        // Fade in and out
+        const auto cycle = now & 0x1FF;
+        if (cycle < 100 || cycle > 0x19C) {
+            const auto fade = cycle < 100 ? (float)cycle : (float)(0x200 - cycle);
+            lightRed        = (uint8)(int32)((float)lightRed * fade * 0.01f);
+            lightGreen      = (uint8)(int32)((float)lightGreen * fade * 0.01f);
+            lightBlue       = (uint8)(int32)((float)lightBlue * fade * 0.01f);
+        }
+
+        CPointLights::AddLight(
+            PLTYPE_POINTLIGHT,
+            GetPosition() + GetMatrix().GetUp() * 2.0f,
+            CVector{},
+            10.0f,
+            (float)lightRed * 0.005f,
+            (float)lightGreen * 0.005f,
+            (float)lightBlue * 0.005f,
+            0,
+            true,
+            nullptr
+        );
+
+        const auto brightness = CTimeCycle::m_CurrentColours.m_fSpriteBrightness;
+        const auto coronaMain  = (uint8)(int32)((float)lightRed * brightness * 0.1f);
+        const auto coronaZero  = (uint8)(int32)(brightness * 0.0f);
+        const auto coronaRed   = (uint8)(int32)((float)red * brightness * 0.1f);
+        const auto coronaGreen = (uint8)(int32)((float)green * brightness * 0.1f);
+        const auto coronaBlue  = (uint8)(int32)((float)blue * brightness * 0.1f);
+        for (auto i = 0; i < 4; i++) {
+            const auto step = ((now + 64 * i) >> 8) & 3;
+            if (step != 0 && step != 2) {
+                continue;
+            }
+            const auto pos = (lightRight * (float)i + lightLeft * (float)(3 - i)) * 0.33333334f;
+            CCoronas::RegisterCorona(
+                (uint32)(uintptr_t)this + 0x15 + i,
+                this,
+                step == 0 ? coronaMain : coronaRed,
+                step == 0 ? coronaZero : coronaGreen,
+                step == 0 ? coronaZero : coronaBlue,
+                255,
+                pos,
+                0.4f,
+                TheCamera.m_fLODDistMultiplier * 150.0f,
+                CORONATYPE_SHINYSTAR,
+                FLARETYPE_NONE,
+                CORREFL_NONE,
+                LOSCHECK_OFF,
+                TRAIL_OFF,
+                0.0f,
+                false,
+                1.5f,
+                false,
+                15.0f,
+                false,
+                true
+            );
+        }
+        break;
+    }
+    case MODEL_TAXI:
+    case MODEL_CABBIE: {
+        if (!autoFlags.bTaxiLight) {
+            break;
+        }
+        const auto  local = m_nModelIndex == MODEL_TAXI ? CVector{ 0.0f, -0.4f, 0.95f } : CVector{ 0.0f, 0.0f, 0.85f };
+        const auto  pos   = GetMatrix() * local;
+        const auto  color = (uint8)(int32)(CTimeCycle::m_CurrentColours.m_fSpriteBrightness * 10.0f);
+        CCoronas::RegisterCorona((uint32)(uintptr_t)this + 0x11, this, color, color, 0, 255, local, 0.8f, TheCamera.m_fLODDistMultiplier * 150.0f, CORONATYPE_HEADLIGHT, FLARETYPE_NONE, CORREFL_SIMPLE, LOSCHECK_OFF, TRAIL_OFF, 0.0f, false, 1.5f, false, 15.0f, false, true);
+        CPointLights::AddLight(PLTYPE_POINTLIGHT, pos, CVector{}, 10.0f, 0.1f, 0.1f, 0.05f, 0, true, nullptr);
+        break;
+    }
+    case MODEL_FBIRANCH: {
+        if (!vehicleFlags.bSirenOrAlarm) {
+            break;
+        }
+        const CVector pos{ 0.0f, 1.2f, 0.5f };
+        if (CTimer::GetTimeInMS() & 0x100) {
+            const auto camDir = TheCamera.GetForward();
+            if (DotProduct(GetMatrix().GetForward(), camDir) < 0.0f) {
+                CCoronas::RegisterCorona((uint32)(uintptr_t)this + 0x15, this, 0, 0, 255, 255, pos, 0.4f, TheCamera.m_fLODDistMultiplier * 150.0f, CORONATYPE_SHINYSTAR, FLARETYPE_NONE, CORREFL_NONE, LOSCHECK_OFF, TRAIL_OFF, 0.0f, false, 1.5f, false, 15.0f, false, true);
+            }
+        }
+        break;
+    }
+    }
+
+    if (m_nModelIndex != MODEL_RCBANDIT
+        && m_nModelIndex != (uint16)UNLOAD_MODEL
+        && m_nModelIndex != MODEL_RHINO
+        && !vehicleFlags.bIsRCVehicle
+        && GetVehicleAppearance() != VEHICLE_APPEARANCE_HELI
+    ) {
+        DoVehicleLights(GetMatrix(), (m_nModelIndex == MODEL_COMBINE || m_nModelIndex == MODEL_QUAD) ? (eVehicleLightsFlags)0 : (eVehicleLightsFlags)3);
+    }
+
+    if (this != FindPlayerVehicle(-1, false) || !TheCamera.GetLookingForwardFirstPerson()) {
+        CShadows::StoreShadowForVehicle(this, (vehicleFlags.bIsRCVehicle && m_nVehicleSubType != VEHICLE_TYPE_AUTOMOBILE) ? VEH_SHD_RC : VEH_SHD_CAR);
+    }
+
+    auto* const mi = GetVehicleModelInfo();
+    if (m_nModelIndex == MODEL_RHINO) {
+        SetComponentRotation(m_aCarNodes[CAR_BONNET], AXIS_Z, m_fDoomVerticalRotation, true);
+    }
+
+    // Steered direction of the wheels and rotation of each one of them
+    const auto isHeliModel = m_pHandlingData->m_bIsHeli;
+    auto       frontDir    = GetMatrix().TransformVector(CVector{ -std::sin(m_fSteerAngle), std::cos(m_fSteerAngle), 0.0f });
+    auto       rearDir     = GetMatrix().GetForward();
+    if (handlingFlags.bSteerRearwheels) {
+        frontDir = GetMatrix().GetForward();
+        rearDir  = GetMatrix().TransformVector(CVector{ std::sin(m_fSteerAngle), std::cos(m_fSteerAngle), 0.0f });
+    } else if (handlingFlags.bHbRearwheelSteer && m_f2ndSteerAngle != 0.0f) {
+        rearDir = GetMatrix().TransformVector(CVector{ -std::sin(m_f2ndSteerAngle), std::cos(m_f2ndSteerAngle), 0.0f });
+    }
+
+    for (auto i = 0; i < 4; i++) {
+        if (!(m_WheelCounts[i] > 0.0f) || (isHeliModel && i != CAR_WHEEL_FRONT_LEFT && i != CAR_WHEEL_FRONT_RIGHT)) {
+            continue;
+        }
+        const auto offset = m_wheelColPoint[i].m_vecPoint - GetPosition();
+        const auto wheelVelocity = GetSpeed(offset);
+        const bool front  = i == CAR_WHEEL_FRONT_LEFT || i == CAR_WHEEL_FRONT_RIGHT;
+        m_wheelSpeed[i]    = ProcessWheelRotation(m_WheelStates[i], front ? frontDir : rearDir, wheelVelocity, (front ? mi->m_fWheelSizeFront : mi->m_fWheelSizeRear) * 0.5f);
+        m_wheelRotation[i] += CTimer::GetTimeStep() * m_wheelSpeed[i];
+    }
+
+    const auto wheelFlags = m_nModelIndex == MODEL_RHINO ? 7 : 0;
+    UpdateWheelMatrix(CAR_WHEEL_RF, wheelFlags);
+    UpdateWheelMatrix(CAR_WHEEL_LF, wheelFlags);
+    UpdateWheelMatrix(CAR_WHEEL_RB, wheelFlags);
+    UpdateWheelMatrix(CAR_WHEEL_LB, wheelFlags);
+    if (m_aCarNodes[CAR_WHEEL_RM]) {
+        UpdateWheelMatrix(CAR_WHEEL_RM, wheelFlags);
+    }
+    if (m_aCarNodes[CAR_WHEEL_LM]) {
+        UpdateWheelMatrix(CAR_WHEEL_LM, wheelFlags);
+    }
+
+    if (m_nModelIndex != MODEL_RHINO) {
+        ProcessSwingingDoor(CAR_DOOR_LF, DOOR_LEFT_FRONT);
+        ProcessSwingingDoor(CAR_DOOR_RF, DOOR_RIGHT_FRONT);
+        ProcessSwingingDoor(CAR_DOOR_LR, DOOR_LEFT_REAR);
+        ProcessSwingingDoor(CAR_DOOR_RR, DOOR_RIGHT_REAR);
+        ProcessSwingingDoor(CAR_BONNET, DOOR_BONNET);
+        ProcessSwingingDoor(CAR_BOOT, DOOR_BOOT);
+
+        for (auto& panel : m_panels) {
+            if ((int16)panel.m_nFrameId > -1) {
+                panel.ProcessPanel(this, m_aCarNodes[panel.m_nFrameId], m_moveForce, m_turnForce, -1.0f, -1.0f);
+            }
+        }
+
+        const auto chassisNode = m_nModelIndex == MODEL_FIRELA ? CAR_MISC_B : CAR_CHASSIS;
+        if (m_swingingChassis.m_doorState == DOOR_HIT_MAX_END && m_aCarNodes[chassisNode]) {
+            CMatrix chassisMat(&m_aCarNodes[chassisNode]->modelling, false);
+            const auto savedPos = chassisMat.GetPosition();
+            const auto local    = GetMatrix().TransformVector(CVector{});
+            m_swingingChassis.Process(this, m_moveForce, m_turnForce, local);
+            float angles[3]{};
+            angles[m_swingingChassis.m_axis] = m_swingingChassis.m_angle;
+            chassisMat.SetRotate(angles[0], angles[1], angles[2]);
+            if (m_nModelIndex == MODEL_FIRELA) {
+                chassisMat.RotateX((float)m_wMiscComponentAngle * -0.0001f);
+            }
+            chassisMat.GetPosition() += savedPos;
+            chassisMat.UpdateRW();
+        }
+    }
+
+    m_moveForce = m_vecMoveSpeed + m_vecFrictionMoveSpeed;
+    m_turnForce = m_vecTurnSpeed + m_vecFrictionTurnSpeed;
+
+    // Moving parts of the special vehicles
+    const auto* const handling = m_pHandlingData;
+    switch (m_nModelIndex) {
+    case MODEL_BFINJECT: {
+        const auto angle = (std::fabs(m_GasPedal) <= 0.0f ? 0.3f : 0.5f) * CTimer::GetTimeStep();
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_Y, angle, false);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_E], AXIS_Y, angle * 1.5f, false);
+        const auto* const lines = GetColModel()->m_pColData->m_pLines;
+        constexpr eCarNodes nodes[]{ CAR_MISC_B, CAR_NODE_NONE, CAR_MISC_C };
+        for (auto i = 0; i < 3; i++) {
+            if (nodes[i] != CAR_NODE_NONE && m_aCarNodes[nodes[i]]) {
+                CMatrix mat(&m_aCarNodes[nodes[i]]->modelling, false);
+                mat.GetForward().z = (m_wheelPosition[i] - (lines[i].m_vecStart.z - handling->m_fSuspensionUpperLimit)) / (lines[i].m_vecStart.y - mat.GetPosition().y);
+                mat.UpdateRW();
+            }
+        }
+        CVector pos;
+        mi->GetWheelPosn(1, pos, false);
+        SetTransmissionRotation(m_aCarNodes[CAR_MISC_D], m_wheelPosition[1], m_wheelPosition[3], pos, false);
+        break;
+    }
+    case MODEL_DOZER:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, (float)m_wMiscComponentAngle * 0.0002f, true);
+        break;
+    case MODEL_CEMENT:
+        if (GetStatus() == STATUS_WRECKED) {
+            break;
+        }
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, -0.17453294f, true);
+        m_fPropRotate += ((float)m_wMiscComponentAngle / 2500.0f + 0.5f) * CTimer::GetTimeStep() * 0.02f;
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_Y, m_fPropRotate, true);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_X, -0.17453294f, false);
+        break;
+    case MODEL_PACKER:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, (float)m_wMiscComponentAngle * -0.0001f, true);
+        break;
+    case MODEL_TOWTRUCK: {
+        const auto hoistAngle = ((float)m_wMiscComponentAngle * 0.4f) / 20000.0f;
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, hoistAngle, true);
+        if (!m_pVehicleBeingTowed) {
+            SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_X, -hoistAngle, true);
+            if ((int16)m_panels[0].m_nFrameId == CAR_MISC_B) {
+                CMatrix hookMat(&m_aCarNodes[CAR_MISC_B]->modelling, false);
+                hookMat.GetUp().y += m_panels[0].m_vecRotation.x;
+                hookMat.GetUp().x += m_panels[0].m_vecRotation.y;
+                hookMat.UpdateRW();
+            }
+            break;
+        }
+
+        CVector hitchPos, barPos;
+        if (!m_pVehicleBeingTowed->GetTowHitchPos(hitchPos, true, this) || !GetTowBarPos(barPos, true, m_pVehicleBeingTowed)) {
+            break;
+        }
+        const auto diff = hitchPos - barPos;
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_X, std::asin(DotProduct(diff, GetMatrix().GetForward())) + -hoistAngle, true);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_Y, std::asin(DotProduct(diff, GetMatrix().GetRight()) * -1.0f), false);
+        break;
+    }
+    case MODEL_TRACTOR:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, ((float)m_wMiscComponentAngle * 0.4f) / 20000.0f, true);
+        break;
+    case MODEL_FORKLIFT:
+        if (m_aCarNodes[CAR_MISC_A]) {
+            auto* const frame = CClumpModelInfo::GetFrameFromId(CModelInfo::GetModelInfo(MODEL_FORKLIFT)->GetRpClump(), CAR_MISC_A);
+            auto        pos   = RwFrameGetMatrix(frame)->pos;
+            pos.z = (float)m_wMiscComponentAngle * 0.0006f + pos.z;
+            CMatrix mat(&m_aCarNodes[CAR_MISC_A]->modelling, false);
+            mat.SetTranslateOnly(CVector{ pos.x, pos.y, pos.z });
+            mat.UpdateRW();
+        }
+        break;
+    case MODEL_COMBINE: {
+        if (m_fPropRotate > 6.2831855f) {
+            m_fPropRotate -= 6.2831855f;
+        }
+        const auto  forwardDot    = DotProduct(m_vecMoveSpeed, GetMatrix().GetForward());
+        const float rotationSpeed = forwardDot >= 0.0f ? (forwardDot <= 0.1f ? forwardDot : 0.1f) : 0.0f;
+        m_fPropRotate -= rotationSpeed * CTimer::GetTimeStep();
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_X, m_fPropRotate, true);
+
+        CVector wheelPos;
+        mi->GetWheelPosn(0, wheelPos, false);
+        CMatrix mat(&m_aCarNodes[CAR_MISC_A]->modelling, false);
+        const auto matPos = mat.GetPosition();
+        const auto pitch  = std::atan2((m_wheelPosition[0] + m_wheelPosition[2]) * 0.5f - wheelPos.z, matPos.y - wheelPos.y);
+        const auto roll   = std::atan2(m_wheelPosition[0] - m_wheelPosition[2], std::fabs(wheelPos.x) * 2.0f);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, -pitch + std::numbers::pi_v<float>, true);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_Y, roll, false);
+
+        float tilt = 0.0f;
+        if (GetMatrix().GetUp().z > 0.0f && !m_nGettingInFlags && !m_nGettingOutFlags) {
+            tilt = std::asin(GetMatrix().GetRight().z);
+            constexpr float TILT_LIMIT = 0.5235988f;
+            if (tilt > TILT_LIMIT) {
+                tilt = TILT_LIMIT;
+            } else if (tilt < -TILT_LIMIT) {
+                tilt = -TILT_LIMIT;
+            }
+        }
+        const auto damping = std::pow(0.95f, CTimer::GetTimeStep());
+        m_fDoomVerticalRotation = damping * m_fDoomVerticalRotation + (1.0f - damping) * tilt;
+        SetComponentRotation(m_aCarNodes[CAR_CHASSIS], AXIS_Y, m_fDoomVerticalRotation, true);
+        break;
+    }
+    case MODEL_BANDITO:
+    case MODEL_HOTKNIFE: {
+        const auto* const lines = GetColModel()->m_pColData->m_pLines;
+        constexpr eCarNodes nodes[]{ CAR_MISC_A, CAR_MISC_C, CAR_MISC_B, CAR_MISC_D };
+        for (auto i = 0; i < 4; i++) {
+            if (m_aCarNodes[nodes[i]]) {
+                CMatrix mat(&m_aCarNodes[nodes[i]]->modelling, false);
+                mat.GetRight().z = (m_wheelPosition[i] - (lines[i].m_vecStart.z - handling->m_fSuspensionUpperLimit)) / (lines[i].m_vecStart.x - mat.GetPosition().x);
+                mat.UpdateRW();
+            }
+        }
+        const auto angle = (std::fabs(m_GasPedal) <= 0.0f ? 0.3f : 0.5f) * CTimer::GetTimeStep();
+        SetComponentRotation(m_aCarNodes[CAR_MISC_E], AXIS_Y, angle, false);
+        break;
+    }
+    case MODEL_RHINO:
+    case MODEL_SWATVAN:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_Z, m_fDoomVerticalRotation, true);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_B], AXIS_X, m_fDoomHorizontalRotation, true);
+        break;
+    case MODEL_FIRETRUK:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, m_fDoomHorizontalRotation, true);
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_Z, m_fDoomVerticalRotation, false);
+        break;
+    case MODEL_ZR350:
+        SetComponentRotation(m_aCarNodes[CAR_MISC_A], AXIS_X, m_fPropRotate, true);
+        break;
+    default:
+        break;
+    }
+
+    if (m_nModelIndex == MODEL_SANDKING || (handlingFlags.bHydraulicGeom && handlingFlags.bHydraulicInst && m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE)) {
+        CVector pos;
+        mi->GetWheelPosn(0, pos, false);
+        SetTransmissionRotation(m_aCarNodes[CAR_MISC_A], m_wheelPosition[0], m_wheelPosition[2], pos, true);
+        mi->GetWheelPosn(1, pos, false);
+        SetTransmissionRotation(m_aCarNodes[CAR_MISC_B], m_wheelPosition[1], m_wheelPosition[3], pos, false);
+    }
 }
 
 // 0x6A2B10
