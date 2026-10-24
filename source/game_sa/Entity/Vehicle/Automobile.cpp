@@ -103,6 +103,7 @@ void CAutomobile::InjectHooks()
     RH_ScopedInstall(SetDoorDamage, 0x6B1600);
     RH_ScopedInstall(TowTruckControl, 0x6A40F0);
     RH_ScopedInstall(HasCarStoppedBecauseOfLight, 0x44D520);
+    RH_ScopedVMTInstall(Render, 0x6A2B10);
     RH_ScopedInstall(ProcessCarOnFireAndExplode, 0x6A7090);
     RH_ScopedInstall(DoHeliDustEffect, 0x6B0690);
 
@@ -6477,7 +6478,75 @@ void CAutomobile::PreRender() {
 
 // 0x6A2B10
 void CAutomobile::Render() {
-    plugin::CallMethod<0x6A2B10, CAutomobile*>(this);
+    m_nTimeTillWeNeedThisCar = CTimer::GetTimeInMS() + 3000;
+
+    RwCullMode cullMode = rwCULLMODECULLNONE;
+    RwRenderStateGet(rwRENDERSTATECULLMODE, &cullMode);
+    RwRenderStateSet(rwRENDERSTATECULLMODE, RWRSTATE(rwCULLMODECULLNONE));
+
+    if (CCheat::IsActive(CHEAT_INVISIBLE_CAR)) { // Only the wheels are drawn
+        for (const auto nodeId : { CAR_WHEEL_RB, CAR_WHEEL_LB, CAR_WHEEL_RF, CAR_WHEEL_LF }) {
+            auto* const atomic = reinterpret_cast<RpAtomic*>(GetFirstObject(m_aCarNodes[nodeId]));
+            atomic->renderCallBack(atomic);
+        }
+        for (const auto nodeId : { CAR_WHEEL_RM, CAR_WHEEL_LM }) {
+            if (m_aCarNodes[nodeId]) {
+                auto* const atomic = reinterpret_cast<RpAtomic*>(GetFirstObject(m_aCarNodes[nodeId]));
+                atomic->renderCallBack(atomic);
+            }
+        }
+    } else {
+        CVehicle::Render();
+    }
+
+    if (m_nModelIndex == MODEL_RHINO) {
+        // The suspension compression of the extra wheels is stored inside the doors
+        const auto GetExtraWheelSuspCompression = [this](size_t extraWheelIdx) {
+            auto& door = m_doors[4 + extraWheelIdx / 4];
+            switch (extraWheelIdx % 4) {
+            case 0: return door.m_openAngle;
+            case 1: return door.m_closedAngle;
+            case 2: return door.m_angle;
+            default: return door.m_prevAngle;
+            }
+        };
+
+        const auto* const lines = GetColModel()->m_pColData->m_pLines;
+        for (auto i = 0u; i < 8u; i++) {
+            auto lerp = GetExtraWheelSuspCompression(i) - (m_aSuspensionLineLength[0] - m_aSuspensionSpringLength[0]) / m_aSuspensionLineLength[0];
+            if (lerp < 0.0f) {
+                lerp = 0.0f;
+            }
+
+            // The wheel of the track is moved along its suspension line, drawn and moved back
+            const auto& line  = lines[4 + i];
+            auto* const frame = m_aCarNodes[i < 4 ? CAR_WHEEL_LB : CAR_WHEEL_RB];
+            const auto  point = line.m_vecStart * (1.0f - lerp) + line.m_vecEnd * lerp;
+            auto        offset = point - frame->modelling.pos;
+            RwMatrixTranslate(&frame->modelling, &offset, rwCOMBINEPRECONCAT);
+            RwFrameUpdateObjects(frame);
+            auto* const atomic = reinterpret_cast<RpAtomic*>(GetFirstObject(frame));
+            atomic->renderCallBack(atomic);
+            offset *= -1.0f;
+            RwMatrixTranslate(&frame->modelling, &offset, rwCOMBINEPRECONCAT);
+        }
+    }
+
+    RwRenderStateSet(rwRENDERSTATECULLMODE, RWRSTATE(cullMode));
+
+    if (m_nModelIndex != MODEL_RCBANDIT
+        && m_nModelIndex != UNLOAD_MODEL
+        && m_nModelIndex != MODEL_RHINO
+        && !vehicleFlags.bIsRCVehicle
+        && GetVehicleAppearance() != VEHICLE_APPEARANCE_HELI
+    ) {
+        if (m_renderLights.m_bRightFront) {
+            DoHeadLightBeam(eVehicleLightId::MAIN, GetMatrix(), true);
+        }
+        if (m_renderLights.m_bLeftFront) {
+            DoHeadLightBeam(eVehicleLightId::MAIN, GetMatrix(), false);
+        }
+    }
 }
 
 // 0x6A9CA0
