@@ -200,8 +200,8 @@ void CVehicle::InjectHooks() {
     // RH_ScopedInstall(UpdateTrailerLink, 0x6DFC50);
     // RH_ScopedInstall(UpdateTractorLink, 0x6E0050);
     // RH_ScopedInstall(ScanAndMarkTargetForHeatSeekingMissile, 0x6E0400);
-    // RH_ScopedInstall(FireHeatSeakingMissile, 0x6E05C0);
-    // RH_ScopedInstall(PossiblyDropFreeFallBombForPlayer, 0x6E07E0);
+    RH_ScopedInstall(FireHeatSeakingMissile, 0x6E05C0);
+    RH_ScopedInstall(PossiblyDropFreeFallBombForPlayer, 0x6E07E0);
     RH_ScopedInstall(ProcessSirenAndHorn, 0x6E0950);
     RH_ScopedInstall(DoHeadLightEffect, 0x6E0A50);
     RH_ScopedInstall(DoHeadLightReflectionSingle, 0x6E1440);
@@ -4891,19 +4891,62 @@ void CVehicle::UpdateTractorLink(bool arg0, bool arg1) {
     ((void(__thiscall*)(CVehicle*, bool, bool))0x6E0050)(this, arg0, arg1);
 }
 
+// NOTSA - Rumble the pad of the player who fired an ordnance from this vehicle
+static void ShakePadOfPlayerDriver(CVehicle& vehicle) {
+    if (!vehicle.m_pDriver || !vehicle.m_pDriver->IsPlayer()) {
+        return;
+    }
+    switch (vehicle.m_pDriver->m_nPedType) {
+    case PED_TYPE_PLAYER1: CPad::GetPad(0)->StartShake(240, 160, 0); break;
+    case PED_TYPE_PLAYER2: CPad::GetPad(1)->StartShake(240, 160, 0); break;
+    }
+}
+
 // 0x6E0400
 CEntity* CVehicle::ScanAndMarkTargetForHeatSeekingMissile(CEntity* entity) {
     return ((CEntity * (__thiscall*)(CVehicle*, CEntity*))0x6E0400)(this, entity);
 }
 
 // 0x6E05C0
-void CVehicle::FireHeatSeakingMissile(CEntity* targetEntity, eOrdnanceType type, bool arg2) {
-    ((void(__thiscall*)(CVehicle*, CEntity*, eOrdnanceType, bool))0x6E05C0)(this, targetEntity, type, arg2);
+void CVehicle::FireHeatSeakingMissile(CEntity* targetEntity, eOrdnanceType type, bool checkTime) {
+    auto& lastFiredAt = type == 1 ? m_nProjectileWeaponFiringTime : m_nAdditionalProjectileWeaponFiringTime;
+    if (checkTime && CTimer::GetTimeInMS() <= lastFiredAt + GetPlaneOrdnanceRateOfFire(type)) {
+        return;
+    }
+
+    auto offset = GetPlaneOrdnancePosition(type);
+    if (m_nOrdnanceCycleIndex != 0) { // Alternate between the left and right hard-point
+        offset.x = -offset.x;
+    }
+    m_nOrdnanceCycleIndex = m_nOrdnanceCycleIndex == 0 ? 1 : 0;
+
+    // The missile starts a bit ahead of where the vehicle will be
+    const auto  direction    = GetMatrix().GetForward();
+    const auto  forwardSpeed = std::max(0.0f, DotProduct(GetMoveSpeed(), direction));
+    const auto  origin       = GetPosition() + offset + direction * forwardSpeed * CTimer::GetTimeStep();
+    CProjectileInfo::AddProjectile(this, WEAPON_ROCKET_HS, origin, 0.0f, &direction, targetEntity);
+
+    ShakePadOfPlayerDriver(*this);
+    lastFiredAt = CTimer::GetTimeInMS();
 }
 
 // 0x6E07E0
-void CVehicle::PossiblyDropFreeFallBombForPlayer(eOrdnanceType type, bool arg1) {
-    ((void(__thiscall*)(CVehicle*, eOrdnanceType, bool))0x6E07E0)(this, type, arg1);
+void CVehicle::PossiblyDropFreeFallBombForPlayer(eOrdnanceType type, bool checkTime) {
+    auto& lastDroppedAt = type == 1 ? m_nProjectileWeaponFiringTime : m_nAdditionalProjectileWeaponFiringTime;
+    if (checkTime && CTimer::GetTimeInMS() <= lastDroppedAt + GetPlaneOrdnanceRateOfFire(type)) {
+        return;
+    }
+
+    auto offset = GetPlaneOrdnancePosition(type);
+    if (m_nOrdnanceCycleIndex != 0) { // Alternate between the left and right hard-point
+        offset.x = -offset.x;
+    }
+    m_nOrdnanceCycleIndex = m_nOrdnanceCycleIndex == 0 ? 1 : 0;
+
+    CProjectileInfo::AddProjectile(this, WEAPON_FREEFALL_BOMB, GetPosition() + offset, 0.0f, &GetMatrix().GetForward(), nullptr);
+
+    ShakePadOfPlayerDriver(*this);
+    lastDroppedAt = CTimer::GetTimeInMS();
 }
 
 // 0x6E0950
