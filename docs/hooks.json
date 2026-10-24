@@ -38881,6 +38881,11 @@
   },
   {
     "Category": "CAutomobile",
+    "Name": "UpdateWheelMatrix",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
     "Name": "Render",
     "IsReversed": true
   },
