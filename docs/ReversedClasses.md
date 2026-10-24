@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 24, 2026 at 13:11:32 UTC
+Last update was at Oct 24, 2026 at 14:04:01 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8425 out of 8425 functions done in 727 categories)
+## Stats (8426 out of 8426 functions done in 727 categories)
 
 #### Completely reversed categories (727/727) [100%]
 
@@ -719,7 +719,7 @@ Last update was at Oct 24, 2026 at 13:11:32 UTC
 - CAERadioTrackManager (43)<br />
 - CAESoundManager (14)<br />
 - CAEUserRadioTrackManager (15)<br />
-- CAutomobile (104)<br />
+- CAutomobile (105)<br />
 - CBike (40)<br />
 - CBmx (10)<br />
 - CBoat (23)<br />
