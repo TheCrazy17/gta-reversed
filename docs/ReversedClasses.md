@@ -1,14 +1,14 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 24, 2026 at 12:14:22 UTC
+Last update was at Oct 24, 2026 at 12:21:25 UTC
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8414 out of 8414 functions done in 727 categories)
+## Stats (8418 out of 8418 functions done in 727 categories)
 
 #### Completely reversed categories (727/727) [100%]
 
@@ -729,7 +729,7 @@ Last update was at Oct 24, 2026 at 12:14:22 UTC
 - CQuadBike (12)<br />
 - CTrailer (13)<br />
 - CTrain (41)<br />
-- CVehicle (158)<br />
+- CVehicle (162)<br />
 - FurnitureGroup_c (6)<br />
 - FurnitureManager_c (7)<br />
 - FurnitureSubGroup_c (3)<br />

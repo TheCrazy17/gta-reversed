@@ -40716,6 +40716,26 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "UpdateTrailerLink",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "UpdateTractorLink",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "FireHeatSeakingMissile",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "PossiblyDropFreeFallBombForPlayer",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "ProcessSirenAndHorn",
     "IsReversed": true
   },
