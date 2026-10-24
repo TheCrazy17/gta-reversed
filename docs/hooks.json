@@ -38881,6 +38881,11 @@
   },
   {
     "Category": "CAutomobile",
+    "Name": "Render",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
     "Name": "ProcessCarOnFireAndExplode",
     "IsReversed": true
   },
