@@ -665,7 +665,7 @@ public:
 
     void FillVehicleWithPeds(bool bSetClothesToAfro);
     bool DoBladeCollision(CVector pos, CMatrix& matrix, int16 rotorType, float radius, float damageMult);
-    void AddVehicleUpgrade(int32 modelId);
+    int32 AddVehicleUpgrade(int32 modelId);
     void SetupUpgradesAfterLoad();
     void GetPlaneWeaponFiringStatus(bool& status, eOrdnanceType& ordnanceType);
     void ProcessWeapons();

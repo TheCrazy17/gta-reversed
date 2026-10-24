@@ -151,7 +151,7 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(RemoveUpgrade, 0x6D3630);
     RH_ScopedInstall(GetUpgrade, 0x6D3650);
     RH_ScopedInstall(CreateReplacementAtomic, 0x6D3700);
-    // RH_ScopedInstall(AddReplacementUpgrade, 0x6D3830);
+    RH_ScopedInstall(AddReplacementUpgrade, 0x6D3830);
     RH_ScopedInstall(RemoveReplacementUpgrade, 0x6D39E0);
     RH_ScopedInstall(GetReplacementUpgrade, 0x6D3A50);
     RH_ScopedInstall(RemoveAllUpgrades, 0x6D3AB0);
@@ -195,14 +195,14 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(AddExhaustParticles, 0x6DE240);
     // RH_ScopedInstall(AddSingleWheelParticles, 0x6DE880);
     RH_ScopedInstall(GetSpecialColModel, 0x6DF3D0);
-    // RH_ScopedInstall(RemoveVehicleUpgrade, 0x6DF930);
-    // RH_ScopedInstall(AddUpgrade, 0x6DFA20);
+    RH_ScopedInstall(RemoveVehicleUpgrade, 0x6DF930);
+    RH_ScopedInstall(AddUpgrade, 0x6DFA20);
     // RH_ScopedInstall(UpdateTrailerLink, 0x6DFC50);
     // RH_ScopedInstall(UpdateTractorLink, 0x6E0050);
     // RH_ScopedInstall(ScanAndMarkTargetForHeatSeekingMissile, 0x6E0400);
     // RH_ScopedInstall(FireHeatSeakingMissile, 0x6E05C0);
     // RH_ScopedInstall(PossiblyDropFreeFallBombForPlayer, 0x6E07E0);
-    // RH_ScopedInstall(ProcessSirenAndHorn, 0x6E0950);
+    RH_ScopedInstall(ProcessSirenAndHorn, 0x6E0950);
     RH_ScopedInstall(DoHeadLightEffect, 0x6E0A50);
     RH_ScopedInstall(DoHeadLightReflectionSingle, 0x6E1440);
     RH_ScopedInstall(DoHeadLightReflectionTwin, 0x6E1600);
@@ -211,7 +211,7 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(DoVehicleLights, 0x6E1A60);
     RH_ScopedInstall(FillVehicleWithPeds, 0x6E2900);
     RH_ScopedInstall(DoBladeCollision, 0x6E2E50);
-    // RH_ScopedInstall(AddVehicleUpgrade, 0x6E3290);
+    RH_ScopedInstall(AddVehicleUpgrade, 0x6E3290);
     RH_ScopedInstall(SetupUpgradesAfterLoad, 0x6E3400);
     // RH_ScopedInstall(GetPlaneWeaponFiringStatus, 0x6E3440);
     // RH_ScopedInstall(ProcessWeapons, 0x6E3950);
@@ -2490,9 +2490,51 @@ RpAtomic* CVehicle::CreateReplacementAtomic(CBaseModelInfo* mi, RwFrame* parentF
 
 // 0x6D3830
 void CVehicle::AddReplacementUpgrade(int32 modelIndex, int32 nodeId) {
-    // NOTE: 0x6D38D5 - 0x6D390B => `SetupUpgradeAtomicRendering`
+    auto* const frame = CClumpModelInfo::GetFrameFromId(GetRpClump(), nodeId);
 
-    ((void(__thiscall*)(CVehicle*, int32, int32))0x6D3830)(this, modelIndex, nodeId);
+    // Remove whatever is in there now, keeping the flags of what was removed
+    uint32 removedFlags = 0;
+    RwFrameForAllObjects(frame, RemoveObjectsCB, &removedFlags);
+    RwFrameForAllChildren(frame, RemoveObjectsCB, &removedFlags);
+
+    auto* const mi         = CModelInfo::GetModelInfo(modelIndex);
+    auto* const atomic     = reinterpret_cast<RpAtomic*>(mi->CreateInstance());
+    auto* const atomicFrame = RpAtomicGetFrame(atomic);
+    mi->AddRef();
+
+    RpClumpAddAtomic(GetRpClump(), atomic);
+    RpAtomicSetFrame(atomic, frame);
+    RwFrameDestroy(atomicFrame);
+
+    CVisibilityPlugins::SetAtomicId(atomic, removedFlags & ~eAtomicComponentFlag::ATOMIC_MASK);
+    CVisibilityPlugins::SetAtomicFlag(atomic, eAtomicComponentFlag::ATOMIC_OK);
+
+    RpMaterial* hasAlphaMaterial = nullptr;
+    RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), CVehicleModelInfo::HasAlphaMaterialCB, &hasAlphaMaterial);
+    CVisibilityPlugins::SetAtomicRenderCallback(atomic, hasAlphaMaterial ? CVisibilityPlugins::RenderVehicleHiDetailAlphaCB : CVisibilityPlugins::RenderVehicleHiDetailCB);
+    CVehicleModelInfo::SetRenderPipelinesCB(atomic, nullptr);
+    CDamageAtomicModelInfo::ms_bCreateDamagedVersion = false;
+
+    if (nodeId == CAR_EXHAUST) {
+        // Double exhausts get a mirrored copy
+        if (m_pHandlingData->m_bDoubleExhaust) {
+            auto* const mirrored = CreateReplacementAtomic(mi, frame, (eAtomicComponentFlag)removedFlags, false, true);
+            auto* const mat      = RwFrameGetMatrix(RpAtomicGetFrame(mirrored));
+            RwMatrixGetPos(mat)->x = RwMatrixGetPos(RwFrameGetMatrix(frame))->x * -2.0f;
+            RwMatrixUpdate(mat);
+        }
+    } else if (nodeId == CAR_BUMP_FRONT || nodeId == CAR_BUMP_REAR) {
+        const auto* const vehicleMI = GetVehicleModelInfo();
+        CCustomCarPlateMgr::SetupClumpAfterVehicleUpgrade(GetRpClump(), vehicleMI->m_pPlateMaterial, vehicleMI->m_nPlateType);
+    }
+
+    if (mi->AsDamageAtomicModelInfoPtr()) {
+        CreateReplacementAtomic(mi, frame, (eAtomicComponentFlag)removedFlags, true, false);
+        if (frame) {
+            RwFrameForAllObjects(frame, SetVehicleAtomicVisibilityCB, (void*)1);
+            RwFrameForAllChildren(frame, SetVehicleAtomicVisibilityCB, (void*)1);
+        }
+    }
 }
 
 // 0x6D39E0
@@ -4770,12 +4812,73 @@ bool CVehicle::GetSpecialColModel() {
 
 // 0x6DF930
 void CVehicle::RemoveVehicleUpgrade(int32 upgradeModelIndex) {
-    ((void(__thiscall*)(CVehicle*, int32))0x6DF930)(this, upgradeModelIndex);
+    const auto* const upgradeMI = CModelInfo::GetModelInfo(upgradeModelIndex);
+    if (ClearVehicleUpgradeFlags(upgradeModelIndex, upgradeMI->CarMod)) {
+        return;
+    }
+    const auto linkedUpgrade = CVehicleModelInfo::ms_linkedUpgrades.FindOtherUpgrade((int16)upgradeModelIndex);
+
+    const auto RemoveUpgradeModel = [&](const CBaseModelInfo* mi) {
+        if (mi->bUsesVehDummy) {
+            RemoveReplacementUpgrade(mi->CarMod);
+        } else {
+            RpClumpForAllAtomics(GetRpClump(), RemoveUpgradeCB, (void*)(uintptr)mi->CarMod);
+        }
+    };
+
+    RemoveUpgradeModel(upgradeMI);
+    if (upgradeMI->bUsesVehDummy && upgradeMI->CarMod == 2) { // Wheels
+        m_fWheelScale = 1.0f;
+        RemoveReplacementUpgrade(5);
+        RemoveReplacementUpgrade(4);
+        RemoveReplacementUpgrade(7);
+    }
+    if (linkedUpgrade != -1) {
+        RemoveUpgradeModel(CModelInfo::GetModelInfo(linkedUpgrade));
+    }
+
+    for (auto& upgrade : m_anUpgrades) {
+        if (upgrade == upgradeModelIndex) {
+            upgrade = -1;
+        }
+    }
 }
 
 // 0x6DFA20
 void CVehicle::AddUpgrade(int32 modelIndex, int32 upgradeIndex) {
-    ((void(__thiscall*)(CVehicle*, int32, int32))0x6DFA20)(this, modelIndex, upgradeIndex);
+    auto* const vehicleMI = GetVehicleModelInfo();
+    auto* const upgradeMI = CModelInfo::GetModelInfo(modelIndex);
+    auto&       upgrades  = vehicleMI->m_pVehicleStruct->m_aUpgrades;
+    const auto* posn      = &upgrades[upgradeIndex];
+
+    auto* const parentFrame = CClumpModelInfo::GetFrameFromId(GetRpClump(), posn->m_nParentComponentId);
+    RpClumpForAllAtomics(GetRpClump(), RemoveUpgradeCB, (void*)(uintptr)upgradeIndex);
+    CreateUpgradeAtomic(upgradeMI, posn, parentFrame, false);
+    if (posn->m_nParentComponentId == 1) {
+        return;
+    }
+
+    // Some upgrades have a different placement for their damaged version
+    const auto damagedUpgradeIdx = [&]() -> std::optional<size_t> {
+        switch (upgradeIndex) {
+        case 0:  return 3;
+        case 1:  return 4;
+        case 2:  return 5;
+        case 6:  return 7;
+        case 12: return 13;
+        default: return std::nullopt;
+        }
+    }();
+    if (damagedUpgradeIdx && upgrades[*damagedUpgradeIdx].m_nParentComponentId != -1) {
+        posn = &upgrades[*damagedUpgradeIdx];
+    }
+    CreateUpgradeAtomic(upgradeMI, posn, parentFrame, true);
+
+    if (parentFrame) {
+        RwFrameForAllObjects(parentFrame, SetVehicleAtomicVisibilityCB, (void*)1);
+        RwFrameForAllChildren(parentFrame, SetVehicleAtomicVisibilityCB, (void*)1);
+    }
+    CCustomCarPlateMgr::SetupClumpAfterVehicleUpgrade(GetRpClump(), vehicleMI->m_pPlateMaterial, vehicleMI->m_nPlateType);
 }
 
 // 0x6DFC50
@@ -4805,7 +4908,27 @@ void CVehicle::PossiblyDropFreeFallBombForPlayer(eOrdnanceType type, bool arg1) 
 
 // 0x6E0950
 void CVehicle::ProcessSirenAndHorn(bool arg0) {
-    ((void(__thiscall*)(CVehicle*, bool))0x6E0950)(this, arg0);
+    auto* const pad = CPad::GetPad(0);
+    if (!UsesSiren()) {
+        if (arg0 && CanUpdateHornCounter()) {
+            m_HornCounter = pad->GetHorn();
+        }
+        return;
+    }
+
+    // The horn is a toggle for the siren, so look at the last presses
+    const auto Pressed = [&](int32 framesAgo) { return pad->bHornHistory[(pad->iCurrHornHistory + framesAgo) % 5] != 0; };
+    if (!Pressed(0)) {
+        if (Pressed(4) && !Pressed(1)) {
+            m_HornCounter              = 0;
+            vehicleFlags.bSirenOrAlarm = !vehicleFlags.bSirenOrAlarm;
+            return;
+        }
+    } else if (Pressed(4) && Pressed(3)) {
+        m_HornCounter = 1;
+        return;
+    }
+    m_HornCounter = 0;
 }
 
 // NOTSA
@@ -5288,8 +5411,59 @@ bool CVehicle::DoBladeCollision(CVector pos, CMatrix& matrix, int16 rotorType, f
 }
 
 // 0x6E3290
-void CVehicle::AddVehicleUpgrade(int32 modelId) {
-    ((void(__thiscall*)(CVehicle*, int32))0x6E3290)(this, modelId);
+int32 CVehicle::AddVehicleUpgrade(int32 modelId) {
+    const auto* const upgradeMI = CModelInfo::GetModelInfo(modelId);
+
+    // The model of the upgrade that gets replaced
+    auto replacedModelId = -1;
+    if (!SetVehicleUpgradeFlags(modelId, upgradeMI->CarMod, replacedModelId)) {
+        const auto linkedUpgrade = CVehicleModelInfo::ms_linkedUpgrades.FindOtherUpgrade((int16)modelId);
+
+        const auto slot = upgradeMI->CarMod;
+        if (upgradeMI->bUsesVehDummy) {
+            replacedModelId = GetReplacementUpgrade(slot);
+            AddReplacementUpgrade(modelId, slot);
+            if (slot == 2) { // Wheels
+                m_fWheelScale = GetVehicleModelInfo()->m_fWheelSizeFront;
+                AddReplacementUpgrade(modelId, 5);
+                AddReplacementUpgrade(modelId, 4);
+                AddReplacementUpgrade(modelId, 7);
+
+                if (IsSubAutomobile()) {
+                    if (modelId == ModelIndices::MI_OFFROAD_WHEEL) {
+                        handlingFlags.bOffroadAbility = true;
+                    } else if (!m_pHandlingData->m_bOffroadAbility) {
+                        handlingFlags.bOffroadAbility = false;
+                    }
+                }
+            }
+        } else {
+            replacedModelId = GetUpgrade(slot);
+            AddUpgrade(modelId, slot);
+        }
+
+        if (linkedUpgrade != -1) {
+            const auto* const linkedMI = CModelInfo::GetModelInfo(linkedUpgrade);
+            if (linkedMI->bUsesVehDummy) {
+                AddReplacementUpgrade(linkedUpgrade, linkedMI->CarMod);
+            } else {
+                AddUpgrade(linkedUpgrade, linkedMI->CarMod);
+            }
+        }
+    }
+
+    // Remember it in the first free slot, and forget the replaced upgrade
+    auto toStore = (int16)modelId;
+    for (auto& upgrade : m_anUpgrades) {
+        if (upgrade == replacedModelId) {
+            upgrade = -1;
+        } else if (upgrade != -1) {
+            continue;
+        }
+        upgrade = toStore;
+        toStore = -1;
+    }
+    return replacedModelId;
 }
 
 // 0x6E3400

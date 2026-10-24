@@ -40501,6 +40501,11 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "AddReplacementUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "RemoveReplacementUpgrade",
     "IsReversed": true
   },
@@ -40701,6 +40706,21 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "RemoveVehicleUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "AddUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "ProcessSirenAndHorn",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "DoHeadLightEffect",
     "IsReversed": true
   },
@@ -40737,6 +40757,11 @@
   {
     "Category": "CVehicle",
     "Name": "DoBladeCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
+    "Name": "AddVehicleUpgrade",
     "IsReversed": true
   },
   {
