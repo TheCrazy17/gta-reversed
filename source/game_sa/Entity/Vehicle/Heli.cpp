@@ -8,6 +8,7 @@
 
 #include "Shadows.h"
 #include "Ropes.h"
+#include "InterestingEvents.h"
 #include "WindModifiers.h"
 #include "Tasks/TaskTypes/TaskComplexUseSwatRope.h"
 #include "Tasks/TaskTypes/TaskComplexWanderCop.h"
@@ -31,6 +32,7 @@ void CHeli::InjectHooks() {
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6C4830);
     RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6C4E60);
     RH_ScopedVMTInstall(PreRender, 0x6C5420);
+    RH_ScopedVMTInstall(ProcessControl, 0x6C7050);
     RH_ScopedVMTInstall(BlowUpCar, 0x6C6D30);
     RH_ScopedVMTInstall(Render, 0x6C4400);
     RH_ScopedVMTInstall(Fix, 0x6C4530);
@@ -1068,5 +1070,195 @@ void CHeli::PreRender() {
 
 // 0x6C7050
 void CHeli::ProcessControl() {
-    plugin::CallMethod<0x6C7050, CHeli*>(this);
+    CAutomobile::ProcessControl();
+
+    if (!vehicleFlags.bEngineOn && m_pDustParticle) {
+        m_pDustParticle->Kill();
+        m_pDustParticle       = nullptr;
+        m_heliDustFxTimeConst = 0.0f;
+    }
+
+    auto* const pad = CPad::GetPad(m_pDriver && m_pDriver->m_nPedType == PED_TYPE_PLAYER2 ? 1 : 0);
+    if (pad->HornJustDown()) {
+        m_bSearchLightEnabled = !m_bSearchLightEnabled;
+    }
+
+    // Is the beam following the player, and what is it pointing at (nothing means straight ahead)
+    auto           lightOn       = false;
+    auto           targetsPlayer = false;
+    CPhysical*     lightTarget{};
+    if (physicalFlags.bRenderScorched || CCullZones::PlayerNoRain()) {
+        m_fSearchLightIntensity = 0.0f;
+    } else {
+        const auto* const playerVeh = FindPlayerVehicle();
+        if (m_autoPilot.m_nCarMission == MISSION_HELI_POLICE_BEHAVIOUR && (!playerVeh || (!playerVeh->IsSubHeli() && !playerVeh->IsSubPlane()))) {
+            lightOn       = true;
+            targetsPlayer = true;
+            lightTarget   = static_cast<CPhysical*>(FindPlayerEntity());
+        } else if (m_autoPilot.m_nCarMission == MISSION_HELI_FOLLOW_ENTITY && m_autoPilot.m_TargetEntity && (m_nHeliFlags & 2)) {
+            lightOn     = true;
+            lightTarget = m_autoPilot.m_TargetEntity;
+        } else if (GetStatus() == STATUS_PLAYER && m_nModelIndex == MODEL_POLMAV && m_bSearchLightEnabled) {
+            lightOn = true;
+        }
+        if (physicalFlags.bSubmergedInWater) {
+            lightOn       = false;
+            targetsPlayer = false;
+        }
+        m_bSearchLightEnabled = lightOn;
+
+        if (lightOn) {
+            UpdateSearchLight(lightTarget, targetsPlayer);
+        }
+    }
+
+    if (m_autoPilot.m_nCarMission == MISSION_HELI_POLICE_BEHAVIOUR && m_nNumSwatOccupants > 0) {
+        SendDownSwat();
+        g_InterestingEvents.Add(CInterestingEvents::ZELDICK_OCCUPATION, this);
+    }
+
+    // Ropes of the swat members that are on their way down
+    for (auto i = 0u; i < m_aSwatState.size(); i++) {
+        auto& state = m_aSwatState[i];
+        if (state == 0) {
+            continue;
+        }
+        state--;
+
+        const auto ropeId = (uint32)this + i;
+        CRopes::RegisterRope(ropeId, 8, GetMatrix().TransformPoint(FindSwatPositionRelativeToHeli(i)), false, 0, 0, nullptr, 20'000);
+        if (state == 0) {
+            const auto speed = GetMatrix().TransformVector(FindSwatPositionRelativeToHeli(i) * 0.05f);
+            CRopes::SetSpeedOfTopNode(ropeId, CVector{ speed.x, speed.y, 0.0f });
+        }
+    }
+
+    UpdateWinch();
+    ProcessWeapons();
+
+    // The idle cam likes to watch helis
+    static auto& s_IdleCamFlags = StaticRef<uint8>(0xC0B184);
+    if (s_IdleCamFlags & 1) {
+        auto chance = CTimer::GetTimeStep() * 0.02f * 0.1f;
+        if (targetsPlayer) {
+            chance += chance;
+        }
+        if ((float)CGeneral::GetRandomNumber() * (1.0f / 32767.0f) < chance) {
+            g_InterestingEvents.Add(CInterestingEvents::INTERESTING_EVENT_21, this);
+        }
+    }
+}
+
+// NOTSA - Moves the beam towards where its target is going to be, and shoots at the player when the beam lights them up
+void CHeli::UpdateSearchLight(CPhysical* target, bool targetsPlayer) {
+    const auto now = CTimer::GetTimeInMS();
+
+    CVector targetPos;
+    CVector targetSpeed;
+    if (target) {
+        targetPos   = target->GetPosition();
+        targetSpeed = target->GetMoveSpeed();
+    } else {
+        targetPos   = GetPosition() + GetForward() * 10.0f + GetUp() * -30.0f;
+        targetSpeed = GetMoveSpeed();
+    }
+
+    // The beam follows where the target was up to a few seconds ago
+    auto elapsed = (int32)(now - m_nSearchLightTimer);
+    if (elapsed > 1000) {
+        const auto numSteps = (uint32)(elapsed - 1001) / 1000 + 1;
+        elapsed -= numSteps * 1000;
+        for (auto i = 0u; i < numSteps; i++) {
+            for (auto j = m_aSearchLightHistoryX.size() - 1; j > 0; j--) {
+                m_aSearchLightHistoryX[j] = m_aSearchLightHistoryX[j - 1];
+                m_aSearchLightHistoryY[j] = m_aSearchLightHistoryY[j - 1];
+            }
+            m_nSearchLightTimer += 1000;
+            m_aSearchLightHistoryX[0] = targetSpeed.x * 100.0f + targetPos.x;
+            m_aSearchLightHistoryY[0] = targetPos.y + targetSpeed.y * 100.0f;
+        }
+    }
+
+    const auto blend = (float)((double)elapsed * 0.001f);
+    m_vecSearchLightTarget.z = targetPos.z;
+    m_vecSearchLightTarget.x = (1.0f - blend) * m_aSearchLightHistoryX[2] + blend * m_aSearchLightHistoryX[1];
+    m_vecSearchLightTarget.y = (1.0f - blend) * m_aSearchLightHistoryY[2] + blend * m_aSearchLightHistoryY[1];
+
+    // Fades out the further the beam is from the heli
+    const auto heliPos = GetPosition();
+    const auto beamDist = std::sqrt((double)(m_vecSearchLightTarget.y - heliPos.y) * (m_vecSearchLightTarget.y - heliPos.y) + (double)(m_vecSearchLightTarget.x - heliPos.x) * (m_vecSearchLightTarget.x - heliPos.x));
+    if (beamDist > 60.0) {
+        m_fSearchLightIntensity = 0.0f;
+    } else if (beamDist < 40.0) {
+        m_fSearchLightIntensity = 1.0f;
+    } else {
+        m_fSearchLightIntensity = (float)(1.0 - (beamDist - 40.0) * 0.05f);
+    }
+
+    const auto offBeam = targetPos - m_vecSearchLightTarget;
+    if (m_fSearchLightIntensity >= 0.9f && offBeam.x * offBeam.x + offBeam.y * offBeam.y <= 49.0f) {
+        if (now > m_nPoliceShoutTimer) {
+            m_nPoliceShoutTimer = now + (CGeneral::GetRandomNumber() & 0xFFF) + 4500;
+        }
+    } else {
+        m_nShootTimer             = now;
+        m_nTimeForMinigunFiring = now;
+    }
+
+    if (!targetsPlayer) {
+        return;
+    }
+
+    // The higher the wanted level, the more often they shoot
+    const auto wantedLevel = FindPlayerWanted()->m_WantedLevel;
+    auto       interval    = (int32)elapsed;
+    switch (wantedLevel) {
+    case eWantedLevel::WANTED_CLEAN:
+    case eWantedLevel::WANTED_LEVEL_1:
+    case eWantedLevel::WANTED_LEVEL_2: interval = 999'999; break;
+    case eWantedLevel::WANTED_LEVEL_3: interval = 10'000; break;
+    case eWantedLevel::WANTED_LEVEL_4: interval = 5'000; break;
+    case eWantedLevel::WANTED_LEVEL_5: interval = 3'500; break;
+    case eWantedLevel::WANTED_LEVEL_6: interval = 2'000; break;
+    default:                           break;
+    }
+    if (wantedLevel != eWantedLevel::WANTED_CLEAN) {
+        AudioEngine.SayPedless(AE_SPEECH_PED, CTX_GLOBAL_POLICE_HELICOPTER, this, 0, 1.0f, false, false, false);
+    }
+    if (CCullZones::NoPolice()) {
+        interval /= 2;
+    }
+    if (target != FindPlayerPed()) {
+        interval = 5000;
+    }
+
+    if (FindPlayerWanted()->m_Flags & 7) { // Police are backing off
+        m_nShootTimer             = CTimer::GetTimeInMS();
+        m_nTimeForMinigunFiring = CTimer::GetTimeInMS();
+        return;
+    }
+
+    const auto gunPos = GetMatrix().TransformPoint(CVector{ 0.0f, 3.5f, -1.0f });
+    if (CTimer::GetTimeInMS() > m_nShootTimer + interval && CTimer::GetPreviousTimeInMS() <= m_nShootTimer + interval) {
+        if (!CWorld::GetIsLineOfSightClear(gunPos, targetPos, true, false, false, false, false, false, false)) {
+            m_nShootTimer             = CTimer::GetTimeInMS();
+            m_nTimeForMinigunFiring = CTimer::GetTimeInMS();
+        }
+    }
+
+    if (CTimer::GetTimeInMS() > m_nShootTimer + interval && CTimer::GetTimeInMS() > m_nTimeForMinigunFiring) {
+        auto aimPos = targetPos;
+        aimPos.x += (float)((int32)(CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.02f;
+        aimPos.y += (float)((int32)(CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.02f;
+
+        auto dir = targetPos - gunPos;
+        dir.Normalise();
+        dir *= 3.0f;
+        CVector start = gunPos + dir;
+        CVector end   = aimPos + dir;
+        FireOneInstantHitRound(start, end, 20);
+        AudioEngine.ReportWeaponEvent(AE_WEAPON_FIRE, WEAPON_M4, this);
+
+        m_nTimeForMinigunFiring = CTimer::GetTimeInMS() + (CGeneral::GetRandomNumberInRange(0.0f, 1.0f) < 0.15f ? 400 : 150);
+    }
 }

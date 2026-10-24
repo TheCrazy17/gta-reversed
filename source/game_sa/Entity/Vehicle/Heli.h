@@ -74,12 +74,8 @@ public:
     char         field_9B8;
     int8         m_nNumSwatOccupants;
     std::array<uint8, 4> m_aSwatState;
-    CVector      field_9C0;
-    int32        f9CC; // unused?
-    int32        f9D0; // unused?
-    FxSystem_c** m_pParticlesList;
-    std::array<float, 3> m_aSearchLightHistoryX;
-    std::array<float, 3> m_aSearchLightHistoryY;
+    std::array<float, 6> m_aSearchLightHistoryX;
+    std::array<float, 6> m_aSearchLightHistoryY;
     uint32       m_nSearchLightTimer;
     CVector      m_vecSearchLightTarget;
     float        m_fSearchLightIntensity;
@@ -150,6 +146,8 @@ public:
     static void RenderAllHeliSearchLights();
 
 private:
+    void UpdateSearchLight(CPhysical* target, bool targetsPlayer);
+
     friend void InjectHooksMain();
     static void InjectHooks();
 
