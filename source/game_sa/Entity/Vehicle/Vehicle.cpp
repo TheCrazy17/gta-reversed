@@ -200,7 +200,7 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(AddUpgrade, 0x6DFA20);
     RH_ScopedInstall(UpdateTrailerLink, 0x6DFC50);
     RH_ScopedInstall(UpdateTractorLink, 0x6E0050);
-    // RH_ScopedInstall(ScanAndMarkTargetForHeatSeekingMissile, 0x6E0400);
+    RH_ScopedInstall(ScanAndMarkTargetForHeatSeekingMissile, 0x6E0400);
     RH_ScopedInstall(FireHeatSeakingMissile, 0x6E05C0);
     RH_ScopedInstall(PossiblyDropFreeFallBombForPlayer, 0x6E07E0);
     RH_ScopedInstall(ProcessSirenAndHorn, 0x6E0950);
@@ -4976,7 +4976,43 @@ void CVehicle::UpdateTractorLink(bool arg0, bool arg1) {
 
 // 0x6E0400
 CEntity* CVehicle::ScanAndMarkTargetForHeatSeekingMissile(CEntity* entity) {
-    return ((CEntity * (__thiscall*)(CVehicle*, CEntity*))0x6E0400)(this, entity);
+    auto* target = CWeapon::PickTargetForHeatSeekingMissile(GetPosition(), GetMatrix().GetForward(), 1.2f, this, true, entity);
+
+    // Planes remember the last line of sight result, so it is only tested again after a second
+    CPlane* plane  = nullptr;
+    uint32  offset = 0;
+    if (IsSubPlane()) {
+        plane  = AsPlane();
+        offset = (plane->m_nLineOfSightState & 0x7FFFFFFF) == 0;
+    }
+
+    bool isClear = true;
+    if (target && CTimer::GetTimeInMS() - offset > 1000) {
+        const bool vehicleUsedCollision = m_bUsesCollision;
+        const bool targetUsedCollision  = target->m_bUsesCollision;
+        m_bUsesCollision       = false;
+        target->m_bUsesCollision = false;
+        isClear = CWorld::GetIsLineOfSightClear(GetPosition(), target->GetPosition(), true, true, false, true, false, true, false);
+        m_bUsesCollision       = vehicleUsedCollision;
+        target->m_bUsesCollision = targetUsedCollision;
+        if (plane) {
+            plane->m_nLineOfSightState = (CTimer::GetTimeInMS() > 1) | (uint32(isClear) << 31);
+        }
+    } else if (plane) {
+        isClear = plane->m_nLineOfSightState >> 31;
+    }
+
+    if (!isClear) {
+        CWeaponEffects::ClearCrossHairImmediately(0);
+        return nullptr;
+    }
+
+    if (target && GetStatus() == STATUS_PLAYER) {
+        CWeaponEffects::MarkTarget(0, target->GetPosition(), 255, 255, 255, 100, 1.3f, true);
+        return target;
+    }
+    CWeaponEffects::ClearCrossHairImmediately(0);
+    return target;
 }
 
 // 0x6E05C0

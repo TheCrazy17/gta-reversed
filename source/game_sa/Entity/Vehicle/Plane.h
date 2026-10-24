@@ -62,7 +62,7 @@ public:
     uint8        m_nFiringMultiplier;
     int32        field_9DC;
     int32        field_9E0;
-    int32        field_9E4;
+    uint32       m_nLineOfSightState; // Bit 31 is the last line of sight result to the heat seeking target, the rest is set once it was checked
     std::array<FxSystem_c*, 4> m_apJettrusParticles;
     FxSystem_c*  m_pSmokeParticle;
     uint32       m_nSmokeTimer;
