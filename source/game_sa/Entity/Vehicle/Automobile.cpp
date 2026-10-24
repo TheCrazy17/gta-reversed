@@ -102,6 +102,7 @@ void CAutomobile::InjectHooks()
     RH_ScopedInstall(SetPanelDamage, 0x6B1480);
     RH_ScopedInstall(SetDoorDamage, 0x6B1600);
     RH_ScopedInstall(TowTruckControl, 0x6A40F0);
+    RH_ScopedInstall(HasCarStoppedBecauseOfLight, 0x44D520);
     RH_ScopedInstall(ProcessCarOnFireAndExplode, 0x6A7090);
     RH_ScopedInstall(DoHeliDustEffect, 0x6B0690);
 
@@ -6414,7 +6415,42 @@ void CAutomobile::FireTruckControl(CFire* fire) {
 
 // 0x44D520
 bool CAutomobile::HasCarStoppedBecauseOfLight() {
-    return ((bool(__thiscall*)(CAutomobile*))0x44D520)(this); // TODO: Reverse
+    if (GetStatus() != STATUS_SIMPLE && GetStatus() != STATUS_PHYSICS) {
+        return false;
+    }
+
+    const auto current = m_autoPilot.m_currentAddress;
+    const auto next    = m_autoPilot.m_startingRouteNode;
+    const auto end     = m_autoPilot.m_endingRouteNode;
+    if (!ThePaths.IsAreaLoaded(current.m_wAreaId) || !ThePaths.IsAreaLoaded(next.m_wAreaId)) {
+        return false;
+    }
+
+    // A traffic light on the link from the current node to the next one, or from the end node to the current one
+    const auto* const currentNode = ThePaths.GetPathNode(current);
+    for (auto i = 0u; i < currentNode->m_nNumLinks; i++) {
+        const auto linkIdx = currentNode->m_wBaseLinkId + i;
+        if (ThePaths.m_pNodeLinks[current.m_wAreaId][linkIdx] == next) {
+            const auto link = ThePaths.m_pNaviLinks[current.m_wAreaId][linkIdx];
+            if (ThePaths.IsAreaLoaded(link.m_wAreaId) && ThePaths.GetCarPathLink(link).m_nTrafficLightState) {
+                return true;
+            }
+        }
+    }
+
+    if (end.m_wAreaId != (uint16)-1 && ThePaths.IsAreaLoaded(end.m_wAreaId)) {
+        const auto* const endNode = ThePaths.GetPathNode(end);
+        for (auto i = 0u; i < endNode->m_nNumLinks; i++) {
+            const auto linkIdx = endNode->m_wBaseLinkId + i;
+            if (ThePaths.m_pNodeLinks[end.m_wAreaId][linkIdx] == current) {
+                const auto link = ThePaths.m_pNaviLinks[end.m_wAreaId][linkIdx];
+                if (ThePaths.IsAreaLoaded(link.m_wAreaId) && ThePaths.GetCarPathLink(link).m_nTrafficLightState) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 /*!
