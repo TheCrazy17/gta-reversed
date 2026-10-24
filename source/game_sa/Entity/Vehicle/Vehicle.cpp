@@ -229,6 +229,7 @@ void CVehicle::InjectHooks() {
     RH_ScopedGlobalOverloadedInstall(SetVehicleAtomicVisibilityCB, "Frame", 0x6D26D0, RwFrame*(*)(RwFrame*, void*));
     RH_ScopedGlobalInstall(SetCompAlphaCB, 0x6D2950);
     RH_ScopedGlobalInstall(IsVehiclePointerValid, 0x6E38F0);
+    RH_ScopedGlobalInstall(IsValidModForVehicle, 0x49B010);
     RH_ScopedGlobalInstall(RemoveUpgradeCB, 0x6D3300);
     RH_ScopedGlobalInstall(FindUpgradeCB, 0x6D3370);
     RH_ScopedGlobalOverloadedInstall(RemoveObjectsCB, "Object", 0x6D33B0, RwObject*(*)(RwObject*, void*));
@@ -5739,8 +5740,38 @@ CEntity* CVehicle::GetPlaneWeaponFiringStatus(bool& status, eOrdnanceType& ordna
     return nullptr;
 }
 
+// 0x49B010
 bool IsValidModForVehicle(uint32 modelId, CVehicle* vehicle) {
-    return plugin::CallAndReturn<bool, 0x49B010, uint32, CVehicle*>(modelId, vehicle);
+    const auto* const modMI     = CModelInfo::GetModelInfo(modelId);
+    const auto* const vehicleMI = CModelInfo::GetVehicleModelInfo(vehicle->m_nModelIndex);
+
+    if (modMI->bUsesVehDummy && modMI->CarMod == 2) { // Wheels
+        const auto wheelClass = (int8)vehicleMI->m_nWheelUpgradeClass;
+        for (auto i = 0; i < CVehicleModelInfo::GetNumWheelUpgrades(wheelClass); i++) {
+            if (CVehicleModelInfo::GetWheelUpgrade(wheelClass, i) == (int32)modelId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (!modMI->bUsesVehDummy && modMI->CarMod == 17) { // Stereo
+        const auto& audioSettings = vehicle->m_vehicleAudio.m_AuSettings;
+        if (audioSettings.RadioType != AE_RT_CIVILIAN) {
+            return false;
+        }
+        if (audioSettings.BassSetting == eBassSetting::BOOST) {
+            return vehicle->vehicleFlags.bUpgradedStereo;
+        }
+        return true;
+    }
+
+    for (const auto upgrade : vehicleMI->m_anUpgrades) {
+        if (upgrade == (int32)modelId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 0x6E38F0
