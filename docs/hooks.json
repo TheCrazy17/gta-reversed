@@ -40866,6 +40866,11 @@
   },
   {
     "Category": "CVehicle",
+    "Name": "IsValidModForVehicle",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicle",
     "Name": "RemoveUpgradeCB",
     "IsReversed": true
   },
