@@ -147,8 +147,8 @@ CPlane::CPlane(int32 modelIndex, eVehicleCreatedBy createdBy) : CAutomobile(mode
     m_planeDamageWave = 0;
     m_pGunParticles = nullptr;
     m_nFiringMultiplier = 16;
-    field_9DC = 0;
-    field_9E0 = 0;
+    m_nLockOnStartTime = 0;
+    m_pLockOnTarget    = nullptr;
     m_apJettrusParticles.fill(nullptr);
 
     m_pSmokeParticle = nullptr;

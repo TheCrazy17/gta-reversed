@@ -214,8 +214,8 @@ void CVehicle::InjectHooks() {
     RH_ScopedInstall(DoBladeCollision, 0x6E2E50);
     RH_ScopedInstall(AddVehicleUpgrade, 0x6E3290);
     RH_ScopedInstall(SetupUpgradesAfterLoad, 0x6E3400);
-    // RH_ScopedInstall(GetPlaneWeaponFiringStatus, 0x6E3440);
-    // RH_ScopedInstall(ProcessWeapons, 0x6E3950);
+    RH_ScopedInstall(GetPlaneWeaponFiringStatus, 0x6E3440);
+    RH_ScopedInstall(ProcessWeapons, 0x6E3950);
     RH_ScopedInstall(DoFixedMachineGuns, 0x73F400);
     RH_ScopedInstall(FireFixedMachineGuns, 0x73DF00);
     RH_ScopedInstall(DoDriveByShootings, 0x741FD0);
@@ -5631,8 +5631,112 @@ void CVehicle::SetupUpgradesAfterLoad() {
 }
 
 // 0x6E3440
-void CVehicle::GetPlaneWeaponFiringStatus(bool& status, eOrdnanceType& ordnanceType) {
-    ((void(__thiscall*)(CVehicle*, bool&, eOrdnanceType&))0x6E3440)(this, status, ordnanceType);
+CEntity* CVehicle::GetPlaneWeaponFiringStatus(bool& status, eOrdnanceType& ordnanceType) {
+    const auto* const pad = CPad::GetPad(CWorld::FindPlayerSlotWithVehiclePointer(this));
+
+    switch (m_nModelIndex) {
+    case MODEL_HUNTER:
+    case MODEL_TORNADO:
+        if (pad->GetCarGunFired() == 2) {
+            status = true;
+            return nullptr;
+        }
+        if (pad->CarGunJustDown() == 1) {
+            ordnanceType = 1;
+            return nullptr;
+        }
+        break;
+    case MODEL_SEASPAR:
+    case MODEL_RCBARON:
+    case MODEL_MAVERICK:
+    case MODEL_POLMAV:
+    case MODEL_CARGOBOB:
+        if (pad->GetCarGunFired() == 2) {
+            status = true;
+        }
+        if (m_nModelIndex == MODEL_RCBARON && bDisableRemoteDetonation && CCamera::m_bUseMouse3rdPerson && pad->GetCarGunFired() == 1) {
+            status = true;
+        }
+        ordnanceType = 0;
+        return nullptr;
+    case MODEL_RUSTLER:
+        if (pad->GetCarGunFired() == 2) {
+            status = true;
+        }
+        ordnanceType = 0;
+        return nullptr;
+    case MODEL_HYDRA: {
+        ordnanceType = 0;
+        const auto now      = CTimer::GetTimeInMS();
+        const auto justDown = pad->CarGunJustDown();
+
+        // Flares are dropped behind the plane
+        if (justDown == 1 && now > m_nGunFiringTime + 2000) {
+            const auto origin = GetPosition() + GetMatrix().GetUp() * -1.0f + GetMatrix().GetForward() * -2.5f;
+            CProjectileInfo::AddProjectile(this, WEAPON_FLARE, origin, 0.0f, &GetMatrix().GetForward(), nullptr);
+            m_nGunFiringTime = CTimer::GetTimeInMS();
+        }
+
+        auto* const plane     = AsPlane();
+        auto&       crossHair = gCrossHair[0];
+        if (justDown == 2) {
+            if (CWeaponEffects::IsLockedOn(0) && plane->m_nLockOnStartTime) {
+                auto* const target = ScanAndMarkTargetForHeatSeekingMissile(plane->m_pLockOnTarget);
+                if (target && target == plane->m_pLockOnTarget && now - plane->m_nLockOnStartTime > 1500) {
+                    ordnanceType                    = 2;
+                    crossHair.m_color.r             = 255;
+                    crossHair.m_color.g             = 0;
+                    crossHair.m_color.b             = 0;
+                    crossHair.m_fRotation           = 1.0f;
+                    crossHair.m_nTimeWhenToDeactivate = 0;
+                    return target;
+                }
+            }
+            ordnanceType = 1;
+            return nullptr;
+        }
+
+        if (pad->GetEnterTargeting()) {
+            plane->m_nLockOnStartTime = now;
+            plane->m_pLockOnTarget    = nullptr;
+            return nullptr;
+        }
+
+        if (pad->GetTarget()) {
+            if (!plane->m_nLockOnStartTime) {
+                plane->m_nLockOnStartTime = now;
+            }
+            auto* const target = ScanAndMarkTargetForHeatSeekingMissile(plane->m_pLockOnTarget);
+            if (!target || target != plane->m_pLockOnTarget) {
+                plane->m_nLockOnStartTime = now;
+            }
+            crossHair.m_nTimeWhenToDeactivate = 0;
+            if (now - plane->m_nLockOnStartTime > 1500) { // Locked on
+                crossHair.m_color.r = 255;
+                crossHair.m_color.g = 0;
+                crossHair.m_color.b = 0;
+                crossHair.m_fRotation = 1.0f;
+            } else {
+                crossHair.m_color.r = 255;
+                crossHair.m_color.g = 255;
+                crossHair.m_color.b = 255;
+                crossHair.m_fRotation = 0.0f;
+            }
+            plane->m_pLockOnTarget = target;
+            return nullptr;
+        }
+
+        plane->m_nLockOnStartTime = 0;
+        plane->m_pLockOnTarget    = nullptr;
+        return nullptr;
+    }
+    default:
+        break;
+    }
+
+    status       = false;
+    ordnanceType = 0;
+    return nullptr;
 }
 
 bool IsValidModForVehicle(uint32 modelId, CVehicle* vehicle) {
@@ -5648,7 +5752,83 @@ bool IsVehiclePointerValid(CVehicle* vehicle) {
 
 // 0x6E3950
 void CVehicle::ProcessWeapons() {
-    ((void(__thiscall*)(CVehicle*))0x6E3950)(this);
+    CEntity* target = nullptr;
+
+    if (IsSubPlane() && this == FindPlayerVehicle(-1, false) && !AsPlane()->m_nLockOnStartTime) {
+        CWeaponEffects::ClearCrossHairImmediately(0);
+    }
+
+    if (physicalFlags.bRenderScorched) {
+        return;
+    }
+
+    bool          fireGuns = false;
+    eOrdnanceType ordnance = 0;
+    if (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_REMOTE_CONTROLLED) {
+        target = GetPlaneWeaponFiringStatus(fireGuns, ordnance);
+        SelectPlaneWeapon(fireGuns, ordnance);
+    } else if (vehicleFlags.bFireGun) {
+        fireGuns = true;
+        ordnance = 1;
+        if (m_nModelIndex == MODEL_HYDRA && m_nVehicleWeaponInUse == CAR_WEAPON_LOCK_ON_ROCKET) {
+            ordnance = 2;
+        }
+    }
+
+    switch (m_nVehicleWeaponInUse) {
+    case CAR_WEAPON_HEAVY_GUN:
+        if (fireGuns) {
+            FirePlaneGuns();
+        }
+        break;
+    case CAR_WEAPON_FREEFALL_BOMB:
+        if (ordnance) {
+            PossiblyDropFreeFallBombForPlayer(ordnance, true);
+        }
+        break;
+    case CAR_WEAPON_LOCK_ON_ROCKET:
+        if (ordnance) {
+            if (GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_REMOTE_CONTROLLED) {
+                switch (m_autoPilot.m_nCarMission) {
+                case MISSION_PLANE_ATTACK_PLAYER:
+                case MISSION_PLANE_ATTACK_PLAYER_POLICE:
+                case MISSION_PLANE_DOG_FIGHT_PLAYER:
+                    target = FindPlayerVehicle(-1, false);
+                    break;
+                default:
+                    target = m_autoPilot.m_TargetEntity;
+                    break;
+                }
+            }
+            if (target) {
+                FireHeatSeakingMissile(target, ordnance, true);
+            }
+        }
+        break;
+    case CAR_WEAPON_DOUBLE_ROCKET:
+        if (ordnance) {
+            FireUnguidedMissile(ordnance, true);
+        }
+        break;
+    }
+
+    FxSystem_c** gunParticles;
+    if (m_nVehicleSubType == VEHICLE_TYPE_HELI) {
+        gunParticles = AsHeli()->m_ppGunflashFx;
+    } else if (m_nVehicleSubType == VEHICLE_TYPE_PLANE) {
+        gunParticles = AsPlane()->m_pGunParticles;
+    } else {
+        return;
+    }
+
+    if (gunParticles) {
+        const auto numGuns = GetPlaneNumGuns();
+        for (auto i = 0; i < numGuns; i++) {
+            if (gunParticles[i]) {
+                gunParticles[i]->SetMatrix(GetModellingMatrix());
+            }
+        }
+    }
 }
 
 // 0x73F400
