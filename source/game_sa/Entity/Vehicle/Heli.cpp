@@ -8,6 +8,7 @@
 
 #include "Shadows.h"
 #include "Ropes.h"
+#include "WindModifiers.h"
 #include "Tasks/TaskTypes/TaskComplexUseSwatRope.h"
 #include "Tasks/TaskTypes/TaskComplexWanderCop.h"
 
@@ -27,6 +28,7 @@ void CHeli::InjectHooks() {
     RH_ScopedInstall(GenerateHeli, 0x6C6520);
     RH_ScopedInstall(SendDownSwat, 0x6C69C0);
     RH_ScopedVMTInstall(ProcessControlInputs, 0x6C4830);
+    RH_ScopedVMTInstall(ProcessFlyingCarStuff, 0x6C4E60);
     RH_ScopedVMTInstall(PreRender, 0x6C5420);
     RH_ScopedVMTInstall(BlowUpCar, 0x6C6D30);
     RH_ScopedVMTInstall(Render, 0x6C4400);
@@ -686,7 +688,99 @@ void CHeli::SetupDamageAfterLoad() {
 
 // 0x6C4E60
 void CHeli::ProcessFlyingCarStuff() {
-    plugin::CallMethod<0x6C4E60, CHeli*>(this);
+    const auto status    = GetStatus();
+    const auto isRCModel = notsa::contains({ MODEL_RCRAIDER, MODEL_RCGOBLIN }, GetModelId());
+
+    if (status == STATUS_PLAYER || status == STATUS_REMOTE_CONTROLLED || status == STATUS_PHYSICS) {
+        if (m_fHeliRotorSpeed < 0.22f && !physicalFlags.bSubmergedInWater) {
+            m_fHeliRotorSpeed += isRCModel ? 0.003f : 0.001f;
+        }
+
+        if (m_fHeliRotorSpeed > 0.15f) {
+            const auto isFloatingOnWater = physicalFlags.bTouchingWater && notsa::contains({ MODEL_SEASPAR, MODEL_LEVIATHN }, GetModelId());
+            if (vehicleFlags.bIsRCVehicle) {
+                FlyingControl(FLIGHTMODEL_RCHELI, m_fLeftRightSkid, m_fSteeringUpDown, m_fSteeringLeftRight, m_fAccelerationBreakStatus);
+            } else {
+                const auto needsControl = (m_nNumContactWheels < 4 && !isFloatingOnWater)
+                    || m_fAccelerationBreakStatus > 0.0f
+                    || std::abs(GetMoveSpeed().x) > 0.02f
+                    || std::abs(GetMoveSpeed().y) > 0.02f
+                    || std::abs(GetMoveSpeed().z) > 0.02f;
+                if (needsControl) {
+                    FlyingControl(FLIGHTMODEL_HELI, m_fLeftRightSkid, m_fSteeringUpDown, m_fSteeringLeftRight, m_fAccelerationBreakStatus);
+                }
+            }
+        }
+
+        if (m_fHeliRotorSpeed > 0.015f) {
+            if (auto* const rotorFrame = m_aCarNodes[CAR_BUMP_FRONT]) {
+                CMatrix rotorMatrix;
+                rotorMatrix.Attach(RwFrameGetMatrix(rotorFrame), false);
+
+                // The blades hurt whatever they touch
+                if (auto* const rotor = (RpAtomic*)GetCurrentAtomicObject(rotorFrame)) {
+                    const auto radius = RpAtomicGetBoundingSphere(rotor)->radius;
+                    if (radius > 0.1f) {
+                        auto damageMult = 1.0f;
+                        if (isRCModel) {
+                            damageMult = 0.9f;
+                        } else if (notsa::contains({ MODEL_SPARROW, MODEL_SEASPAR }, GetModelId())) {
+                            damageMult = 0.8f;
+                        } else if (m_nModelIndex == MODEL_HUNTER) {
+                            damageMult = 0.5f;
+                        }
+                        if (status == STATUS_PLAYER || status == STATUS_REMOTE_CONTROLLED) {
+                            DoBladeCollision(rotorMatrix.GetPosition(), GetMatrix(), -3, radius, damageMult);
+                        }
+                    }
+                }
+
+                // The spinning rotor pushes the wind around
+                if ((status == STATUS_PLAYER || status == STATUS_PHYSICS) && m_fHeliRotorSpeed > 0.0075f) {
+                    CWindModifiers::RegisterOne(GetPosition(), 1, std::min(m_fHeliRotorSpeed * (20.0f / 3.0f), 1.0f));
+                }
+            }
+        }
+    } else {
+        // Nobody is flying it, so the rotor spins down
+        if (!m_pHandlingData->m_bIsHeli) {
+            return;
+        }
+        vehicleFlags.bEngineOn = false;
+
+        const auto spinDown = (double)CTimer::GetTimeStep() * 0.00055f;
+        if (spinDown < m_fHeliRotorSpeed) {
+            m_fHeliRotorSpeed = (float)((double)m_fHeliRotorSpeed - spinDown);
+            m_nFakePhysics = 0;
+        } else {
+            m_fHeliRotorSpeed = 0.0f;
+        }
+    }
+
+    // Blades passing close to the camera
+    if (isRCModel || !(m_fHeliRotorSpeed < 0.154f && m_fHeliRotorSpeed > 0.0044f)) {
+        return;
+    }
+    auto* const rotorFrame = m_aCarNodes[CAR_BUMP_FRONT];
+    if (!rotorFrame) {
+        return;
+    }
+
+    const auto toCamera = TheCamera.GetPosition() - GetPosition();
+    const auto distSq   = (float)((double)toCamera.x * toCamera.x + (double)toCamera.y * toCamera.y + (double)toCamera.z * toCamera.z);
+    if (!(distSq < 400.0f) || !(std::abs(m_fPropRotate - m_wheelRotation[1]) > 0.5235988f)) {
+        return;
+    }
+
+    CMatrix rotorMatrix;
+    rotorMatrix.Attach(RwFrameGetMatrix(rotorFrame), false);
+    const auto bladeDir = GetMatrix().TransformVector(rotorMatrix.GetRight());
+    const auto invDist  = 1.0 / std::max((double)std::sqrt((double)distSq), 0.01);
+    const auto facing   = (double)bladeDir.z * (toCamera.z * invDist) + (double)bladeDir.y * (toCamera.y * invDist) + (double)bladeDir.x * (toCamera.x * invDist);
+    if (std::abs(facing) > 0.95) {
+        m_vehicleAudio.AddAudioEvent(AE_HELI_BLADE, 0.0f);
+        m_fPropRotate = m_wheelRotation[1];
+    }
 }
 
 // 0x6C5420
