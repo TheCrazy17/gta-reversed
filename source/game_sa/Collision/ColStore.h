@@ -37,6 +37,7 @@ public:
     static int32 AddColSlot(const char* name);
     static void AddCollisionNeededAtPosn(const CVector& pos);
     static void AddRef(int32 colNum);
+    static bool IsValidSlot(int32 slot);
     static int32 FindColSlot() { return -1; }
     static int32 FindColSlot(const char*);
     static void BoundingBoxesPostProcess();

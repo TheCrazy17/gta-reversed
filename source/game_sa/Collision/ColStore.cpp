@@ -112,6 +112,13 @@ void CColStore::AddRef(int32 colNum)
     ++colDef->m_nRefCount; //BUG: We don't check whether the GetAt returned nullptr, which it can
 }
 
+// Whether the slot of the collision pool is in use, that is, whether a COL file was registered for it
+// 0x410660
+bool CColStore::IsValidSlot(int32 slot) {
+    // The original does not check that the slot is inside of the pool, it reads the flags at that index
+    return ms_pColPool->GetAt(slot) != nullptr;
+}
+
 // We can assume that there was a code similar to `CIplStore::FindIplSlot` here, but it was deleted for some reason
 int32 CColStore::FindColSlot(const char* name)
 {
@@ -434,6 +441,7 @@ void CColStore::InjectHooks()
     RH_ScopedInstall(AddCollisionNeededAtPosn, 0x4103A0);
     RH_ScopedInstall(AddColSlot, 0x411140);
     RH_ScopedInstall(AddRef, 0x4107A0);
+    RH_ScopedInstall(IsValidSlot, 0x410660);
     RH_ScopedInstall(RemoveRef, 0x4107D0);
     RH_ScopedInstall(EnsureCollisionIsInMemory, 0x410AD0);
     RH_ScopedInstall(SetCollisionRequired, 0x4104E0);
