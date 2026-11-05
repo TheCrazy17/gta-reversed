@@ -1,5 +1,7 @@
 #include "StdInc.h"
 
+#include <limits>
+
 #include "WaterCannon.h"
 #include "FireManager.h"
 
@@ -69,7 +71,10 @@ void CWaterCannon::Update_NewInput(const CVector* start, const CVector* end) {
 // 0x7295E0
 void CWaterCannon::PushPeds() {
     // FIX_BUGS: R* originally used 10'000.f here, but thats bug prone (if map size gets increased)
-    CVector min{ FLT_MAX, FLT_MAX, FLT_MAX }, max{ FLT_MIN, FLT_MIN, FLT_MIN };
+    // The upper bound used to start at FLT_MIN, which is the smallest *positive* float, so a jet that
+    // stays below 0 on an axis got a box that reached up to 0 instead of ending at the jet.
+    constexpr auto FLOAT_MAX = std::numeric_limits<float>::max();
+    CVector min{ FLOAT_MAX, FLOAT_MAX, FLOAT_MAX }, max{ -FLOAT_MAX, -FLOAT_MAX, -FLOAT_MAX };
     CBoundingBox bbox(min, max);
 
     for (auto i = 0; i < SECTIONS_COUNT; i++) {
@@ -88,12 +93,24 @@ void CWaterCannon::PushPeds() {
         bbox.m_vecMax.z = std::max(bbox.m_vecMax.z, secPos.z);
     }
 
+    // The original tests the ped against the box with STRICT comparisons (0x729732..0x7297C3), unlike
+    // CBoundingBox::IsPointWithin which is inclusive. That makes a box that is flat on one axis (min == max)
+    // contain nothing: a jet fired exactly along +Y never changes its X, so all of its sections share
+    // one X and it can't push anybody, however close they stand.
+    const auto IsPointStrictlyWithin = [&bbox](const CVector& point) {
+        return point.x > bbox.m_vecMin.x && point.x < bbox.m_vecMax.x
+            && point.y > bbox.m_vecMin.y && point.y < bbox.m_vecMax.y
+            && point.z > bbox.m_vecMin.z && point.z < bbox.m_vecMax.z;
+    };
+
     for (auto& ped : GetPedPool()->GetAllValid()) {
-        CVector pedPosn = ped.GetPosition();
-        if (!bbox.IsPointWithin(pedPosn))
+        // 0x729719: the original skips peds with collision turned off. It has no check on physicalFlags
+        // (the bMakeMassTwiceAsBig test that used to be here is not in the executable)
+        if (!ped.m_bUsesCollision)
             continue;
 
-        if (ped.physicalFlags.bMakeMassTwiceAsBig)
+        const CVector pedPosn = ped.GetPosition();
+        if (!IsPointStrictlyWithin(pedPosn))
             continue;
 
         for (auto i = 0; i < SECTIONS_COUNT; i++) {
@@ -115,17 +132,19 @@ void CWaterCannon::PushPeds() {
             ped.ApplyMoveForce({ 0.0f, 0.0f, CTimer::GetTimeStep() });
 
             {
-                // TODO: Refactor... Ugly code
-                const CVector2D applyableMoveSpeed = (secMoveSpeed / 10.0f - ped.m_vecMoveSpeed) / 10.0f;
+                // Moves the ped's speed a tenth of the way towards a tenth of the section's speed (0x7298CA..0x729969)
+                const CVector2D applyableMoveSpeed = (secMoveSpeed * 0.1f - ped.m_vecMoveSpeed) * 0.1f;
 
                 // Check if directions are the same (eg, + / +, - / -),
                 // differing sign bits will always yield a negative result
                 /// (unless 0, but that is handled by > (instead of >=))
+                // The step is added to the ped's own speed. It used to be added to the section's speed, which
+                // threw the ped at the jet's speed instead of nudging it
                 if (secMoveSpeed.x * applyableMoveSpeed.x > 0.0f)
-                    ped.m_vecMoveSpeed.x = applyableMoveSpeed.x + secMoveSpeed.x;
+                    ped.m_vecMoveSpeed.x += applyableMoveSpeed.x;
 
                 if (secMoveSpeed.y * applyableMoveSpeed.y > 0.0f)
-                    ped.m_vecMoveSpeed.y = applyableMoveSpeed.y + secMoveSpeed.y;
+                    ped.m_vecMoveSpeed.y += applyableMoveSpeed.y;
             }
 
             FxPrtMult_c prtInfo{ 1.0f, 1.0f, 1.0f, 0.6f, 0.75f, 0.0f, 0.2f };
