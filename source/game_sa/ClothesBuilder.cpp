@@ -475,11 +475,13 @@ RwTexture* CClothesBuilder::CopyTexture(RwTexture* srcTex) {
     const auto srcRaster = RwTextureGetRaster(srcTex);
     
     // Create a new raster to which we're going to copy to
+    // The format is taken as it is (`cFormat << 8`), the original does not mask out the flags of the pixel format
+    // (mipmaps, palette) of the source: `shl eax, 8; or eax, 4` at 0x5A5747
     const auto dstRaster = RwRasterCreate(
         RwRasterGetWidth(srcRaster),
         RwRasterGetHeight(srcRaster),
         RwRasterGetDepth(srcRaster),
-        (RwRasterGetFormat(srcRaster) & rwRASTERFORMATPIXELFORMATMASK) | 4 // TODO
+        RwRasterGetFormat(srcRaster) | rwRASTERTYPETEXTURE
     );
     
     // Copy data from the src raster to this one
@@ -510,18 +512,32 @@ void CClothesBuilder::PlaceTextureOnTopOfTexture(RwTexture* dstTex, RwTexture* s
     const auto dstRaster = RwTextureGetRaster(dstTex);
     const auto srcRaster = RwTextureGetRaster(srcTex);
 
-    auto dstIt = (RwUInt32*)RwRasterLock(dstRaster, 0, rwRASTERLOCKREADWRITE);
+    // The source is locked first, and the pixels walked are those of the source raster
     auto srcIt = (RwUInt32*)RwRasterLock(srcRaster, 0, rwRASTERLOCKREADWRITE);
+    auto dstIt = (RwUInt32*)RwRasterLock(dstRaster, 0, rwRASTERLOCKREADWRITE);
 
     // NOTE: They don't skip the stride, but it's fine [This way vectorization should be easier for the compiler]
-    for (auto i = RwRasterGetHeight(dstRaster) * RwRasterGetWidth(dstRaster); i-- > 0; dstIt++, srcIt++) {
+    for (auto i = RwRasterGetHeight(srcRaster) * RwRasterGetWidth(srcRaster); i-- > 0; dstIt++, srcIt++) {
         if (*srcIt & 0xFF000000) { // Check alpha != 0
             *dstIt = *srcIt;
         }
     }
 
-    RwRasterUnlock(dstRaster);
     RwRasterUnlock(srcRaster);
+    RwRasterUnlock(dstRaster);
+}
+
+namespace {
+// The blends below compute the weighted sum of the bytes in floating point and keep the low byte of the truncated
+// result (the call to __ftol at 0x821B40 followed by a byte); nothing is rounded, not each term either.
+// The weights of the callers add up to one, so the sum never goes over 255.
+RwUInt8 BlendedByte(float sum) {
+    return (RwUInt8)(int32)sum;
+}
+
+// What the tattoo alpha is scaled by in the original, the float at 0x859A3C. It is the float of the decimal
+// 0.003921569 (0x3B808081), not the float nearest to 1 / 255 (0x3B808080)
+constexpr float TATTOO_ALPHA_SCALE = 0.003921569f;
 }
 
 // 0x5A5820
@@ -538,14 +554,16 @@ void CClothesBuilder::BlendTextures(RwTexture* dst, RwTexture* src, float r1, fl
     auto srcIt = RwRasterLock(srcRaster, 0, rwRASTERLOCKREAD);
     auto dstIt = RwRasterLock(dstRaster, 0, rwRASTERLOCKREADWRITE);
 
-    for (auto i = RwRasterGetHeight(dstRaster) * RwRasterGetWidth(dstRaster); i-- > 0; dstIt++, srcIt++) {
-        for (auto c = 3; i-- > 0; dstIt++, srcIt++) { // Copy RGB, alpha stays the same
-            *dstIt = multiply_weighted<RwUInt8>({ { *dstIt, r1 }, { *srcIt, r2 } });
+    // The pixels walked are those of the source raster; each is 4 bytes (blue, green, red, alpha). The colours
+    // of the destination are blended with the source, its alpha is left as it is.
+    for (auto i = RwRasterGetHeight(srcRaster) * RwRasterGetWidth(srcRaster); i-- > 0; dstIt += 4, srcIt += 4) {
+        for (auto c = 0; c < 3; c++) {
+            dstIt[c] = BlendedByte(srcIt[c] * r2 + dstIt[c] * r1);
         }
     }
 
-    RwRasterUnlock(dstRaster);
     RwRasterUnlock(srcRaster);
+    RwRasterUnlock(dstRaster);
 
     CTimer::Resume();
 }
@@ -566,15 +584,17 @@ void CClothesBuilder::BlendTextures(RwTexture* dst, RwTexture* src1, RwTexture* 
     auto src2It = RwRasterLock(src2Raster, 0, rwRASTERLOCKREAD);
     auto dstIt  = RwRasterLock(dstRaster, 0, rwRASTERLOCKREADWRITE);
 
-    for (auto i = RwRasterGetHeight(dstRaster) * RwRasterGetWidth(dstRaster); i-- > 0; dstIt++, src1It++, src2It++) {
-        for (auto c = 3; i-- > 0; dstIt++, src1It++, src2It++) { // Copy RGB, alpha doesn't change
-            *dstIt = multiply_weighted<RwUInt8>({ { *dstIt, r1 }, { *src1It, r2 }, { *src2It, r3 } });
+    // The pixels walked are those of the first source raster. The terms are added in the order of the original
+    // (second source, first source, destination); the alpha of the destination is left as it is.
+    for (auto i = RwRasterGetHeight(src1Raster) * RwRasterGetWidth(src1Raster); i-- > 0; dstIt += 4, src1It += 4, src2It += 4) {
+        for (auto c = 0; c < 3; c++) {
+            dstIt[c] = BlendedByte(src2It[c] * r3 + src1It[c] * r2 + dstIt[c] * r1);
         }
     }
 
-    RwRasterUnlock(dstRaster);
     RwRasterUnlock(src1Raster);
     RwRasterUnlock(src2Raster);
+    RwRasterUnlock(dstRaster);
 
     CTimer::Resume();
 }
@@ -594,19 +614,24 @@ void CClothesBuilder::BlendTextures(RwTexture* dst, RwTexture* src1, RwTexture* 
 
     auto src1It = RwRasterLock(src1Raster, 0, rwRASTERLOCKREAD);
     auto src2It = RwRasterLock(src2Raster, 0, rwRASTERLOCKREAD);
-    auto tatIt  = RwRasterLock(tatRaster, 0, rwRASTERLOCKREAD);
     auto dstIt  = RwRasterLock(dstRaster, 0, rwRASTERLOCKREADWRITE);
+    auto tatIt  = RwRasterLock(tatRaster, 0, rwRASTERLOCKREAD);
 
-    for (auto i = RwRasterGetHeight(dstRaster) * RwRasterGetWidth(dstRaster); i-- > 0; dstIt++, src1It++, src2It++, tatIt++) {
-        const auto tatAlphaT = (float)tatIt[3] / 255.f;
-        for (auto c = 3; i-- > 0; dstIt++, src1It++, src2It++, tatIt++) { // Copy RGB, alpha doesn't change
-            *dstIt = (RwUInt8)lerp(multiply_weighted<RwUInt8>({ { *dstIt, r1 }, { *src1It, r2 }, { *src2It, r3 } }), *tatIt, tatAlphaT);
+    // The pixels walked are those of the first source raster. The body is blended as in the previous overload, and then
+    // the tattoo is put on top of it with the alpha of the tattoo pixel:
+    //   result = body + (tattoo - body) * alpha * TATTOO_ALPHA_SCALE
+    // Truncated like the rest; the alpha of the destination is left as it is.
+    for (auto i = RwRasterGetHeight(src1Raster) * RwRasterGetWidth(src1Raster); i-- > 0; dstIt += 4, src1It += 4, src2It += 4, tatIt += 4) {
+        const int32 tatAlpha = tatIt[3];
+        for (auto c = 0; c < 3; c++) {
+            const int32 body = BlendedByte(src2It[c] * r3 + src1It[c] * r2 + dstIt[c] * r1);
+            dstIt[c] = BlendedByte((float)((tatIt[c] - body) * tatAlpha) * TATTOO_ALPHA_SCALE + (float)body);
         }
     }
 
-    RwRasterUnlock(dstRaster);
     RwRasterUnlock(src1Raster);
     RwRasterUnlock(src2Raster);
+    RwRasterUnlock(dstRaster);
     RwRasterUnlock(tatRaster);
 
     CTimer::Resume();
