@@ -93,6 +93,7 @@ public:
 
     void SetModelIndex(uint32 index) override;
     void ProcessControl() override;
+    void PreRender() override;
     void SetupModelNodes();
 
     bool FindMaximumSpeedToStopAtStations(float* speed);

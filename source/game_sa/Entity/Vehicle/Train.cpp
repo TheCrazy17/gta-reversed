@@ -74,6 +74,7 @@ void CTrain::InjectHooks() {
     RH_ScopedInstall(DoTrainGenerationAndRemoval, 0x6F7900);
     RH_ScopedInstall(AddNearbyPedAsRandomPassenger, 0x6F8170);
     RH_ScopedVMTInstall(SetModelIndex, 0x6F5530);
+    RH_ScopedVMTInstall(PreRender, 0x6F5570);
     RH_ScopedVMTInstall(ProcessControl, 0x6F86A0);
 
     RH_ScopedGlobalInstall(ProcessTrainAnnouncements, 0x6F5910);
@@ -166,6 +167,23 @@ void CTrain::SetModelIndex(uint32 index) {
 void CTrain::SetupModelNodes() {
     std::ranges::fill(m_aTrainNodes, nullptr);
     CClumpModelInfo::FillFrameArray(GetRpClump(), m_aTrainNodes.data());
+}
+
+// 0x6F5570
+void CTrain::PreRender() {
+    CVehicle::PreRender();
+
+    // Only the first and the last carriage of a train get their lights processed: the first one skips the rear lights
+    // (except for the tram, which is hardcoded by model to keep them) and the last one skips the front lights
+    if (trainFlags.bIsFrontCarriage) {
+        const auto flags = m_nModelIndex == MODEL_TRAM
+            ? VEHICLE_LIGHTS_TWIN | VEHICLE_LIGHTS_IGNORE_DAMAGE
+            : VEHICLE_LIGHTS_TWIN | VEHICLE_LIGHTS_IGNORE_DAMAGE | VEHICLE_LIGHTS_DISABLE_REAR;
+        DoVehicleLights(GetMatrix(), (eVehicleLightsFlags)flags);
+    } else if (trainFlags.bIsLastCarriage) {
+        constexpr auto flags = VEHICLE_LIGHTS_TWIN | VEHICLE_LIGHTS_IGNORE_DAMAGE | VEHICLE_LIGHTS_DISABLE_FRONT;
+        DoVehicleLights(GetMatrix(), (eVehicleLightsFlags)flags);
+    }
 }
 
 // 0x6F7440
