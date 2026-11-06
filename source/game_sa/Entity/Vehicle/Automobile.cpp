@@ -82,6 +82,7 @@ void CAutomobile::InjectHooks()
     RH_ScopedInstall(SetBusDoorTimer, 0x6A3860);
     RH_ScopedInstall(ProcessAutoBusDoors, 0x6A38A0);
     RH_ScopedInstall(BoostJumpControl, 0x6A3A60);
+    RH_ScopedInstall(SetRandomDamage, 0x6A2530);
     RH_ScopedInstall(DoNitroEffect, 0x6A3BD0);
     RH_ScopedInstall(DebugCode, 0x6A2F80);
     RH_ScopedInstall(StopNitroEffect, 0x6A3E60);
@@ -3965,6 +3966,12 @@ void CAutomobile::ShowAllComps() {
 
 // 0x6A2530
 void CAutomobile::SetRandomDamage(bool bRemoveStuff) {
+    // The game turns a `rand()` (in [0, 32767]) into [0, range) with `(int)(rand * (1 / 32768) * range)`, which is not what
+    // `CGeneral::GetRandomNumberInRange` does (it lerps between `min` and `max - 1`, so it almost never reaches the last value)
+    const auto RandBelow = [](int32 range) {
+        return (int32)((float)CGeneral::GetRandomNumber() * (1.0f / 32768.0f) * (float)range);
+    };
+
     //> Bugfix shit
     const auto FixedRandom = [&](int32 x, int32 y) {
         // I'm very sure somebody fell into the trap of the shit naming of `GetRandomNumberInRange`
@@ -3972,15 +3979,16 @@ void CAutomobile::SetRandomDamage(bool bRemoveStuff) {
         // Reason being that at `0x6A260B` the possible interval is [0, 1), that is, in integer terms a fat `0` :D
         // Obviously, they intended it to be `[0, 1]`
 #ifdef FIX_BUGS
-        return (size_t)CGeneral::GetRandomNumberInRange(x, y + 1);
+        return (size_t)(x + RandBelow(y + 1 - x));
 #else
-        return (size_t)CGeneral::GetRandomNumberInRange(x, y);
+        return (size_t)(x + RandBelow(y - x));
 #endif
     };
 
     //> Processes a group of components (panels/doors)
     const auto Process = [
         this,
+        RandBelow,
         IsCompDamageable = [vs = GetVehicleModelInfo()->GetVehicleStruct()](auto nodeIdx) {
             return vs->IsComponentDamageable(nodeIdx);
         }
@@ -4011,8 +4019,11 @@ void CAutomobile::SetRandomDamage(bool bRemoveStuff) {
             NOTSA_UNREACHABLE(); // This is reached if the first `ncomps` bits are all set - Should never happen
         };
 
+        // Components that can still be picked: the ones that were not excluded from the start, minus the ones picked so far
+        const auto numPickable = (int32)numTotal - std::popcount(pickedbs);
+
         for (size_t i = 0u; i < numToDmg; i++) {
-            const auto pick = GetNthUnpicked((size_t)CGeneral::GetRandomNumberInRange(0, (int32)(numToDmg - i)));
+            const auto pick = GetNthUnpicked((size_t)RandBelow(numPickable - (int32)i));
             pickedbs |= 1 << pick; // We mark here for simplicity
             if (!IsDamStateOk(pick)) {
                 continue;
@@ -4026,8 +4037,13 @@ void CAutomobile::SetRandomDamage(bool bRemoveStuff) {
         }
     };
 
-    //> Doors
+    // Both amounts are drawn before any component is picked (the order matters as they share the same RNG)
     const auto numDoorsToDmg = FixedRandom(0, bRemoveStuff ? MAX_DOORS : 1);
+    const auto numPanelsToDmg = numDoorsToDmg == 0
+        ? bRemoveStuff ? FixedRandom(1, 4) : 1 // The 4 here and below comes from MAX_PANELS - 3 (As 3 panels are never damaged, see below)
+        : FixedRandom(0, bRemoveStuff ? 4 : 1);
+
+    //> Doors
     Process(
         0,
         numDoorsToDmg,
@@ -4038,9 +4054,6 @@ void CAutomobile::SetRandomDamage(bool bRemoveStuff) {
     );
 
     //> Panels (With a few exceptions)
-    const auto numPanelsToDmg = numDoorsToDmg == 0
-        ? bRemoveStuff ? FixedRandom(1, 4) : 1 // The 4 here and below comes from MAX_PANELS - 3 (As 3 panels are never damaged, see below)
-        : FixedRandom(0, bRemoveStuff ? 4 : 1);
     Process(
         1 << REAR_LEFT_PANEL | 1 << REAR_RIGHT_PANEL | 1 << WINDSCREEN_PANEL, // These are never damaged
         numPanelsToDmg,
