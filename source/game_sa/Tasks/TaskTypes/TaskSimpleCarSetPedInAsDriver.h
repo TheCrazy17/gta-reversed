@@ -23,6 +23,8 @@ public:
 public:
     static constexpr auto Type = TASK_SIMPLE_CAR_SET_PED_IN_AS_DRIVER;
 
+    static void InjectHooks();
+
     CTaskSimpleCarSetPedInAsDriver(CVehicle *targetVehicle, CTaskUtilityLineUpPedWithCar *utility = nullptr);
     CTaskSimpleCarSetPedInAsDriver(CVehicle *targetVehicle, bool warpingInToCar, CTaskUtilityLineUpPedWithCar *utility = nullptr);
     ~CTaskSimpleCarSetPedInAsDriver() override;
