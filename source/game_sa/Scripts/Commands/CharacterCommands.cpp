@@ -15,6 +15,9 @@
 #include <TaskTypes/TaskComplexWanderCriminal.h>
 #include <TaskTypes/TaskComplexWanderStandard.h>
 #include <TaskTypes/TaskComplexTurnToFaceEntityOrCoord.h>
+#include <TaskTypes/TaskComplexDriveToPoint.h>
+#include <TaskTypes/TaskComplexDrivePointRoute.h>
+#include <PedGeometryAnalyser.h>
 #include <TaskTypes/TaskComplexKillPedOnFoot.h>
 #include <TaskTypes/TaskComplexEnterCarAsDriver.h>
 #include <TaskTypes/TaskComplexEnterCarAsPassenger.h>
@@ -3021,6 +3024,72 @@ auto TaskTurnCharToFaceChar(eScriptCommands command, CRunningScript& S, int32 pe
     );
 }
 
+// The car model argument of the driving tasks: 0 means none (-1) and 1 is hardcoded to the Cheetah,
+// any other value is used as the model id
+eModelID DrivingTaskCarModel(int32 model) {
+    switch (model) {
+    case 0:  return (eModelID)-1;
+    case 1:  return MODEL_CHEETAH;
+    default: return (eModelID)model;
+    }
+}
+
+/*
+ * @opcode 05D1
+ * @command TASK_CAR_DRIVE_TO_COORD
+ * @class Task
+ * @method CarDriveToCoord
+ * @static
+ *
+ * @brief Makes a character drive a vehicle to a position
+ *
+ * @param {Char} char_
+ * @param {Car} car
+ * @param {float} x
+ * @param {float} y
+ * @param {float} z
+ * @param {float} speed
+ * @param {int} mode
+ * @param {int} carModel
+ * @param {int} drivingStyle
+ */
+auto TaskCarDriveToCoord(eScriptCommands command, CRunningScript& S, int32 pedHandle, CVehicle* vehicle, CVector pos, float speed, int32 mode, int32 carModel, eCarDrivingStyle drivingStyle) {
+    // A height under -100 means "on the ground"
+    if (pos.z <= -100.0f) {
+        pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y);
+    }
+    S.GivePedScriptedTask(
+        pedHandle,
+        new CTaskComplexDriveToPoint{ vehicle, pos, speed, mode, DrivingTaskCarModel(carModel), -1.0f, drivingStyle },
+        command
+    );
+}
+
+/*
+ * @opcode 07E7
+ * @command TASK_DRIVE_POINT_ROUTE_ADVANCED
+ * @class Task
+ * @method DrivePointRouteAdvanced
+ * @static
+ *
+ * @brief Makes a character drive a vehicle along the route that was set with the script route commands
+ *
+ * @param {Char} char_
+ * @param {Car} car
+ * @param {float} speed
+ * @param {int} mode
+ * @param {int} carModel
+ * @param {int} drivingStyle
+ */
+auto TaskDrivePointRouteAdvanced(eScriptCommands command, CRunningScript& S, int32 pedHandle, CVehicle* vehicle, float speed, int32 mode, int32 carModel, eCarDrivingStyle drivingStyle) {
+    static auto& scriptPointRoute = StaticRef<CPointRoute>(0xC18D50); // The route the script commands fill in
+    S.GivePedScriptedTask(
+        pedHandle,
+        new CTaskComplexDrivePointRoute{ vehicle, scriptPointRoute, speed, (uint32)mode, DrivingTaskCarModel(carModel), -1.0f, drivingStyle },
+        command
+    );
+}
+
 /*
  * @opcode 0642
  * @command IS_CHAR_AT_SCRIPTED_ATTRACTOR
@@ -4232,6 +4301,8 @@ void notsa::script::commands::character::RegisterHandlers() {
     // REGISTER_COMMAND_HANDLER(COMMAND_CREATE_CHAR_AT_ATTRACTOR, CreateCharAtAttractor);
     REGISTER_COMMAND_HANDLER(COMMAND_TASK_KILL_CHAR_ON_FOOT_WHILE_DUCKING, TaskKillCharOnFootWhileDucking);
     REGISTER_COMMAND_HANDLER(COMMAND_TASK_TURN_CHAR_TO_FACE_CHAR, TaskTurnCharToFaceChar);
+    REGISTER_COMMAND_HANDLER(COMMAND_TASK_CAR_DRIVE_TO_COORD, TaskCarDriveToCoord);
+    REGISTER_COMMAND_HANDLER(COMMAND_TASK_DRIVE_POINT_ROUTE_ADVANCED, TaskDrivePointRouteAdvanced);
     REGISTER_COMMAND_HANDLER(COMMAND_IS_CHAR_AT_SCRIPTED_ATTRACTOR, IsCharAtScriptedAttractor);
     REGISTER_COMMAND_HANDLER(COMMAND_GET_CHAR_MODEL, GetCharModel);
     REGISTER_COMMAND_HANDLER(COMMAND_SET_CURRENT_CHAR_WEAPON, SetCurrentCharWeapon);
