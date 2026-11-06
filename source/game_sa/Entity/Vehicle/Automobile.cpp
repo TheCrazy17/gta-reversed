@@ -82,6 +82,8 @@ void CAutomobile::InjectHooks()
     RH_ScopedInstall(SetBusDoorTimer, 0x6A3860);
     RH_ScopedInstall(ProcessAutoBusDoors, 0x6A38A0);
     RH_ScopedInstall(BoostJumpControl, 0x6A3A60);
+    RH_ScopedInstall(DoNitroEffect, 0x6A3BD0);
+    RH_ScopedInstall(DebugCode, 0x6A2F80);
     RH_ScopedInstall(StopNitroEffect, 0x6A3E60);
     RH_ScopedInstall(NitrousControl, 0x6A3EA0);
     RH_ScopedInstall(KnockPedOutCar, 0x6A44C0);
@@ -4292,7 +4294,7 @@ void CAutomobile::DoNitroEffect(float power) {
     if (m_pHandlingData->m_bDoubleExhaust) {
         secondExhaustPosition = exhaustPosition;
         secondExhaustPosition.x *= -1.0f;
-        if (!physicalFlags.bTouchingWater) {
+        if (physicalFlags.bTouchingWater) { // Same condition as for the first exhaust (0x6A3C94 tests the flag, it is not negated)
             CVector point = m_matrix->TransformPoint(secondExhaustPosition);
             if (CWaterLevel::GetWaterLevel(point, level, true)) {
                 if (level >= point.z)

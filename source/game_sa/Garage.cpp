@@ -41,6 +41,15 @@ void CGarage::InjectHooks() {
     RH_ScopedInstall(FindDoorsWithGarage, 0x449FF0);
     RH_ScopedInstall(NeatlyLineUpStoredCars, 0x448330);
     RH_ScopedInstall(CenterCarInGarage, 0x449220);
+
+    // The cars kept by garages (hide outs and impounding garages) are packed with the model and its mods
+    {
+        RH_ScopedClass(CStoredCar);
+        RH_ScopedCategoryGlobal();
+
+        RH_ScopedInstall(StoreCar, 0x449760);
+        RH_ScopedInstall(RestoreCar, 0x447E40);
+    }
 }
 
 // 0x4479F0
@@ -1530,10 +1539,11 @@ void CStoredCar::StoreCar(CVehicle* vehicle) {
     m_wModelIndex = static_cast<uint16>(vehicle->GetModelIndex());
     m_vPosn = vehicle->GetPosition();
 
-    const auto& up = vehicle->GetUp();
-    m_nPackedForwardX = static_cast<uint8>(std::lround(up.x * 100.0f));
-    m_nPackedForwardY = static_cast<uint8>(std::lround(up.y * 100.0f));
-    m_nPackedForwardZ = static_cast<uint8>(std::lround(up.z * 100.0f));
+    // The game packs the forward vector (matrix offset 0x10) truncating towards zero (__ftol), not rounding it
+    const auto& forward = vehicle->GetForward();
+    m_nPackedForwardX = static_cast<uint8>(static_cast<int32>(forward.x * 100.0f));
+    m_nPackedForwardY = static_cast<uint8>(static_cast<int32>(forward.y * 100.0f));
+    m_nPackedForwardZ = static_cast<uint8>(static_cast<int32>(forward.z * 100.0f));
 
     m_nPrimaryColor    = vehicle->m_nPrimaryColor;
     m_nSecondaryColor  = vehicle->m_nSecondaryColor;
@@ -1545,6 +1555,7 @@ void CStoredCar::StoreCar(CVehicle* vehicle) {
     m_anCompsToUse[1]   = vehicle->m_anExtras[1];
 
     m_nStoredCarFlags = 0;
+    _pad0             = 0; // The game clears the flags as a 16 bit word
     if (vehicle->physicalFlags.bBulletProof)    m_nStoredCarFlags |= 1;
     if (vehicle->physicalFlags.bFireProof)      m_nStoredCarFlags |= 2;
     if (vehicle->physicalFlags.bExplosionProof) m_nStoredCarFlags |= 4;
@@ -1576,7 +1587,7 @@ CVehicle* CStoredCar::RestoreCar() {
     CStreaming::RequestModel(m_wModelIndex, 8);
     for (const auto modId : m_awCarMods) {
         if (modId != -1) {
-            plugin::Call<0x408C70, int32, int32>(modId, 0); // NOTSA: requests the mod model + its LOD/twin variant (thunk_FUN_0156c970)
+            CStreaming::RequestVehicleUpgrade(modId, 0);
         }
     }
 
@@ -1585,7 +1596,7 @@ CVehicle* CStoredCar::RestoreCar() {
     }
 
     for (const auto modId : m_awCarMods) {
-        if (modId != -1 && !plugin::CallAndReturn<bool, 0x407820, int32>(modId)) { // NOTSA: verifies mod model + LOD/twin are loaded (thunk_FUN_0156a100)
+        if (modId != -1 && !CStreaming::HasVehicleUpgradeLoaded(modId)) {
             return nullptr;
         }
     }
@@ -1617,17 +1628,19 @@ CVehicle* CStoredCar::RestoreCar() {
 
     vehicle->GetPosition() = m_vPosn;
 
-    const CVector up{
+    // The packed vector is the forward one, the right one is perpendicular to it on the XY plane and up is always +Z
+    const CVector forward{
         static_cast<int8>(m_nPackedForwardX) * 0.01f,
         static_cast<int8>(m_nPackedForwardY) * 0.01f,
         static_cast<int8>(m_nPackedForwardZ) * 0.01f
     };
     auto& matrix = vehicle->GetMatrix();
-    matrix.GetUp()      = up;
-    matrix.GetRight()   = CVector(up.y, -up.x, 0.0f);
-    matrix.GetForward() = CVector(0.0f, 0.0f, 1.0f);
+    matrix.GetForward() = forward;
+    matrix.GetRight()   = CVector(forward.y, -forward.x, 0.0f);
+    matrix.GetUp()      = CVector(0.0f, 0.0f, 1.0f);
 
     vehicle->SetStatus(STATUS_ABANDONED);
+    vehicle->m_pDriver = nullptr;
 
     vehicle->vehicleFlags.bFreebies             = false;
     vehicle->vehicleFlags.bHasBeenOwnedByPlayer = true;
@@ -1635,7 +1648,8 @@ CVehicle* CStoredCar::RestoreCar() {
     auto& handlingFlagsOpaque = *reinterpret_cast<uint32*>(reinterpret_cast<char*>(vehicle) + 0x38C); // NOTSA: opaque handling-flags bag not mapped
     handlingFlagsOpaque = m_nHandlingFlags;
 
-    if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicle->m_nVehicleType == VEHICLE_TYPE_BIKE) {
+    // Unlike when storing, bikes don't get their bomb back
+    if (vehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
         vehicle->m_nBombOnBoard = m_nBombType & 7;
     }
 
@@ -1646,7 +1660,10 @@ CVehicle* CStoredCar::RestoreCar() {
     if (m_nStoredCarFlags & 4)    vehicle->physicalFlags.bExplosionProof = true;
     if (m_nStoredCarFlags & 8)    vehicle->physicalFlags.bCollisionProof = true;
     if (m_nStoredCarFlags & 0x10) vehicle->physicalFlags.bMeleeProof     = true;
-    if (m_nStoredCarFlags & 0x20) vehicle->vehicleFlags.bUpgradedStereo  = true;
+    if (m_nStoredCarFlags & 0x20) {
+        vehicle->vehicleFlags.bUpgradedStereo = true;
+        *reinterpret_cast<uint8*>(reinterpret_cast<char*>(vehicle) + 0x1BE) = 1; // NOTSA: a byte of the vehicle audio entity (+0x86) the game sets with the stereo, not mapped
+    }
     if (m_nStoredCarFlags & 0x40) handlingFlagsOpaque |= 0x20000;
     if (m_nStoredCarFlags & 0x80) handlingFlagsOpaque |= 0x80000;
 
