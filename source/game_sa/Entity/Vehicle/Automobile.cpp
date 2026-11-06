@@ -134,6 +134,8 @@ void CAutomobile::InjectHooks()
     RH_ScopedVMTInstall(GetNumContactWheels, 0x6A62A0);
     RH_ScopedVMTInstall(SetModelIndex, 0x6A6590);
     RH_ScopedVMTInstall(Teleport, 0x6A9CA0);
+    RH_ScopedVMTInstall(SetUpWheelColModel, 0x6A3060);
+    RH_ScopedVMTInstall(BurstTyre, 0x6A32B0);
     RH_ScopedVMTInstall(Save, 0x5D47E0, {.State = HS::RedirectToGTA });
     RH_ScopedVMTInstall(Load, 0x5D2980, {.State = HS::RedirectToGTA });
     RH_ScopedVMTInstall(ProcessControl, 0x6B1880);
