@@ -23,6 +23,8 @@ public:
 public:
     static constexpr auto Type = TASK_SIMPLE_CAR_SET_PED_OUT;
 
+    static void InjectHooks();
+
     CTaskSimpleCarSetPedOut(CVehicle* targetVehicle, eTargetDoor nTargetDoor, bool bSwitchOffEngine, bool warpingOutOfCar /*notsa arg*/ = false);
     ~CTaskSimpleCarSetPedOut() override;
 

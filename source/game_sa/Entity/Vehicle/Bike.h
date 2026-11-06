@@ -162,4 +162,5 @@ public: // NOTSA
     CBike* Destructor() {this->CBike::~CBike(); return this; }
                                                                                     };
 VALIDATE_SIZE(CBike, 0x814);
+VALIDATE_OFFSET(CBike, nBikeFlags, 0x614);
 VALIDATE_OFFSET(CBike, m_GasPedalAudioRevs, 0x808);

@@ -1291,6 +1291,7 @@ void InjectHooksMain() {
         CTaskSimpleGoTo::InjectHooks();
         CTaskComplexPartner::InjectHooks();
         CTaskSimpleCarSetPedInAsDriver::InjectHooks();
+        CTaskSimpleCarSetPedOut::InjectHooks();
         CTaskComplexWander::InjectHooks();
         CTaskSimplePutDownEntity::InjectHooks();
         CTaskComplexUseSwatRope::InjectHooks();
