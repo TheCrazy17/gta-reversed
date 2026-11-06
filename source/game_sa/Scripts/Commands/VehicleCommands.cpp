@@ -134,6 +134,64 @@ void SetCarAsMissionCar(CRunningScript& S, CVehicle& vehicle) {
     }
 }
 
+/// IS_CAR_IN_WATER(02BF)
+bool IsCarInWater(CVehicle& vehicle) {
+    if (vehicle.physicalFlags.bSubmergedInWater) {
+        return true;
+    }
+
+    // The Vortex (hovercraft, hardcoded by model) is also in water while its first wheel is pressed against shallow water
+    if (vehicle.m_nModelIndex == MODEL_VORTEX) {
+        auto& automobile = *vehicle.AsAutomobile();
+        return automobile.m_fWheelsSuspensionCompression[0] < 1.0f
+            && g_surfaceInfos.IsShallowWater(automobile.m_wheelColPoint[0].m_nSurfaceTypeB);
+    }
+    return false;
+}
+
+/// IS_EMERGENCY_SERVICES_VEHICLE(0975)
+bool IsEmergencyServicesVehicle(CVehicle& vehicle) {
+    // Besides the police vehicles, the models hardcoded as emergency services are the ambulance and both fire trucks
+    return vehicle.IsLawEnforcementVehicle()
+        || vehicle.m_nModelIndex == MODEL_AMBULAN
+        || vehicle.m_nModelIndex == MODEL_FIRETRUK
+        || vehicle.m_nModelIndex == MODEL_FIRELA;
+}
+
+/// IS_COP_VEHICLE_IN_AREA_3D_NO_SAVE(09C3)
+bool IsCopVehicleInArea3DNoSave(CVector p1, CVector p2) {
+    // The corners can be given in any order
+    if (p1.x > p2.x) { std::swap(p1.x, p2.x); }
+    if (p1.y > p2.y) { std::swap(p1.y, p2.y); }
+    if (p1.z > p2.z) { std::swap(p1.z, p2.z); }
+
+    bool found = false;
+    for (auto& vehicle : GetVehiclePool()->GetAllValid()) {
+        // The Predator (police boat, hardcoded by model) is not counted as a cop vehicle here
+        if (!vehicle.IsLawEnforcementVehicle() || vehicle.m_nModelIndex == MODEL_PREDATOR) {
+            continue;
+        }
+        const auto& pos = vehicle.GetPosition();
+        if (p1.x <= pos.x && pos.x <= p2.x
+            && p1.y <= pos.y && pos.y <= p2.y
+            && p1.z <= pos.z && pos.z <= p2.z
+        ) {
+            found = true;
+        }
+    }
+    return found;
+}
+
+/// PLANE_STARTS_IN_AIR(0745)
+void PlaneStartsInAir(CPlane& plane) {
+    plane.IsAlreadyFlying();
+
+    // Only the Hydra (hardcoded by model) gets the angle of its moving component reset
+    if (plane.m_nModelIndex == MODEL_HYDRA) {
+        plane.m_wMiscComponentAngle = 0;
+    }
+}
+
 }
 
 void notsa::script::commands::vehicle::RegisterHandlers() {
@@ -161,6 +219,10 @@ void notsa::script::commands::vehicle::RegisterHandlers() {
     REGISTER_COMMAND_HANDLER(COMMAND_PLANE_ATTACK_PLAYER_USING_DOG_FIGHT, PlaneAttackPlayerUsingDogFight);
 
     REGISTER_COMMAND_HANDLER(COMMAND_SET_CAR_ALWAYS_CREATE_SKIDS, SetCarAlwaysCreateSkids);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_CAR_IN_WATER, IsCarInWater);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_EMERGENCY_SERVICES_VEHICLE, IsEmergencyServicesVehicle);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_COP_VEHICLE_IN_AREA_3D_NO_SAVE, IsCopVehicleInArea3DNoSave);
+    REGISTER_COMMAND_HANDLER(COMMAND_PLANE_STARTS_IN_AIR, PlaneStartsInAir);
 
 
     REGISTER_COMMAND_UNIMPLEMENTED(COMMAND_IS_TAXI);
