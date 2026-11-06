@@ -72,6 +72,7 @@
 
 #include "Garage.h"
 #include "Garages.h"
+#include "Remote.h"
 
 // FX
 #include "FxSystemBP.h"
@@ -677,6 +678,7 @@ void InjectHooksMain() {
 
     CReferences::InjectHooks();
     CPopulation::InjectHooks();
+    CRemote::InjectHooks();
     CModelInfo::InjectHooks();
     CBaseModelInfo::InjectHooks();
     CAtomicModelInfo::InjectHooks();
