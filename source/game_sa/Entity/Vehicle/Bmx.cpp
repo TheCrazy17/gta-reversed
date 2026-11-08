@@ -367,12 +367,16 @@ void CBmx::ProcessBunnyHop() {
         }
     }
 
+    // The hop in progress jumps straight to the blend check below; every other path first forces the anim to fade out
+    auto isHopInProgress = false;
+
     if (m_fControlJump > 0.0f) {
         if (!pad->DisablePlayerControls) {
             if (!anim) {
                 m_fControlJump = 0.0f;
                 return;
             }
+            isHopInProgress = true;
 
             if (pad->IsLeftShoulder1()) {
                 if (!anim->IsPlaying()) {
@@ -392,13 +396,21 @@ void CBmx::ProcessBunnyHop() {
         }
     }
 
-    if (anim) {
-        if (anim->GetBlendAmount() > 0.5f) {
-            m_GasPedal                                   = 0.0f;
-            FindPlayerPed()->GetPlayerData()->m_fMoveSpeed = 0.0f;
-            if (!vehicleFlags.bIsHandbrakeOn && (m_aWheelRatios[0] < 1.0f || m_aWheelRatios[1] < 1.0f || m_aWheelRatios[2] < 1.0f || m_aWheelRatios[3] < 1.0f)) {
-                m_bIsFreewheeling = true;
-            }
+    if (!anim) {
+        return;
+    }
+
+    if (!isHopInProgress) {
+        anim->SetFlag(ANIMATION_IS_PLAYING, true);
+        anim->SetFlag(ANIMATION_IS_BLEND_AUTO_REMOVE, true);
+        anim->SetBlendDelta(-8.0f);
+    }
+
+    if (anim->GetBlendAmount() > 0.5f) {
+        m_GasPedal                                     = 0.0f;
+        FindPlayerPed()->GetPlayerData()->m_fMoveSpeed = 0.0f;
+        if (!vehicleFlags.bIsHandbrakeOn && (m_aWheelRatios[0] < 1.0f || m_aWheelRatios[1] < 1.0f || m_aWheelRatios[2] < 1.0f || m_aWheelRatios[3] < 1.0f)) {
+            m_bIsFreewheeling = true;
         }
     }
 }
@@ -486,33 +498,38 @@ void CBmx::PreRender() {
         }
     }
 
-    // Wheel angular velocity / pitch-angle accumulation (drives the wheel-spin texture animation).
-    // NOTSA: `rollDir` is approximated as the vehicle's forward vector - the original also factors in
-    // `m_fSteerAngle` here (via `cos(m_fSteerAngle)` transformed by the vehicle matrix), which wasn't
-    // independently re-verified byte-for-byte; the effect is purely cosmetic (wheel-spin visuals only).
-    const auto rollDir = GetForward();
+    // The exe computes the lean matrix and the shadow before the wheel spin
+    m_bLeanMatrixCalculated = false;
+    CalculateLeanMatrix();
+    CShadows::StoreShadowForVehicle(this, VEH_SHD_BIKE);
+
+    // Spin of the wheels from the speed of their ground contact point (0x6C0B26..0x6C0DA1)
+    auto* const mi             = GetVehicleModelInfo();
+    auto* const lines          = colData->m_pLines;
+    const auto  steeredForward = GetMatrix().TransformVector(CVector{ -std::sin(m_fSteerAngle), std::cos(m_fSteerAngle), 0.0f });
+    const auto  forward        = GetForward();
+
     if (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f) {
-        const auto ratio      = std::min(m_aRatioHistory[0], m_aRatioHistory[1]);
-        const auto contactPos = colData->m_pLines[0].m_vecStart - CVector{0.0f, ratio * m_fSuspensionLength[0], 0.0f};
-        const auto pointVel   = GetSpeed(contactPos);
-        const auto rot        = ProcessWheelRotation(WHEEL_STATE_NORMAL, rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeRear * 0.5f);
-        m_aWheelAngularVelocity[0] = rot;
-        m_aWheelPitchAngles[0] += rot * CTimer::GetTimeStep();
+        const CVector contact{
+            0.0f,
+            (lines[1].m_vecStart.y + lines[0].m_vecStart.y) * 0.5f,
+            lines[0].m_vecStart.z - std::min(m_aRatioHistory[0], m_aRatioHistory[1]) * m_fSuspensionLength[0] - mi->m_fWheelSizeFront * 0.5f
+        };
+        const auto spin = ProcessWheelRotation(WHEEL_STATE_NORMAL, steeredForward, GetSpeed(contact), mi->m_fWheelSizeFront * 0.5f);
+        m_aWheelAngularVelocity[0] = spin;
+        m_aWheelPitchAngles[0] += spin * CTimer::GetTimeStep();
     }
     if (m_WheelCounts[2] > 0.0f || m_WheelCounts[3] > 0.0f) {
-        const auto ratio      = std::min(m_aRatioHistory[2], m_aRatioHistory[3]);
-        const auto contactPos = colData->m_pLines[2].m_vecStart - CVector{0.0f, ratio * m_fSuspensionLength[2], 0.0f};
-        const auto pointVel   = GetSpeed(contactPos);
-        const auto rot        = ProcessWheelRotation(m_WheelStates[1], rollDir, pointVel, GetVehicleModelInfo()->m_fWheelSizeFront * 0.5f);
-        m_aWheelAngularVelocity[1] = rot;
-        m_aWheelPitchAngles[1] += rot * CTimer::GetTimeStep();
+        const CVector contact{
+            0.0f,
+            (lines[3].m_vecStart.y + lines[2].m_vecStart.y) * 0.5f,
+            // The exe offsets the rear contact point by the front wheel size (0x6C0D1D); only the radius below is the rear one
+            lines[2].m_vecStart.z - std::min(m_aRatioHistory[2], m_aRatioHistory[3]) * m_fSuspensionLength[2] - mi->m_fWheelSizeFront * 0.5f
+        };
+        const auto spin = ProcessWheelRotation(m_WheelStates[1], forward, GetSpeed(contact), mi->m_fWheelSizeRear * 0.5f);
+        m_aWheelAngularVelocity[1] = spin;
+        m_aWheelPitchAngles[1] += spin * CTimer::GetTimeStep();
     }
-
-    m_bLeanMatrixCalculated = false;
-
-    CalculateLeanMatrix();
-
-    CShadows::StoreShadowForVehicle(this, VEH_SHD_BIKE);
 
     // Per-node matrix updates below all follow the same idiom already established in
     // CQuadBike::PreRender: `SetRotate`/`SetTranslate` (but NOT the `...Only` variants) reset the
@@ -702,8 +719,9 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         if (m_aWheelRatios[0] == 1.0f && m_aWheelRatios[1] == 1.0f && m_aWheelRatios[2] == 1.0f && m_aWheelRatios[3] == 1.0f) {
             const auto turnDot = DotProduct(m_vecTurnSpeed, GetUp());
             if ((turnDot < 0.04f && pad->GetSteeringLeftRight() < 0) || (-0.04f < turnDot && pad->GetSteeringLeftRight() > 0)) {
-                const auto steer = (float)pad->GetSteeringLeftRight() * 0.007813f * m_fTurnMass * CTimer::GetTimeStep() * 0.002f;
-                ApplyTurnForce(steer * GetUp(), GetForward());
+                // The exe scales the right vector (matrix+0x0) here, not the up vector
+                const auto steer = (float)pad->GetSteeringLeftRight() * (1.0f / 128.0f) * m_fTurnMass * CTimer::GetTimeStep() * 0.002f;
+                ApplyTurnForce(steer * GetRight(), GetForward());
             }
         }
 
@@ -717,7 +735,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
             m_fControlPedaling = m_pDriver->GetPlayerData()->m_fMoveSpeed;
         } else {
             const auto accel = pad->GetAccelerate();
-            const auto sprintEnergyDelta = std::max(0.5f, 1.0f - (float)accel * 0.003922f * 0.5f);
+            const auto sprintEnergyDelta = std::max(0.5f, 1.0f - (float)accel * (1.0f / 255.0f) * 0.5f);
             playerDriver->HandleSprintEnergy(false, sprintEnergyDelta);
 
             if (playerDriver->GetButtonSprintResults(SPRINT_BMX) <= 0.0f) {
@@ -763,6 +781,7 @@ bool CBmx::ProcessAI(uint32& extraHandlingFlags) {
         ReduceHornCounter();
         vehicleFlags.bVehicleColProcessed = false;
         vehicleFlags.bAudioChangingGear   = false;
+        bikeFlags.bWheelieForCamera       = false; // 0x6C1C3D
         m_fControlPedaling = 0.0f;
         break;
     }
