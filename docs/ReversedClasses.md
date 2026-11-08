@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 08, 2026 at 16:57:50 UTC
-(Triggered by commit [f0300694](https://github.com/TheCrazy17/gta-reversed/commit/f0300694b89b176358f88e62db19231afc56f13d))
+Last update was at Nov 08, 2026 at 17:21:24 UTC
+(Triggered by commit [646e75b6](https://github.com/TheCrazy17/gta-reversed/commit/646e75b65f61b8cd2fa4e10e9e1886ca0fc13974))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8442 out of 8442 functions done in 732 categories)
+## Stats (8452 out of 8452 functions done in 733 categories)
 
-#### Completely reversed categories (732/732) [100%]
+#### Completely reversed categories (733/733) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -601,7 +601,8 @@ Last update was at Nov 08, 2026 at 16:57:50 UTC
 - CTaskComplexPartner (1)<br />
 - CTaskSimpleCarSetPedInAsDriver (1)<br />
 - CTaskSimpleCarSetPedInAsPassenger (1)<br />
-- CTaskSimpleCarSetPedOut (3)<br />
+- CTaskSimpleCarSetPedOut (7)<br />
+- CTaskSimpleCarForcePedOut (6)<br />
 - CTaskComplexWander (15)<br />
 - CTaskSimplePutDownEntity (3)<br />
 - CTaskComplexUseSwatRope (7)<br />
@@ -750,14 +751,14 @@ Last update was at Nov 08, 2026 at 16:57:50 UTC
 
 </details>
 
-#### Partially reversed categories (0/732) [0%]
+#### Partially reversed categories (0/733) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/732) [0%]
+#### Not-at-all reversed categories (0/733) [0%]
 
 <details>
 <summary>See list of categories</summary>

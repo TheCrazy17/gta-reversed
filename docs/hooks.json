@@ -31906,7 +31906,27 @@
   },
   {
     "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
     "Name": "PositionPedOutOfCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "MakeAbortable",
     "IsReversed": true
   },
   {
@@ -31916,6 +31936,36 @@
   },
   {
     "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarForcePedOut",
     "Name": "ProcessPed",
     "IsReversed": true
   },
