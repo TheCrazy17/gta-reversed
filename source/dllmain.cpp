@@ -4,6 +4,7 @@
 #include "extensions/CommandLine.h"
 #include "extensions/debug.hpp"
 #include "extensions/Configuration.hpp"
+#include "extensions/ExeThunkFix.hpp"
 #include "InjectHooksMain.h"
 
 static constexpr auto DEFAULT_INI_FILENAME = "gta-reversed.ini";
@@ -47,8 +48,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
         LoadConfigurations();
 
+        // Has to come first; installing a hook can corrupt constants that the 14 MB exe's thunk stubs read from its code
+        notsa::RelocateExeThunkConstants();
+
         ReversibleHooks::RHManager::CreateInstance();
         InjectHooksMain();
+        notsa::Logging::GetInstance().EnableCxxExceptionLogging();
 
         break;
     }

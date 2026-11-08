@@ -26,6 +26,10 @@ struct Logging : public Singleton<Logging> {
 
     auto Create(std::string name, std::optional<spdlog::level::level_enum> level = std::nullopt) -> log_ptr;
 
+    //! Starts logging the call stack of every C++ exception when it is thrown. Call after the hooks are installed,
+    //! installing them throws and catches exceptions on purpose and those would only fill the log.
+    void EnableCxxExceptionLogging();
+
 private:
     std::vector<spdlog::sink_ptr> m_sinks;
 };

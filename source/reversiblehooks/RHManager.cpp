@@ -77,6 +77,26 @@ void RHManager::InstallVirtual(
 }
 
 void RHManager::AddHookToCategory(std::string_view path, HookInstallOptions opt, std::shared_ptr<ReversibleHook::TwoWayHook> hook) {
+    // Debug aid: GTAR_UNHOOK=name1,name2 starts every hook whose `category/class/function` path contains one of the names
+    // unhooked, so the exe's own code runs instead. Comparing a run with and without it shows which reversed code is at fault.
+    static const auto s_UnhookNames = [] {
+        std::vector<std::string> names;
+        if (const char* env = std::getenv("GTAR_UNHOOK")) {
+            for (auto&& part : std::string_view{ env } | rng::views::split(',')) {
+                if (!part.empty()) {
+                    names.emplace_back(std::string_view{ part });
+                }
+            }
+        }
+        return names;
+    }();
+    if (!s_UnhookNames.empty() && opt.Reversed) {
+        const auto fullPath = std::format("{}/{}", path, hook->Name());
+        if (rng::any_of(s_UnhookNames, [&](const std::string& name) { return fullPath.contains(name); })) {
+            opt.State = HookInstallOptions::HS::Unhooked;
+        }
+    }
+
     GetRootCategory()->FindCategoryByPath(path, true)->AddItem(std::make_shared<HookCategoryItem>(
         std::move(hook),
         opt.Locked,

@@ -3,6 +3,7 @@
 #include "app_debug.h"
 #include <windows.h>
 #include <DbgHelp.h>
+#include <crtdbg.h>
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -57,6 +58,70 @@ void FlushObrsPrintfs() {
     RtCharsetBufferFlush();
 #endif
 }
+
+// Takes the context by reference because StackWalk modifies it while walking
+static void DumpCallStack(CONTEXT& context) {
+    HANDLE hProcess = GetCurrentProcess();
+    HANDLE hThread  = GetCurrentThread();
+
+    STACKFRAME stackFrame = {};
+    stackFrame.AddrPC.Mode = AddrModeFlat;
+    stackFrame.AddrStack.Mode = AddrModeFlat;
+    stackFrame.AddrFrame.Mode = AddrModeFlat;
+    stackFrame.AddrPC.Offset = context.Eip;
+    stackFrame.AddrStack.Offset = context.Esp;
+    stackFrame.AddrFrame.Offset = context.Ebp;
+
+    while (StackWalk(
+        IMAGE_FILE_MACHINE_I386, hProcess, hThread, &stackFrame, &context, NULL,
+        SymFunctionTableAccess, SymGetModuleBase, NULL))
+    {
+        NOTSA_LOG_INFO("\t{}", notsa::debug::GetFunctionInfoAtAddress(stackFrame.AddrPC.Offset));
+    }
+}
+
+// Logs every C++ exception at the moment it is thrown.
+// Our hooks run inside the exe's frames, which have no unwind data; an exception that leaves a hook therefore ends in
+// std::terminate and the process quits with exit code 3 without ever reaching the unhandled exception filter.
+// The throw site is the only place where the cause can still be seen.
+static bool s_LogCxxExceptions = false;
+
+static LONG CALLBACK CxxExceptionLogger(PEXCEPTION_POINTERS pExceptionInfo) {
+    constexpr DWORD MSVC_CXX_EXCEPTION = 0xE06D7363;
+    constexpr int   MAX_LOGGED         = 24; // Some code throws and catches on purpose, so don't flood the log
+
+    static int s_NumLogged = 0;
+    if (!s_LogCxxExceptions || pExceptionInfo->ExceptionRecord->ExceptionCode != MSVC_CXX_EXCEPTION || s_NumLogged >= MAX_LOGGED) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    s_NumLogged++;
+
+    NOTSA_LOG_INFO("C++ exception thrown (#{}); call stack:", s_NumLogged);
+    CONTEXT context = *pExceptionInfo->ContextRecord;
+    DumpCallStack(context);
+
+    spdlog::apply_all([](auto&& logger) {
+        logger->flush();
+    });
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+#ifdef _DEBUG
+// The debug CRT reports failed asserts and invalid arguments (for example fgets on a null FILE*) with a message box.
+// The box does not say who called the CRT, so log the message together with the call stack before it is shown.
+static int CrtReportLogger(int reportType, char* message, int* /*returnValue*/) {
+    if (reportType == _CRT_ASSERT || reportType == _CRT_ERROR) {
+        NOTSA_LOG_ERR("CRT {} report: {}", reportType == _CRT_ASSERT ? "assert" : "error", message);
+        CONTEXT context{};
+        RtlCaptureContext(&context);
+        DumpCallStack(context);
+        spdlog::apply_all([](auto&& logger) {
+            logger->flush();
+        });
+    }
+    return FALSE; // Not handled; the CRT still shows its dialog
+}
+#endif
 
 // This probably should be in winps :D
 LONG WINAPI WindowsExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
@@ -134,26 +199,7 @@ LONG WINAPI WindowsExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
 #endif
 
     Section("CALL STACK");
-    {
-        HANDLE hProcess = GetCurrentProcess();
-        HANDLE hThread = GetCurrentThread();
-
-        STACKFRAME stackFrame = {};
-        stackFrame.AddrPC.Mode = AddrModeFlat;
-        stackFrame.AddrStack.Mode = AddrModeFlat;
-        stackFrame.AddrFrame.Mode = AddrModeFlat;
-        stackFrame.AddrPC.Offset = context.Eip;
-        stackFrame.AddrStack.Offset = context.Esp;
-        stackFrame.AddrFrame.Offset = context.Ebp;
-
-        DWORD prevFrameOffset = 0;
-        while (StackWalk(
-            IMAGE_FILE_MACHINE_I386, hProcess, hThread, &stackFrame, &context, NULL,
-            SymFunctionTableAccess, SymGetModuleBase, NULL))
-        {
-            NOTSA_LOG_INFO("\t{}", notsa::debug::GetFunctionInfoAtAddress(stackFrame.AddrPC.Offset));
-        }
-    }
+    DumpCallStack(context);
 
     Section("END OF UNHANDLED EXCEPTION");
 
@@ -185,6 +231,14 @@ notsa::Logging::Logging() {
     spdlog::flush_every(100ms);
 
     SetUnhandledExceptionFilter(WindowsExceptionHandler);
+    AddVectoredExceptionHandler(1, CxxExceptionLogger);
+#ifdef _DEBUG
+    _CrtSetReportHook(CrtReportLogger);
+#endif
+}
+
+void notsa::Logging::EnableCxxExceptionLogging() {
+    s_LogCxxExceptions = true;
 }
 
 notsa::Logging::~Logging() {
