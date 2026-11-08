@@ -12,6 +12,7 @@ void CTaskSimpleCarSetPedOut::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarSetPedOut, 0x86EEB8, 9);
     RH_ScopedCategory("Tasks/TaskTypes");
 
+    RH_ScopedInstall(PositionPedOutOfCollision, 0x6479B0);
     RH_ScopedVMTInstall(Clone, 0x649F50);
     RH_ScopedVMTInstall(ProcessPed, 0x647D10);
 }
@@ -31,7 +32,71 @@ CTaskSimpleCarSetPedOut::~CTaskSimpleCarSetPedOut() {
 
 // 0x6479B0
 void CTaskSimpleCarSetPedOut::PositionPedOutOfCollision(CPed* ped, CVehicle* veh, int32 door) {
-    return plugin::Call<0x6479B0>(ped, veh, door);
+    if (!veh) {
+        veh = ped->m_pVehicle;
+        if (!veh) {
+            return;
+        }
+    }
+
+    // The ped faces the way the vehicle does
+    const float heading = veh->GetHeading();
+    ped->m_fAimingRotation = ped->m_fCurrentRotation = heading;
+    ped->SetHeading(heading);
+
+    if (veh->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+        if (veh->m_pHandlingData->m_bSitInBoat) {
+            ped->GetPosition() += veh->GetUp() * 0.5f;
+        }
+
+        if (ped->TestCollision(false)) {
+            // Nudge the ped and test again; if it is still stuck, let the ped search for a free spot
+            if (veh->vehicleFlags.bIsDrowning) {
+                ped->GetPosition().z -= 0.3f;
+                if (!ped->TestCollision(false)) {
+                    return;
+                }
+                ped->GetPosition().z += 0.3f;
+                ped->PositionPedOutOfCollision(door, veh, true);
+                return;
+            }
+
+            ped->GetPosition() -= ped->GetForward() * 0.3f;
+            if (ped->TestCollision(false)) {
+                ped->GetPosition() += ped->GetForward() * 0.3f;
+                ped->PositionPedOutOfCollision(door, veh, true);
+                return;
+            }
+        }
+
+        // The ped keeps most of the boat's speed and stands on it
+        ped->m_vecMoveSpeed = veh->m_vecMoveSpeed * 0.9f;
+        ped->m_vecMoveSpeed.z -= 0.1f;
+        ped->bIsStanding = true;
+        if (!ped->m_standingOnEntity) {
+            ped->m_standingOnEntity = veh;
+            veh->RegisterReference(&ped->m_standingOnEntity);
+        }
+        return;
+    }
+
+    // Anything solid at the ped's feet or head, or a wall between the vehicle and the ped, means the exit point is blocked
+    CWorld::pIgnoreEntity = veh;
+
+    bool blocked = false;
+    for (const float offsetZ : { -0.2f, 0.2f }) {
+        const CVector center = ped->GetPosition() + CVector{ 0.0f, 0.0f, offsetZ };
+        const auto*   hit = CWorld::TestSphereAgainstWorld(center, 0.4f, veh, true, true, false, false, false, false);
+        if (hit && hit != veh->m_pAttachedTo) {
+            blocked = true;
+        }
+    }
+
+    if (!CWorld::GetIsLineOfSightClear(veh->GetPosition(), ped->GetPosition(), true, false, false, true, false, false, false) || blocked) {
+        ped->PositionPedOutOfCollision(door, veh, true);
+    }
+
+    CWorld::pIgnoreEntity = nullptr;
 }
 
 // 0x649F50
