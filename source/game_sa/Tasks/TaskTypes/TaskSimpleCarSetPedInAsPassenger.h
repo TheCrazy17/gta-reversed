@@ -28,6 +28,8 @@ public:
 public:
     static constexpr auto Type = TASK_SIMPLE_CAR_SET_PED_IN_AS_PASSENGER;
 
+    static void InjectHooks();
+
     CTaskSimpleCarSetPedInAsPassenger(CVehicle* targetVehicle, eTargetDoor nTargetDoor, bool warpingInToCar /* notsa arg */ = false, CTaskUtilityLineUpPedWithCar* utility = nullptr);
     CTaskSimpleCarSetPedInAsPassenger(const CTaskSimpleCarSetPedInAsPassenger&);
     ~CTaskSimpleCarSetPedInAsPassenger() override;
