@@ -72,6 +72,9 @@ public:
     virtual bool FreePrtFromPrim(FxSystem_c* system) = 0;
 
     void GetRWMatrix(RwMatrix& outMatrix);
+
+    //! The part of `Load` every primitive shares; the exe's derived `Load` calls it directly (0x5C2010)
+    bool LoadBase(FILESTREAM file, int32 version, FxName32_t* textureNames);
 };
 
 VALIDATE_SIZE(FxPrimBP_c, 0x40);

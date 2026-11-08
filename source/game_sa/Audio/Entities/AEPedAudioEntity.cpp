@@ -5,7 +5,10 @@
 #include "AEAudioUtility.h"
 
 void CAEPedAudioEntity::InjectHooks() {
-    RH_ScopedClass(CAEPedAudioEntity);
+    // The constructor is not hooked, so the ped's audio entity keeps the exe vtable (0x86C2A8, one slot). A static hook on the
+    // virtual UpdateParameters points at the vcall thunk, which jumps through that vtable straight back to 0x4E1180 and the
+    // game would spin forever the first time a ped sound needs updating; hook the vtable instead.
+    RH_ScopedVirtualClass(CAEPedAudioEntity, 0x86C2A8, 1);
     RH_ScopedCategory("Audio/Entities");
 
     //RH_ScopedInstall(Constructor, 0x5DE8D0, { .Reversed = false });
@@ -19,7 +22,7 @@ void CAEPedAudioEntity::InjectHooks() {
     RH_ScopedInstall(StopJetPackSound, 0x4E1120);
     RH_ScopedInstall(UpdateJetPack, 0x4E0EE0);
     RH_ScopedInstall(PlayWindRush, 0x4E1170);
-    RH_ScopedInstall(UpdateParameters, 0x4E1180);
+    RH_ScopedVMTInstall(UpdateParameters, 0x4E1180);
     RH_ScopedInstall(HandleFootstepEvent, 0x4E13A0);
     RH_ScopedInstall(HandleSkateEvent, 0x4E17E0);
     RH_ScopedInstall(HandleLandingEvent, 0x4E18E0);

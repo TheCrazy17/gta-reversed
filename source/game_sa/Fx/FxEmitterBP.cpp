@@ -320,7 +320,7 @@ void FxEmitterBP_c::Update(float deltaTime) {
 
 
 bool FxEmitterBP_c::Load(FILESTREAM file, int32 version, FxName32_t* textureNames) {
-    FxPrimBP_c::Load(file, version, textureNames);
+    FxPrimBP_c::LoadBase(file, version, textureNames);
 
     m_nLodStart = uint16(ReadField<float>(file, "LODSTART:") * 64.0f);
     m_nLodEnd   = uint16(ReadField<float>(file, "LODEND:") * 64.0f);
