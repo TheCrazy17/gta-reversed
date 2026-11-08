@@ -6,6 +6,8 @@ void CTaskComplexPartner::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexPartner, 0x870664, 14);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedInstall(Constructor, 0x681E70);
+    RH_ScopedVMTInstall(StreamRequiredAnims, 0x682310);
+    RH_ScopedVMTInstall(RemoveStreamedAnims, 0x682370);
 }
 
 // 0x681E70
@@ -57,10 +59,32 @@ CTask* CTaskComplexPartner::ControlSubTask(CPed* ped) {
     return plugin::CallMethodAndReturn<CTask*, 0x6840D0, CTaskComplexPartner*, CPed*>(this, ped);
 }
 
+// 0x682310
 void CTaskComplexPartner::StreamRequiredAnims() {
-    return plugin::CallMethod<0x682310, CTaskComplexPartner*>(this);
+    if (m_requiredAnimsStreamedIn) {
+        return;
+    }
+
+    // A task without an anim block has nothing to stream; any other waits until its block is loaded
+    if (m_animBlockName[0]) {
+        const auto blockIdx = CAnimManager::GetAnimationBlockIndex(m_animBlockName);
+        if (!CAnimManager::GetAnimBlocks()[blockIdx].IsLoaded) {
+            CStreaming::RequestModel(IFPToModelId(blockIdx), STREAMING_KEEP_IN_MEMORY);
+            return;
+        }
+        CAnimManager::AddAnimBlockRef(blockIdx);
+    }
+    m_requiredAnimsStreamedIn = true;
 }
 
+// 0x682370
 void CTaskComplexPartner::RemoveStreamedAnims() {
-    return plugin::CallMethod<0x682370, CTask*>(this);
+    if (!m_requiredAnimsStreamedIn) {
+        return;
+    }
+
+    if (m_animBlockName[0]) {
+        CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex(m_animBlockName));
+    }
+    m_requiredAnimsStreamedIn = false;
 }
