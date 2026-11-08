@@ -1,16 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Oct 24, 2026 at 14:04:01 UTC
+Last update was at Nov 08, 2026 at 16:57:50 UTC
+(Triggered by commit [f0300694](https://github.com/TheCrazy17/gta-reversed/commit/f0300694b89b176358f88e62db19231afc56f13d))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8426 out of 8426 functions done in 727 categories)
+## Stats (8442 out of 8442 functions done in 732 categories)
 
-#### Completely reversed categories (727/727) [100%]
+#### Completely reversed categories (732/732) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -87,6 +88,7 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - CMouseControllerState (3)<br />
 - CReferences (4)<br />
 - CPopulation (66)<br />
+- CRemote (2)<br />
 - CShotInfo (5)<br />
 - SurfaceInfos_c (48)<br />
 - CRenderer (33)<br />
@@ -130,6 +132,7 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - COccluder (3)<br />
 - CActiveOccluder (2)<br />
 - CGarage (32)<br />
+- CStoredCar (2)<br />
 - CGarages (28)<br />
 - CPostEffects (38)<br />
 - CIniFile (1)<br />
@@ -354,7 +357,7 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - CBox (2)<br />
 - CColModel (9)<br />
 - CCollisionData (8)<br />
-- CColStore (23)<br />
+- CColStore (24)<br />
 - CColAccel (11)<br />
 - CPedScriptedTaskRecord (5)<br />
 - CPedScriptedTaskRecordData (8)<br />
@@ -596,6 +599,9 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - CTaskSimpleHoldEntity (14)<br />
 - CTaskSimpleGoTo (4)<br />
 - CTaskComplexPartner (1)<br />
+- CTaskSimpleCarSetPedInAsDriver (1)<br />
+- CTaskSimpleCarSetPedInAsPassenger (1)<br />
+- CTaskSimpleCarSetPedOut (3)<br />
 - CTaskComplexWander (15)<br />
 - CTaskSimplePutDownEntity (3)<br />
 - CTaskComplexUseSwatRope (7)<br />
@@ -719,7 +725,7 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - CAERadioTrackManager (43)<br />
 - CAESoundManager (14)<br />
 - CAEUserRadioTrackManager (15)<br />
-- CAutomobile (105)<br />
+- CAutomobile (110)<br />
 - CBike (40)<br />
 - CBmx (10)<br />
 - CBoat (23)<br />
@@ -728,7 +734,7 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 - CPlane (23)<br />
 - CQuadBike (12)<br />
 - CTrailer (13)<br />
-- CTrain (41)<br />
+- CTrain (42)<br />
 - CVehicle (166)<br />
 - FurnitureGroup_c (6)<br />
 - FurnitureManager_c (7)<br />
@@ -744,14 +750,14 @@ Last update was at Oct 24, 2026 at 14:04:01 UTC
 
 </details>
 
-#### Partially reversed categories (0/727) [0%]
+#### Partially reversed categories (0/732) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/727) [0%]
+#### Not-at-all reversed categories (0/732) [0%]
 
 <details>
 <summary>See list of categories</summary>

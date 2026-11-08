@@ -5385,6 +5385,16 @@
     "IsReversed": true
   },
   {
+    "Category": "CRemote",
+    "Name": "TakeRemoteControlledCarFromPlayer",
+    "IsReversed": true
+  },
+  {
+    "Category": "CRemote",
+    "Name": "GivePlayerRemoteControlledCar",
+    "IsReversed": true
+  },
+  {
     "Category": "CShotInfo",
     "Name": "Initialise",
     "IsReversed": true
@@ -10167,6 +10177,16 @@
   {
     "Category": "CGarage",
     "Name": "CenterCarInGarage",
+    "IsReversed": true
+  },
+  {
+    "Category": "CStoredCar",
+    "Name": "StoreCar",
+    "IsReversed": true
+  },
+  {
+    "Category": "CStoredCar",
+    "Name": "RestoreCar",
     "IsReversed": true
   },
   {
@@ -23561,6 +23581,11 @@
   },
   {
     "Category": "CColStore",
+    "Name": "IsValidSlot",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
     "Name": "RemoveRef",
     "IsReversed": true
   },
@@ -31870,6 +31895,31 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskSimpleCarSetPedInAsDriver",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedInAsPassenger",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "PositionPedOutOfCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarSetPedOut",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskComplexWander",
     "Name": "Constructor",
     "IsReversed": true
@@ -38766,6 +38816,21 @@
   },
   {
     "Category": "CAutomobile",
+    "Name": "SetRandomDamage",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
+    "Name": "DoNitroEffect",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
+    "Name": "DebugCode",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
     "Name": "StopNitroEffect",
     "IsReversed": true
   },
@@ -39017,6 +39082,16 @@
   {
     "Category": "CAutomobile",
     "Name": "Teleport",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
+    "Name": "SetUpWheelColModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAutomobile",
+    "Name": "BurstTyre",
     "IsReversed": true
   },
   {
@@ -40067,6 +40142,11 @@
   {
     "Category": "CTrain",
     "Name": "SetModelIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTrain",
+    "Name": "PreRender",
     "IsReversed": true
   },
   {
