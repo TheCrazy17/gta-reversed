@@ -115,165 +115,189 @@ void CBmx::ProcessDrivingAnims(CPed* driver, bool blend) {
     m_nFixLeftHand  = true;
     m_nFixRightHand = true;
 
-    if (auto* animBack = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_BACK)) {
-        const auto blendAmt = animBack->GetBlendAmount();
-        m_fCrankAngle = FRAC_PI_2 * blendAmt + (1.0f - blendAmt) * m_fCrankAngle;
-    } else {
-        if (driver->GetPlayerData()) {
-            driver->SetMoveState(PEDMOVE_NONE);
-        }
+    auto* const clump = driver->GetRpClump();
 
-        const auto fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
+    // A bunny hop takes over the crank. The exe looks for the bunny hop anim here; looking for BIKE_BACK
+    // matched all the time (CBike::ProcessRiderAnims keeps that anim attached to the player), so the rest
+    // of this function never ran and the rider did not pedal
+    if (auto* const animBunnyHop = RpAnimBlendClumpGetAssociation(clump, ANIM_ID_BIKE_BUNNYHOP)) {
+        const auto blendAmt = animBunnyHop->GetBlendAmount();
+        m_fCrankAngle       = (1.0f - blendAmt) * m_fCrankAngle + FRAC_PI_2 * blendAmt;
+        m_fPedalAngleL      = -m_fCrankAngle;
+        m_fPedalAngleR      = -m_fCrankAngle;
+        return;
+    }
 
-        auto* animPedal   = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_PEDAL);
-        auto* animSprint  = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_SPRINT);
-        auto* animLeft    = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_LEFT);
-        auto* animRight   = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_RIGHT);
-        auto* animFwd     = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_FWD);
-        auto* animDriveBy = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_DRIVEBYLHS);
+    if (driver->GetPlayerData()) {
+        driver->SetMoveState(PEDMOVE_NONE);
+    }
+
+    const auto fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
+
+    const auto GetAnim = [&](AnimationId id) { return RpAnimBlendClumpGetAssociation(clump, (uint32)id); };
+
+    auto* animPedal       = GetAnim(ANIM_ID_BIKE_PEDAL);
+    auto* animSprint      = GetAnim(ANIM_ID_BIKE_SPRINT);
+    auto* const animLeft  = GetAnim(ANIM_ID_BIKE_LEFT);
+    auto* const animRight = GetAnim(ANIM_ID_BIKE_RIGHT);
+    auto* const animFwd   = GetAnim(ANIM_ID_BIKE_FWD);
+    auto* animDriveBy     = GetAnim(ANIM_ID_BIKE_DRIVEBYLHS);
+    if (!animDriveBy) {
+        animDriveBy = GetAnim(ANIM_ID_BIKE_DRIVEBYRHS);
         if (!animDriveBy) {
-            animDriveBy = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_DRIVEBYRHS);
-            if (!animDriveBy) {
-                animDriveBy = RpAnimBlendClumpGetAssociation(driver->GetRpClump(), ANIM_ID_BIKE_DRIVEBYFT);
+            animDriveBy = GetAnim(ANIM_ID_BIKE_DRIVEBYFT);
+        }
+    }
+
+    // Higher lean threshold while actively pedaling
+    const auto leanThreshold = m_fControlPedaling > 5.0f ? 0.7f : 0.4f;
+
+    if (leanThreshold <= std::fabs(m_RideAnimData.LeanAngle) || leanThreshold <= m_RideAnimData.LeanFwd || fwdSpeed <= 0.01f || animDriveBy) {
+        const auto IsBlendingIn = [](const CAnimBlendAssociation* a) { return a && a->GetBlendDelta() >= 0.0f && a->GetBlendAmount() > 0.0f; };
+
+        if (IsBlendingIn(animPedal) || IsBlendingIn(animSprint)) {
+            for (auto* const a : { animPedal, animSprint }) {
+                if (a) {
+                    a->SetFlag(ANIMATION_IS_PLAYING, false);
+                    a->SetBlendDelta(-8.0f);
+                }
+            }
+            // Per frame, not scaled by the time step; the exe does the same
+            m_RideAnimData.AnimLeanLeft *= 0.95f;
+            m_RideAnimData.AnimLeanFwd  *= 0.95f;
+        } else {
+            CBike::ProcessRiderAnims(driver, this, &m_RideAnimData, m_BikeHandling, 0);
+        }
+
+        if (auto* const crankAssoc = animPedal ? animPedal : animSprint) {
+            m_fCrankAngle = 0.0f - (crankAssoc->GetCurrentTime() / crankAssoc->GetHier()->GetTotalTime()) * TWO_PI;
+        } else {
+            m_fCrankAngle = 0.0f;
+        }
+
+        // The lean anims pull the crank towards a fixed angle; the first one that applies wins
+        if (animLeft && animLeft->GetBlendAmount() > 0.1f) {
+            const auto b      = animLeft->GetBlendAmount();
+            m_fCrankAngle     = (1.0f - b) * m_fCrankAngle + PI * b;
+            m_bIsFreewheeling = true;
+        } else if (animRight && animRight->GetBlendAmount() > 0.1f) {
+            m_fCrankAngle     = (1.0f - animRight->GetBlendAmount()) * m_fCrankAngle;
+            m_bIsFreewheeling = true;
+        } else if (animFwd && animFwd->GetBlendAmount() > 0.1f) {
+            const auto b  = animFwd->GetBlendAmount();
+            m_fCrankAngle = (1.0f - b) * m_fCrankAngle + FRAC_PI_2 * b;
+        } else {
+            m_fCrankAngle = std::pow(0.97f, CTimer::GetTimeStep()) * m_fCrankAngle;
+        }
+
+        if (animDriveBy) {
+            m_nFixRightHand   = false;
+            m_bIsFreewheeling = true;
+        }
+    } else {
+        // The crank follows the wheel speed (and the gear on the mountain bike) instead of the anim time
+        float crankTarget;
+        float crankRate;
+        if (GetModelId() == MODEL_MTBIKE) {
+            crankRate   = 2.0f;
+            crankTarget = m_nCurrentGear == 0
+                ? 0.0f
+                : (5.0f * fwdSpeed) / (m_nCurrentGear * m_pHandlingData->GetTransmission().m_MaxFlatVelocity - 0.25f);
+        } else {
+            crankRate   = 2.5f;
+            crankTarget = 3.0f * fwdSpeed;
+        }
+
+        // The anim is blended in again when it is missing, or when it is not full and not on its way in
+        const auto NeedsBlendIn = [](const CAnimBlendAssociation* a) {
+            return !a || (a->GetBlendAmount() < 1.0f && a->GetBlendDelta() <= 0.0f);
+        };
+        const auto BlendIn = [&](AnimationId id) {
+            return CAnimManager::BlendAnimation(clump, m_RideAnimData.AnimGroup, id, 4.0f);
+        };
+
+        bool                   isFresh = false; // The anim was blended in just now
+        CAnimBlendAssociation* crankAssoc;
+        if (m_fControlPedaling <= 5.0f || crankTarget >= crankRate) {
+            if (NeedsBlendIn(animPedal)) {
+                animPedal = BlendIn(ANIM_ID_BIKE_PEDAL);
+                isFresh   = true;
+            }
+            if (m_GasPedal != 0.0f || m_fControlPedaling > 0.0f || GetStatus() == STATUS_SIMPLE) {
+                animPedal->SetFlag(ANIMATION_IS_PLAYING, true);
+                animPedal->SetSpeed(crankTarget);
+            } else {
+                animPedal->SetFlag(ANIMATION_IS_PLAYING, false);
+                if (!vehicleFlags.bIsHandbrakeOn && std::ranges::any_of(m_aRatioHistory, [](float ratio) { return ratio < 1.0f; })) {
+                    m_bIsFreewheeling = true;
+                }
+            }
+            crankAssoc = animPedal;
+        } else {
+            if (NeedsBlendIn(animSprint)) {
+                animSprint = BlendIn(ANIM_ID_BIKE_SPRINT);
+                isFresh    = true;
+            }
+            animSprint->SetFlag(ANIMATION_IS_PLAYING, true);
+            if (animPedal) {
+                animPedal->SetFlag(ANIMATION_IS_PLAYING, true);
+                animPedal->SetSpeed(crankTarget);
+                crankAssoc = animPedal;
+            } else {
+                animSprint->SetSpeed(crankTarget);
+                crankAssoc = animSprint;
             }
         }
 
-        // Higher lean threshold while actively pedaling.
-        const auto leanThreshold = m_fControlPedaling > 5.0f ? 0.7f : 0.4f;
-
-        if (leanThreshold <= std::fabs(m_RideAnimData.LeanAngle) || leanThreshold <= m_RideAnimData.LeanFwd || fwdSpeed <= 0.01f || animDriveBy) {
-            const auto isRampingIn = [](CAnimBlendAssociation* a) { return a && a->GetBlendDelta() >= 0.0f && a->GetBlendAmount() > 0.0f; };
-
-            if (isRampingIn(animPedal) || isRampingIn(animSprint)) {
-                if (animPedal) {
-                    animPedal->SetFlag(ANIMATION_IS_PLAYING, false);
-                    animPedal->SetBlendDelta(-8.0f);
-                }
-                if (animSprint) {
-                    animSprint->SetFlag(ANIMATION_IS_PLAYING, false);
-                    animSprint->SetBlendDelta(-8.0f);
-                }
-                // FIX_BUGS candidate: unlike CBike::ProcessRiderAnims's equivalent blend (which uses
-                // pow(base, CTimer::GetTimeStep())), this decay is a flat per-frame multiply with no
-                // timestep scaling - at very high framerates it collapses to ~0 almost instantly
-                // instead of decaying smoothly, which can look like a sudden lean snap.
-                m_RideAnimData.AnimLeanLeft *= 0.95f;
-                m_RideAnimData.AnimLeanFwd  *= 0.95f;
-            } else {
-                CBike::ProcessRiderAnims(driver, this, &m_RideAnimData, m_BikeHandling, 0);
-            }
-
-            auto* pedalOrSprint = animPedal ? animPedal : animSprint;
-            m_fCrankAngle = pedalOrSprint
-                ? 0.0f - (pedalOrSprint->GetCurrentTime() / pedalOrSprint->GetHier()->GetTotalTime()) * TWO_PI
-                : 0.0f;
-
-            if (animLeft && animLeft->GetBlendAmount() > 0.1f) {
-                m_bIsFreewheeling = true;
-                m_fCrankAngle = PI * animLeft->GetBlendAmount() + (1.0f - animLeft->GetBlendAmount()) * m_fCrankAngle;
-            } else if (animRight && animRight->GetBlendAmount() > 0.1f) {
-                m_bIsFreewheeling = true;
-                m_fCrankAngle = (1.0f - animRight->GetBlendAmount()) * m_fCrankAngle;
-            } else if (animFwd && animFwd->GetBlendAmount() > 0.1f) {
-                m_fCrankAngle = FRAC_PI_2 * animFwd->GetBlendAmount() + (1.0f - animFwd->GetBlendAmount()) * m_fCrankAngle;
-            } else {
-                m_fCrankAngle = std::pow(0.97f, CTimer::GetTimeStep()) * m_fCrankAngle;
-            }
-
-            if (animDriveBy) {
-                m_nFixRightHand   = false;
-                m_bIsFreewheeling = true;
-            }
+        if (!crankAssoc) {
+            m_fCrankAngle = std::pow(0.97f, CTimer::GetTimeStep()) * m_fCrankAngle;
         } else {
-            // Not leaning/turning/stopped/drive-by: drive the crank from wheel speed & gear instead of anim time.
-            float crankTarget;
-            float crankRate;
-            if (GetModelId() == MODEL_MTBIKE) {
-                crankRate = 2.0f;
-                crankTarget = m_nCurrentGear == 0
-                    ? 0.0f
-                    : (5.0f * fwdSpeed) / (m_nCurrentGear * m_pHandlingData->GetTransmission().m_MaxFlatVelocity - 0.25f);
-            } else {
-                crankTarget = 3.0f * fwdSpeed;
-                crankRate   = 2.5f;
-            }
-
-            const auto refreshAssoc = [&](CAnimBlendAssociation*& assoc, AnimationId id) {
-                if (!assoc || (assoc->GetBlendAmount() < 1.0f && assoc->GetBlendDelta() != 0.0f)) {
-                    assoc = CAnimManager::BlendAnimation(driver->GetRpClump(), m_RideAnimData.AnimGroup, id, 4.0f);
-                    return true;
-                }
-                return false;
-            };
-
-            CAnimBlendAssociation* activeAssoc;
-            bool freshAssoc;
-            if (m_fControlPedaling <= 5.0f || crankRate <= crankTarget) {
-                freshAssoc = refreshAssoc(animPedal, ANIM_ID_BIKE_PEDAL);
-                if (m_GasPedal != 0.0f || m_fControlPedaling > 0.0f || GetStatus() == STATUS_SIMPLE) {
-                    animPedal->SetFlag(ANIMATION_IS_PLAYING, true);
-                } else {
-                    animPedal->SetFlag(ANIMATION_IS_PLAYING, false);
-                    if (!vehicleFlags.bIsHandbrakeOn && (m_aRatioHistory[0] < 1.0f || m_aRatioHistory[1] < 1.0f || m_aRatioHistory[2] < 1.0f || m_aRatioHistory[3] < 1.0f)) {
-                        m_bIsFreewheeling = true;
-                    }
-                }
-                activeAssoc = animPedal;
-            } else {
-                freshAssoc = refreshAssoc(animSprint, ANIM_ID_BIKE_SPRINT);
-                animSprint->SetFlag(ANIMATION_IS_PLAYING, true);
-                if (animPedal) {
-                    animPedal->SetFlag(ANIMATION_IS_PLAYING, true);
-                    activeAssoc = animPedal;
-                } else {
-                    activeAssoc = animSprint;
-                }
-                activeAssoc->SetSpeed(crankTarget); // NOTSA: original writes m_Speed directly at the same offset
-            }
-
-            if (!activeAssoc) {
-                m_fCrankAngle = std::pow(0.97f, CTimer::GetTimeStep()) * m_fCrankAngle;
-            } else {
-                // If a directional (left/right/fwd) anim is significantly blended in, dock the crank
-                // phase toward that direction's fixed angle instead of following anim time directly.
-                auto targetAngle = fwdSpeed;
-                auto hasDirectional = false;
+            // A lean anim only pins the crank phase in the frame the anim was blended in; the first one that applies wins
+            std::optional<float> pinnedAngle;
+            if (isFresh) {
                 if (animLeft && animLeft->GetBlendAmount() > 0.5f) {
-                    targetAngle = PI;
-                    hasDirectional = true;
+                    pinnedAngle = PI;
+                } else if (animRight && animRight->GetBlendAmount() > 0.5f) {
+                    pinnedAngle = 0.0f;
+                } else if (animFwd && animFwd->GetBlendAmount() > 0.5f) {
+                    pinnedAngle = FRAC_PI_2;
                 }
-                if (animRight && animRight->GetBlendAmount() > 0.5f) {
-                    targetAngle = 0.0f;
-                    hasDirectional = true;
+            }
+            if (pinnedAngle) {
+                auto phase = (0.0f - *pinnedAngle) * (1.0f / TWO_PI);
+                if (phase < 0.0f) {
+                    phase += 1.0f;
                 }
-                if (animFwd && animFwd->GetBlendAmount() > 0.5f) {
-                    targetAngle = FRAC_PI_2;
-                    hasDirectional = true;
-                }
-
-                if (!freshAssoc || !hasDirectional || targetAngle <= -1000.0f) {
-                    m_fCrankAngle = 0.0f - (activeAssoc->GetCurrentTime() / activeAssoc->GetHier()->GetTotalTime()) * TWO_PI;
-                } else {
-                    auto crankPhase = (0.0f - targetAngle) * (1.0f / TWO_PI);
-                    if (crankPhase < 0.0f) {
-                        crankPhase += 1.0f;
-                    }
-                    activeAssoc->SetCurrentTime(activeAssoc->GetHier()->GetTotalTime() * crankPhase);
-                    m_fCrankAngle = crankPhase;
-                }
+                crankAssoc->SetCurrentTime(crankAssoc->GetHier()->GetTotalTime() * phase);
+                m_fCrankAngle = phase; // The exe stores the phase here, not an angle
+            } else {
+                m_fCrankAngle = 0.0f - (crankAssoc->GetCurrentTime() / crankAssoc->GetHier()->GetTotalTime()) * TWO_PI;
             }
         }
 
         if (std::fabs(m_RideAnimData.AnimLeanLeft) > 0.05f || std::fabs(m_RideAnimData.AnimLeanFwd) > 0.05f) {
-            // FIX_BUGS candidate: same unscaled per-frame decay as above.
+            // Per frame, not scaled by the time step; the exe does the same
             m_RideAnimData.AnimLeanLeft *= 0.95f;
             m_RideAnimData.AnimLeanFwd  *= 0.95f;
         }
     }
 
-    // NOTSA: front/rear tunnel-transition bookkeeping (mirrors CAutomobile::PlaceOnRoadProperly's
-    // m_bTunnel/m_bTunnelTransition pattern) was not fully re-derived this session - see progress
-    // notes (Z:\ghidra_project\cbike_cbmx_progress.md) for the raw addresses if resuming this.
+    // The camera follows a wheelie or a stoppie of the player (the bike code does the same for the other cases)
+    if (driver->IsPlayer()) {
+        bikeFlags.bWheelieForCamera = false;
+
+        const auto& wheelCounts = m_WheelCounts;
+        const auto  noseZ       = GetForward().z;
+        if (wheelCounts[0] <= 0.0f && wheelCounts[1] <= 0.0f && noseZ > 0.0f && (wheelCounts[2] > 0.0f || wheelCounts[3] > 0.0f)) {
+            if (m_BikeHandling->m_fWheelieAng * 0.5f > m_BikeHandling->m_fWheelieAng - noseZ) {
+                bikeFlags.bWheelieForCamera = true;
+            }
+        } else if (wheelCounts[2] <= 0.0f && wheelCounts[3] <= 0.0f && noseZ < 0.0f && (wheelCounts[0] > 0.0f || wheelCounts[1] > 0.0f)) {
+            if (m_BikeHandling->m_fStoppieAng * 0.6f < m_BikeHandling->m_fStoppieAng - noseZ) {
+                bikeFlags.bWheelieForCamera = true;
+            }
+        }
+    }
 
     m_fPedalAngleL = -m_fCrankAngle;
     m_fPedalAngleR = -m_fCrankAngle;
