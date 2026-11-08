@@ -29726,6 +29726,16 @@
   },
   {
     "Category": "CTaskSimpleCarDrive",
+    "Name": "StartCloseDoorRollingAnim",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarDrive",
+    "Name": "FinishCloseDoorRollingAnimCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarDrive",
     "Name": "Clone",
     "IsReversed": true
   },
@@ -31892,6 +31902,16 @@
   {
     "Category": "CTaskComplexPartner",
     "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexPartner",
+    "Name": "StreamRequiredAnims",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexPartner",
+    "Name": "RemoveStreamedAnims",
     "IsReversed": true
   },
   {

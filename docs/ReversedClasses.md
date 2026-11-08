@@ -1,15 +1,15 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 08, 2026 at 17:21:24 UTC
-(Triggered by commit [646e75b6](https://github.com/TheCrazy17/gta-reversed/commit/646e75b65f61b8cd2fa4e10e9e1886ca0fc13974))
+Last update was at Nov 08, 2026 at 22:43:19 UTC
+(Triggered by commit [5a81e1fa](https://github.com/TheCrazy17/gta-reversed/commit/5a81e1fa4d56afe15ee5050ecd22bea5e964fd9c))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8452 out of 8452 functions done in 733 categories)
+## Stats (8456 out of 8456 functions done in 733 categories)
 
 #### Completely reversed categories (733/733) [100%]
 
@@ -538,7 +538,7 @@ Last update was at Nov 08, 2026 at 17:21:24 UTC
 - CTaskComplexLeaveAnyCar (7)<br />
 - CTaskComplexWanderCop (9)<br />
 - CTaskSimpleStandStill (3)<br />
-- CTaskSimpleCarDrive (13)<br />
+- CTaskSimpleCarDrive (15)<br />
 - CTaskComplexPartnerChat (1)<br />
 - CTaskSimpleUseGun (19)<br />
 - CTaskComplexObserveTrafficLightsAndAchieveHeading (5)<br />
@@ -598,7 +598,7 @@ Last update was at Nov 08, 2026 at 17:21:24 UTC
 - CTaskComplexStuckInAir (6)<br />
 - CTaskSimpleHoldEntity (14)<br />
 - CTaskSimpleGoTo (4)<br />
-- CTaskComplexPartner (1)<br />
+- CTaskComplexPartner (3)<br />
 - CTaskSimpleCarSetPedInAsDriver (1)<br />
 - CTaskSimpleCarSetPedInAsPassenger (1)<br />
 - CTaskSimpleCarSetPedOut (7)<br />
