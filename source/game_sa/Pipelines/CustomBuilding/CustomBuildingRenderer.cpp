@@ -42,7 +42,9 @@ bool CCustomBuildingRenderer::PluginAttach() {
 // 0x5D7F00
 void CCustomBuildingRenderer::AtomicSetup(RpAtomic* atomic) {
     auto* const geometry = RpAtomicGetGeometry(atomic);
-    if (CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry) && *(int32*)((char*)geometry + 0x30) != 0) {
+    // The exe's GetExtraVertColourPtr (0x5D6E90) returns the night colors pointer, ours returns the plugin data itself
+    // which is never null; checking that let buildings without night colors into the day night pipeline and crash there
+    if (CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry)->NightColors && *(int32*)((char*)geometry + 0x30) != 0) {
         CCustomBuildingDNPipeline::CustomPipeAtomicSetup(atomic);
     } else {
         CCustomBuildingPipeline::CustomPipeAtomicSetup(atomic);
@@ -55,7 +57,7 @@ bool CCustomBuildingRenderer::IsCBPCPipelineAttached(RpAtomic* atomic) {
         return true;
     }
     auto* const geometry = RpAtomicGetGeometry(atomic);
-    return CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry) && *(int32*)((char*)geometry + 0x30) != 0;
+    return CCustomBuildingDNPipeline::GetExtraVertColourPtr(geometry)->NightColors && *(int32*)((char*)geometry + 0x30) != 0; // See AtomicSetup
 }
 
 // 0x5D7F80
