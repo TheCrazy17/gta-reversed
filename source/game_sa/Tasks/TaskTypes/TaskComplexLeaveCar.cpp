@@ -14,13 +14,79 @@
 #include "TaskSimpleDie.h"
 #include "TaskSimplePause.h"
 #include "CarEnterExit.h"
+#include "Automobile.h"
 #include "Events/EventDamage.h"
 
 void CTaskComplexLeaveCar::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexLeaveCar, 0x86E828, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedInstall(CreateSubTask, 0x641530);
+    RH_ScopedInstall(ReserveDoorAndSeat, 0x63BA00);
+    RH_ScopedInstall(ComputeTargetDoorIfUnset, 0x63BAB0);
+    RH_ScopedInstall(CreateLineUpUtility, 0x63BAE0);
+    RH_ScopedInstall(GetDoorUse, 0x646CF0);
     RH_ScopedVMTInstall(MakeAbortable, 0x641100);
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x6419F0);
+}
+
+// 0x63BA00
+void CTaskComplexLeaveCar::ReserveDoorAndSeat(CPed* ped) {
+    m_nDoorFlagsSet = (uint8)CCarEnterExit::ComputeDoorFlag(m_pTargetVehicle, m_nTargetDoor, true);
+    m_pTargetVehicle->SetGettingOutFlags(m_nDoorFlagsSet);
+    m_nNumGettingInSet = 1;
+    m_pTargetVehicle->m_nNumGettingIn++;
+
+    // A computer controlled driver that leaves on its own stops driving
+    CPed* const driver = m_pTargetVehicle->m_pDriver;
+    if (driver && !driver->IsPlayer() && ped == driver && m_bSensibleLeaveCar) {
+        m_pTargetVehicle->m_autoPilot.SetCruiseSpeed(0);
+        m_pTargetVehicle->m_autoPilot.ClearCarMission();
+    }
+
+    // The vehicle the player leaves from the driver's seat is held still while the player gets out
+    if (ped->IsPlayer() && ped == m_pTargetVehicle->m_pDriver) {
+        m_pTargetVehicle->SetStatus(STATUS_FORCED_STOP);
+    }
+}
+
+// 0x63BAB0
+void CTaskComplexLeaveCar::ComputeTargetDoorIfUnset(CPed* ped) {
+    if (!m_nTargetDoor) {
+        m_nTargetDoor = CCarEnterExit::ComputeTargetDoorToExit(m_pTargetVehicle, ped);
+    }
+}
+
+// 0x63BAE0
+void CTaskComplexLeaveCar::CreateLineUpUtility(CPed*) {
+    m_pTaskUtilityLineUpPedWithCar = new CTaskUtilityLineUpPedWithCar{ CVector{}, 0, 0, m_nTargetDoor };
+}
+
+// NOTSA
+void CTaskComplexLeaveCar::ReleaseDoorAndSeat() {
+    m_pTargetVehicle->ClearGettingOutFlags(m_nDoorFlagsSet);
+    m_nDoorFlagsSet = 0;
+    m_pTargetVehicle->m_nNumGettingIn -= m_nNumGettingInSet;
+    m_nNumGettingInSet = 0;
+}
+
+// 0x646CF0
+void CTaskComplexLeaveCar::GetDoorUse(const CVehicle* veh, int32 door, bool* isGettingIn, bool* isGettingOut) {
+    // The bit each door owns in the vehicle's getting in / getting out flags
+    uint8 flag;
+    switch (door) {
+    case TARGET_DOOR_FRONT_RIGHT: flag = 4; break;
+    case TARGET_DOOR_REAR_RIGHT:  flag = 8; break;
+    case TARGET_DOOR_DRIVER:      flag = 1; break;
+    case TARGET_DOOR_REAR_LEFT:   flag = 2; break;
+    default:                      return;
+    }
+
+    if (veh->m_nGettingInFlags & flag) {
+        *isGettingIn = true;
+    }
+    if (veh->m_nGettingOutFlags & flag) {
+        *isGettingOut = true;
+    }
 }
 
 // 0x62F1A0
@@ -69,14 +135,6 @@ bool CTaskComplexLeaveCar::MakeAbortable(CPed* ped, eAbortPriority priority, con
         return true;
     }
 
-    // Gives back the door flags and the seat that this task reserved in the vehicle
-    const auto ReleaseVehicle = [this] {
-        m_pTargetVehicle->ClearGettingOutFlags(m_nDoorFlagsSet);
-        m_nDoorFlagsSet = 0;
-        m_pTargetVehicle->m_nNumGettingIn -= m_nNumGettingInSet;
-        m_nNumGettingInSet = 0;
-    };
-
     if (priority == ABORT_PRIORITY_IMMEDIATE) {
         m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_IMMEDIATE, event);
 
@@ -93,7 +151,7 @@ bool CTaskComplexLeaveCar::MakeAbortable(CPed* ped, eAbortPriority priority, con
             setPedOut.ProcessPed(ped);
         }
 
-        ReleaseVehicle();
+        ReleaseDoorAndSeat();
         return true;
     }
 
@@ -110,7 +168,7 @@ bool CTaskComplexLeaveCar::MakeAbortable(CPed* ped, eAbortPriority priority, con
     ) {
         const bool aborted = m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_URGENT, event);
         if (aborted) {
-            ReleaseVehicle();
+            ReleaseDoorAndSeat();
         }
         return aborted;
     }
@@ -168,7 +226,185 @@ bool CTaskComplexLeaveCar::MakeAbortable(CPed* ped, eAbortPriority priority, con
 
 // 0x6419F0
 CTask* CTaskComplexLeaveCar::CreateNextSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6419F0, CTask*, CPed*>(this, ped);
+    // A null return ends this task; the exe asks CreateSubTask for TASK_FINISHED, which also gives null
+    switch (m_pSubTask->GetTaskType()) {
+    case TASK_SIMPLE_PAUSE:
+    case TASK_SIMPLE_DIE:
+        return nullptr;
+
+    case TASK_COMPLEX_GET_UP_AND_STAND_STILL:
+        // A ped that is still marked as inside the vehicle has to be put out of it first
+        return ped->bInVehicle ? CreateSubTask(TASK_SIMPLE_CAR_SET_PED_OUT, ped) : nullptr;
+
+    case TASK_COMPLEX_LEAVE_BOAT:
+        return m_bDie ? CreateSubTask(TASK_SIMPLE_DIE, ped) : nullptr;
+
+    case TASK_SIMPLE_CAR_CLOSE_DOOR_FROM_OUTSIDE:
+        m_nDieAnimID = ANIM_ID_KO_SHOT_FRONT_0;
+        return CreateSubTask(TASK_SIMPLE_CAR_SET_PED_OUT, ped);
+
+    case TASK_SIMPLE_CAR_DRIVE_TIMED: {
+        if (!ped->bInVehicle) {
+            return nullptr;
+        }
+
+        // The ped says it is in a vehicle but sits in none of its seats
+        if (!ped->m_pVehicle->IsPassenger(ped) && !ped->m_pVehicle->IsDriver(ped)) {
+            ped->bInVehicle = false;
+            return nullptr;
+        }
+
+        ComputeTargetDoorIfUnset(ped);
+
+        bool isGettingIn  = false;
+        bool isGettingOut = false;
+        GetDoorUse(m_pTargetVehicle, m_nTargetDoor, &isGettingIn, &isGettingOut);
+
+        // Unless the ped has to get out, it waits for someone leaving through the same door and gives up if someone enters
+        if (!m_bForceGetOut) {
+            if (isGettingOut) {
+                return CreateSubTask(TASK_SIMPLE_CAR_WAIT_FOR_DOOR_NOT_TO_BE_IN_USE, ped);
+            }
+            if (isGettingIn) {
+                return nullptr;
+            }
+        }
+        return CreateSubTask(TASK_SIMPLE_CAR_WAIT_TO_SLOW_DOWN, ped);
+    }
+
+    case TASK_SIMPLE_CAR_WAIT_FOR_DOOR_NOT_TO_BE_IN_USE:
+        return CreateSubTask(TASK_SIMPLE_CAR_WAIT_TO_SLOW_DOWN, ped);
+
+    case TASK_SIMPLE_CAR_WAIT_TO_SLOW_DOWN: {
+        // Too fast to step out, so the ped jumps
+        if (!m_pTargetVehicle->CanPedStepOutCar(false)) {
+            ReserveDoorAndSeat(ped);
+            ped->SetPedState(PEDSTATE_NONE);
+            return CreateSubTask(TASK_SIMPLE_CAR_JUMP_OUT, ped);
+        }
+
+        // No room to get out through this door and none left to try: the ped is thrown out
+        const auto ForcePedOut = [&] {
+            ReserveDoorAndSeat(ped);
+            ped->SetPedState(PEDSTATE_NONE);
+            CreateLineUpUtility(ped);
+            return CreateSubTask(TASK_SIMPLE_CAR_FORCE_PED_OUT, ped);
+        };
+
+        auto* const veh = m_pTargetVehicle;
+        if (!CCarEnterExit::IsRoomForPedToLeaveCar(veh, m_nTargetDoor, nullptr)) {
+            // The door on the other side of the vehicle that shares its row (or seat on a bike) is the only alternative,
+            // and only when nobody sits at it or is about to
+            const bool tandem  = veh->IsBike() || veh->m_pHandlingData->m_bTandemSeats;
+            int32      altDoor = 0;
+            switch (m_nTargetDoor) {
+            case TARGET_DOOR_FRONT_RIGHT:
+                if (veh->m_pDriver || (veh->m_nGettingInFlags & 1)) {
+                    return ForcePedOut();
+                }
+                altDoor = TARGET_DOOR_DRIVER;
+                break;
+            case TARGET_DOOR_REAR_RIGHT:
+                if (veh->m_apPassengers[1] || (veh->m_nGettingInFlags & 2)) {
+                    return ForcePedOut();
+                }
+                altDoor = TARGET_DOOR_REAR_LEFT;
+                break;
+            case TARGET_DOOR_DRIVER:
+                if (!tandem && (veh->m_apPassengers[0] || (veh->m_nGettingInFlags & 4))) {
+                    return ForcePedOut();
+                }
+                altDoor = TARGET_DOOR_FRONT_RIGHT;
+                break;
+            case TARGET_DOOR_REAR_LEFT:
+                if (!tandem && (veh->m_apPassengers[2] || (veh->m_nGettingInFlags & 8))) {
+                    return ForcePedOut();
+                }
+                altDoor = TARGET_DOOR_REAR_RIGHT;
+                break;
+            }
+
+            if (!CCarEnterExit::IsRoomForPedToLeaveCar(veh, altDoor, nullptr)) {
+                return ForcePedOut();
+            }
+
+            // Models flagged for the door check need the door's frame to exist
+            if (veh->m_pHandlingData->m_bForceDoorCheck && veh->IsAutomobile() && !veh->AsAutomobile()->m_aCarNodes[altDoor]) {
+                return ForcePedOut();
+            }
+            m_nTargetDoor = altDoor;
+        }
+
+        ReserveDoorAndSeat(ped);
+        ped->SetPedState(PEDSTATE_NONE);
+        if (m_bDie) {
+            return CreateSubTask(TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT, ped);
+        }
+        CreateLineUpUtility(ped);
+        return CreateSubTask(TASK_SIMPLE_CAR_GET_OUT, ped);
+    }
+
+    case TASK_SIMPLE_CAR_GET_OUT: {
+        m_pTaskUtilityLineUpPedWithCar->m_nDoorOpenPosType = 2;
+
+        // A ped forced out of an unlocked vehicle does not stop to close the door
+        if (!m_bForceGetOut || m_pTargetVehicle->m_nDoorLock != CARLOCK_UNLOCKED) {
+            if (CCarEnterExit::CarHasDoorToClose(m_pTargetVehicle, m_nTargetDoor)) {
+                return CreateSubTask(TASK_SIMPLE_CAR_CLOSE_DOOR_FROM_OUTSIDE, ped);
+            }
+        }
+
+        // No close door task follows, so the door the ped used is left open
+        if (m_pTargetVehicle->IsAutomobile() && CCarEnterExit::CarHasDoorToClose(m_pTargetVehicle, m_nTargetDoor)) {
+            m_pTargetVehicle->AsAutomobile()->m_damageManager.SetDoorOpen_Component((tComponent)m_nTargetDoor);
+        }
+        return CreateSubTask(TASK_SIMPLE_CAR_SET_PED_OUT, ped);
+    }
+
+    case TASK_SIMPLE_CAR_JUMP_OUT: {
+        if (m_bDie) {
+            m_nDieAnimID         = ANIM_ID_KO_SHOT_FRONT_0;
+            m_fDieAnimBlendDelta = 1000.0f;
+            m_fDieAnimSpeed      = 0.5f;
+            return CreateSubTask(TASK_SIMPLE_DIE, ped);
+        }
+
+        // Nothing to jump out of, or no jump for a bike or a quad
+        const auto* const veh = m_pTargetVehicle;
+        if (!veh || veh->IsBike() || veh->m_nVehicleSubType == VEHICLE_TYPE_QUAD) {
+            return nullptr;
+        }
+
+        // The ped is already in the air or in water, so it is put on the ground at once
+        if (m_bIsInAir || ped->bIsDrowning) {
+            return CreateSubTask(TASK_SIMPLE_CAR_SET_PED_OUT, ped);
+        }
+
+        // Landed: the door flags and seat are no longer needed while the ped gets up
+        ReleaseDoorAndSeat();
+        return CreateSubTask(TASK_COMPLEX_GET_UP_AND_STAND_STILL, ped);
+    }
+
+    case TASK_SIMPLE_CAR_FORCE_PED_OUT:
+        return CreateSubTask(TASK_SIMPLE_CAR_SET_PED_OUT, ped);
+
+    case TASK_SIMPLE_CAR_SET_PED_OUT:
+        return m_bDie ? CreateSubTask(TASK_SIMPLE_DIE, ped) : nullptr;
+
+    case TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT:
+        m_nDieAnimID         = ANIM_ID_FLOOR_HIT;
+        m_fDieAnimBlendDelta = 1000.0f;
+        m_fDieAnimSpeed      = 0.5f;
+
+        // The police lock of a vehicle ends when its driver is dragged out
+        if (m_pTargetVehicle && m_pTargetVehicle->m_nDoorLock == CARLOCK_COP_CAR) {
+            m_pTargetVehicle->m_nDoorLock = CARLOCK_UNLOCKED;
+        }
+        return CreateSubTask(TASK_SIMPLE_DIE, ped);
+
+    default:
+        return nullptr;
+    }
 }
 
 // 0x641FC0

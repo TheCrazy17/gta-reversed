@@ -47,6 +47,12 @@ private:
     friend void InjectHooksMain();
     static void InjectHooks();
 
+    void ReserveDoorAndSeat(CPed* ped);       // 0x63BA00
+    void ComputeTargetDoorIfUnset(CPed* ped); // 0x63BAB0
+    void CreateLineUpUtility(CPed* ped);      // 0x63BAE0, the exe takes a ped it never reads
+    void ReleaseDoorAndSeat();                // NOTSA, the same release the exe repeats in several places
+    static void GetDoorUse(const CVehicle* veh, int32 door, bool* isGettingIn, bool* isGettingOut); // 0x646CF0
+
     CTaskComplexLeaveCar* Constructor(CVehicle* targetVehicle, int32 nTargetDoor, int32 nDelayTime, bool bSensibleLeaveCar, bool bForceGetOut);
 };
 VALIDATE_SIZE(CTaskComplexLeaveCar, 0x34);
