@@ -244,16 +244,18 @@ void CTaskSimpleCarDrive::ProcessHeadBopping(CPed* ped, bool a3, float a4) {
 
     if (a4 < 64.0f && m_fHeadBoppingOrientation > 0.0f) {
         auto angle = m_fRandomHeadBoppingMultiplier * m_fHeadBoppingOrientation;
-        const auto frame = ped->m_apBones[PED_NODE_HEAD]->Frame;
+        // A skinned ped keeps the pose of a bone in its key frame; the exe turns that quaternion (RtQuatRotate, 0x7EB7C0).
+        // The field is not an RwFrame, handing it to RwFrameRotate read the frame's root from unrelated memory and crashed.
+        auto* const headQuat = &ped->m_apBones[PED_NODE_HEAD]->KeyFrame->q;
         if (m_nHeadBoppingDirection > 0) {
             RwV3d axisX{ 1.0f, 0.0f, 0.0f };
-            RwFrameRotate(frame, &axisX, m_nBoppingCompletedTimes != 0 ? -angle : angle, rwCOMBINEPRECONCAT);
+            RtQuatRotate(headQuat, &axisX, m_nBoppingCompletedTimes != 0 ? -angle : angle, rwCOMBINEPRECONCAT);
         }
         if (m_nHeadBoppingDirection != 2) {
             angle = -angle;
         }
         RwV3d axisZ{ 0.0f, 0.0f, 1.0f };
-        RwFrameRotate(frame, &axisZ, angle, rwCOMBINEPRECONCAT);
+        RtQuatRotate(headQuat, &axisZ, angle, rwCOMBINEPRECONCAT);
         ped->bUpdateMatricesRequired = true;
     }
 }
@@ -357,7 +359,7 @@ void CTaskSimpleCarDrive::ProcessArmBopping(CPed* ped, bool a3, float a4) {
         const auto angle = m_fBoppingProgress >= 0.75f ? (m_fBoppingProgress - 0.75f) * 45.0f : 0.0f;
         const auto node  = animId == 0xA2 ? PED_NODE_LEFT_HAND : PED_NODE_RIGHT_HAND;
         RwV3d axisZ{ 0.0f, 0.0f, 1.0f };
-        RwFrameRotate(ped->m_apBones[node]->Frame, &axisZ, -angle, rwCOMBINEPRECONCAT);
+        RtQuatRotate(&ped->m_apBones[node]->KeyFrame->q, &axisZ, -angle, rwCOMBINEPRECONCAT); // Quaternion of the bone, see ProcessHeadBopping
         ped->bUpdateMatricesRequired = true;
     }
 
