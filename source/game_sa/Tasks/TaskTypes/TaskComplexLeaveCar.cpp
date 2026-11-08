@@ -15,18 +15,28 @@
 #include "TaskSimplePause.h"
 #include "CarEnterExit.h"
 #include "Automobile.h"
+#include "PedGroups.h"
+#include "PedGroup.h"
 #include "Events/EventDamage.h"
+#include "Events/EventGroupEvent.h"
+#include "Events/EventLeaderExitedCarAsDriver.h"
 
 void CTaskComplexLeaveCar::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexLeaveCar, 0x86E828, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
+    RH_ScopedInstall(Constructor, 0x63B8C0);
+    RH_ScopedInstall(Destructor, 0x63B970);
     RH_ScopedInstall(CreateSubTask, 0x641530);
     RH_ScopedInstall(ReserveDoorAndSeat, 0x63BA00);
     RH_ScopedInstall(ComputeTargetDoorIfUnset, 0x63BAB0);
     RH_ScopedInstall(CreateLineUpUtility, 0x63BAE0);
     RH_ScopedInstall(GetDoorUse, 0x646CF0);
+    RH_ScopedVMTInstall(GetTaskType, 0x63B960);
+    RH_ScopedVMTInstall(Clone, 0x63D9E0);
     RH_ScopedVMTInstall(MakeAbortable, 0x641100);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x6419F0);
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x641FC0);
+    RH_ScopedVMTInstall(ControlSubTask, 0x6421B0);
 }
 
 // 0x63BA00
@@ -409,7 +419,34 @@ CTask* CTaskComplexLeaveCar::CreateNextSubTask(CPed* ped) {
 
 // 0x641FC0
 CTask* CTaskComplexLeaveCar::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x641FC0, CTask*, CPed*>(this, ped);
+    // A player that is being arrested does not get out of the vehicle on its own
+    if ((ped->m_nPedState == PEDSTATE_ARRESTED || ped->bIsBeingArrested) && ped->IsPlayer()) {
+        return new CTaskSimplePause{ -1 };
+    }
+
+    // The exe prints "CTaskComplexLeaveCar - ped not in car" here, which has no visible effect
+    if (!ped->bInVehicle) {
+        return new CTaskSimplePause{ -1 };
+    }
+
+    if (m_pTargetVehicle->m_pDriver == ped) {
+        // The rest of the group is told that its leader left the vehicle as the driver
+        if (auto* const group = CPedGroups::GetPedsGroup(ped); group && group->GetMembership().IsLeader(ped)) {
+            CEventGroupEvent groupEvent{ ped, new CEventLeaderExitedCarAsDriver{} };
+            group->GetIntelligence().AddEvent(&groupEvent);
+        }
+
+        if (!ped->IsPlayer()) {
+            ped->SetRadioStation();
+        } else if (auto* const veh = ped->m_pVehicle) {
+            veh->m_vehicleAudio.PlayerAboutToExitVehicleAsDriver();
+        }
+    }
+
+    if (m_pTargetVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT) {
+        return new CTaskComplexLeaveBoat{ m_pTargetVehicle, 0 };
+    }
+    return new CTaskSimpleCarDriveTimed{ m_pTargetVehicle, m_nDelayTime };
 }
 
 // 0x6421B0

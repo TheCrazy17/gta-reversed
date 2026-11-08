@@ -53,6 +53,16 @@ private:
     void ReleaseDoorAndSeat();                // NOTSA, the same release the exe repeats in several places
     static void GetDoorUse(const CVehicle* veh, int32 door, bool* isGettingIn, bool* isGettingOut); // 0x646CF0
 
-    CTaskComplexLeaveCar* Constructor(CVehicle* targetVehicle, int32 nTargetDoor, int32 nDelayTime, bool bSensibleLeaveCar, bool bForceGetOut);
+    // 0x63B8C0
+    CTaskComplexLeaveCar* Constructor(CVehicle* targetVehicle, int32 nTargetDoor, int32 nDelayTime, bool bSensibleLeaveCar, bool bForceGetOut) {
+        this->CTaskComplexLeaveCar::CTaskComplexLeaveCar(targetVehicle, nTargetDoor, nDelayTime, bSensibleLeaveCar, bForceGetOut);
+        return this;
+    }
+
+    // 0x63B970
+    CTaskComplexLeaveCar* Destructor() {
+        this->CTaskComplexLeaveCar::~CTaskComplexLeaveCar();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskComplexLeaveCar, 0x34);
