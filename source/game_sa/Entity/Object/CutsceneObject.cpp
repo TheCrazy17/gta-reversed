@@ -58,10 +58,17 @@ void CCutsceneObject::ProcessControl() {
     CPhysical::ProcessControl(); // exactly CPhysical
     if (m_pAttachToFrame) {
         if (m_pAttachmentObject) {
+            // The bone matrices only hold this frame's pose after the parent has refreshed its hierarchy; the exe does it
+            // here, without it the held object follows a stale pose and sits at the wrong position and rotation
+            m_pAttachmentObject->UpdateRpHAnim();
+
             auto* hierarchy = GetAnimHierarchyFromClump(m_pAttachmentObject->GetRpClump());
             auto* matArr = RpHAnimHierarchyGetMatrixArray(hierarchy);
             const auto boneMat = CMatrix(&matArr[m_nAttachBone], false);
             *static_cast<CMatrix*>(m_matrix) = boneMat;
+
+            // Postponed again next frame, so that the parent has been processed before this object reads its bone
+            SetWasPostponed(false);
         } else {
             auto* pLtm = RwFrameGetLTM(m_pAttachToFrame);
             const auto attachMat = CMatrix(pLtm, false);
