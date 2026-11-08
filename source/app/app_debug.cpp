@@ -4,6 +4,9 @@
 #include <windows.h>
 #include <DbgHelp.h>
 #include <crtdbg.h>
+#include <csignal>
+#include <cstdlib>
+#include <assert.h>
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -121,6 +124,63 @@ static int CrtReportLogger(int reportType, char* message, int* /*returnValue*/) 
     }
     return FALSE; // Not handled; the CRT still shows its dialog
 }
+
+// assert() does not go through the report hook above; it calls _wassert, which shows its own box.
+// That box is the only trace of a failed assert, with no call stack, so the stack is logged before the box is shown.
+// The box itself is kept as the CRT shows it (abort, retry, ignore).
+static void __cdecl WAssertLogger(const wchar_t* expression, const wchar_t* file, unsigned line) {
+    const auto ToUtf8 = [](const wchar_t* str) {
+        std::string out((size_t)std::max(0, WideCharToMultiByte(CP_UTF8, 0, str, -1, nullptr, 0, nullptr, nullptr)), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, str, -1, out.data(), (int)out.size(), nullptr, nullptr);
+        if (!out.empty()) {
+            out.pop_back(); // The terminating null
+        }
+        return out;
+    };
+
+    NOTSA_LOG_ERR("Assertion failed: {} ({}:{})", ToUtf8(expression), ToUtf8(file), line);
+    CONTEXT context{};
+    RtlCaptureContext(&context);
+    DumpCallStack(context);
+    spdlog::apply_all([](auto&& logger) {
+        logger->flush();
+    });
+
+    wchar_t program[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, program, MAX_PATH);
+
+    wchar_t text[4096]{};
+    _snwprintf_s(
+        text, _TRUNCATE,
+        L"Assertion failed!\n\nProgram: %ls\nFile: %ls\nLine: %u\n\nExpression: %ls\n\n"
+        L"For information on how your program can cause an assertion failure, see the Visual C++ documentation on asserts\n\n"
+        L"(Press Retry to debug the application - JIT must be enabled)",
+        program, file, line, expression
+    );
+    switch (MessageBoxW(nullptr, text, L"Microsoft Visual C++ Runtime Library", MB_ABORTRETRYIGNORE | MB_ICONHAND | MB_SETFOREGROUND | MB_TASKMODAL)) {
+    case IDABORT:
+        raise(SIGABRT);
+        _exit(3);
+    case IDRETRY:
+        __debugbreak();
+        break;
+    default: // Ignore
+        break;
+    }
+}
+
+// The CRT is linked statically, so _wassert is a function of this module and can be redirected with a jump
+static void RedirectWAssertToLogger() {
+    auto* const target = reinterpret_cast<uint8*>(&_wassert);
+    DWORD       oldProtect{};
+    if (!VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        return;
+    }
+    target[0] = 0xE9; // jmp rel32
+    *reinterpret_cast<int32*>(target + 1) = (int32)(reinterpret_cast<uint8*>(&WAssertLogger) - (target + 5));
+    VirtualProtect(target, 5, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), target, 5);
+}
 #endif
 
 // This probably should be in winps :D
@@ -234,6 +294,7 @@ notsa::Logging::Logging() {
     AddVectoredExceptionHandler(1, CxxExceptionLogger);
 #ifdef _DEBUG
     _CrtSetReportHook(CrtReportLogger);
+    RedirectWAssertToLogger();
 #endif
 }
 
