@@ -2112,7 +2112,8 @@ void CBike::PlaceOnRoadProperly() {
 }
 
 // 0x6BF230
-void CBike::GetCorrectedWorldDoorPosition(CVector& out, CVector arg1, CVector arg2) {
+void CBike::GetCorrectedWorldDoorPosition(CVector& out, CVector arg1 /*offsets*/, CVector arg2 /*seat*/) {
+    // The result is `arg2 - arg1` (seat minus anim offsets) in the bike's frame, moved to the world
     const auto fwdCrossUp = CrossProduct(GetForward(), CVector{ 0.0f, 0.0f, 1.0f });
     const auto basis      = CrossProduct(fwdCrossUp, GetForward());
 

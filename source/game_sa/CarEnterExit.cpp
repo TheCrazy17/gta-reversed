@@ -486,8 +486,10 @@ CVector CCarEnterExit::GetPositionToOpenCarDoor(const CVehicle* vehicle, int32 d
             offsets.x *= -1.0f;
         }
         if (vehicle->IsBike()) {
+            // The exe passes the offsets first and the seat second; the function returns `seat - offsets`.
+            // With the arguments the other way round the door ended up mirrored, so the ped walked to the opposite side of the bike
             CVector out;
-            const_cast<CBike*>(static_cast<const CBike*>(vehicle))->GetCorrectedWorldDoorPosition(out, seat, offsets);
+            const_cast<CBike*>(static_cast<const CBike*>(vehicle))->GetCorrectedWorldDoorPosition(out, offsets, seat);
             return out;
         }
         seat.x += isRight ? seatOffset : -seatOffset;
