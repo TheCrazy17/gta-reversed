@@ -267,8 +267,10 @@ void CPlayerInfo::Process(uint32 playerIndex) {
 
     ProcessChaseValue();
 
-    // Unknown part of the processing of the pad
-    plugin::CallMethod<0x56EC80, CPlayerInfo*, uint32, CPad*>(this, playerIndex, pad);
+    // Moves the crosshair with the pad. The exe calls it on the crosshair fields (active flag, then x and y), not on the whole
+    // CPlayerInfo; with `this` it wrote the stick values over the pointers at the start of the player data
+    static_assert(offsetof(CPlayerInfo, m_nCrosshairActivated) == 0x158);
+    reinterpret_cast<void(__thiscall*)(uint32*, uint32, CPad*)>(0x56EC80)(&m_nCrosshairActivated, playerIndex, pad);
 
     m_nMoney        = std::min(m_nMoney, 999999999);
     m_nDisplayMoney = std::min(m_nDisplayMoney, 999999999);
