@@ -4,14 +4,17 @@
 #include "World.h"
 
 void CEntityScanner::InjectHooks() {
-    RH_ScopedClass(CEntityScanner);
+    // The exe also builds the derived scanners (vtables 0x86CD84 to 0x86CD8C, same slot), so the vtable must be hooked as one.
+    // A static hook on a virtual function points at the vcall thunk, which jumps through the exe vtable straight back to 0x5FFA20
+    // and the game spins there forever.
+    RH_ScopedVirtualClass(CEntityScanner, 0x86CD40, 1);
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(Constructor, 0x5FF990);
     RH_ScopedInstall(Destructor, 0x603480);
 
     RH_ScopedInstall(Clear, 0x5FF9D0);
-    RH_ScopedInstall(ScanForEntitiesInRange, 0x5FFA20);
+    RH_ScopedVMTInstall(ScanForEntitiesInRange, 0x5FFA20);
 }
 
 // 0x5FF990
