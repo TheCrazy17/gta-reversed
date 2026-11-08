@@ -10,6 +10,7 @@
 #include "TaskSimpleCarGetOut.h"
 #include "TaskSimpleCarJumpOut.h"
 #include "TaskSimpleCarSetPedOut.h"
+#include "TaskSimpleCarForcePedOut.h"
 #include "TaskSimpleCarDriveTimed.h"
 #include "TaskSimpleDie.h"
 #include "TaskSimplePause.h"
@@ -502,12 +503,8 @@ CTask* CTaskComplexLeaveCar::CreateSubTask(eTaskType taskType, CPed* ped) {
         return new CTaskSimpleCarGetOut{ m_pTargetVehicle, (uint32)m_nTargetDoor, m_pTaskUtilityLineUpPedWithCar };
     case TASK_SIMPLE_CAR_JUMP_OUT:
         return new CTaskSimpleCarJumpOut{ m_pTargetVehicle, (uint32)m_nTargetDoor, m_pTaskUtilityLineUpPedWithCar };
-    case TASK_SIMPLE_CAR_FORCE_PED_OUT: {
-        // No class for this one yet, so build it with the original constructor
-        const auto task = (CTask*)CTask::operator new(0x10);
-        plugin::CallMethod<0x647710, CTask*, CVehicle*, int32>(task, m_pTargetVehicle, m_nTargetDoor);
-        return task;
-    }
+    case TASK_SIMPLE_CAR_FORCE_PED_OUT:
+        return new CTaskSimpleCarForcePedOut{ m_pTargetVehicle, m_nTargetDoor };
     case TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT:
         return new CTaskComplexCarSlowBeDraggedOut{ m_pTargetVehicle, (eTargetDoor)m_nTargetDoor, true };
     default:

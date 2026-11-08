@@ -35,5 +35,17 @@ public:
     bool MakeAbortable(CPed* ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent* event = nullptr) override { return false; }
     bool ProcessPed(CPed* ped) override;
 
+private: // Wrappers for hooks
+    // 0x6478B0
+    CTaskSimpleCarSetPedOut* Constructor(CVehicle* targetVehicle, eTargetDoor nTargetDoor, bool bSwitchOffEngine) {
+        this->CTaskSimpleCarSetPedOut::CTaskSimpleCarSetPedOut(targetVehicle, nTargetDoor, bSwitchOffEngine);
+        return this;
+    }
+
+    // 0x647950
+    CTaskSimpleCarSetPedOut* Destructor() {
+        this->CTaskSimpleCarSetPedOut::~CTaskSimpleCarSetPedOut();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskSimpleCarSetPedOut, 0x18);

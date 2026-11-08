@@ -12,7 +12,11 @@ void CTaskSimpleCarSetPedOut::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarSetPedOut, 0x86EEB8, 9);
     RH_ScopedCategory("Tasks/TaskTypes");
 
+    RH_ScopedInstall(Constructor, 0x6478B0);
+    RH_ScopedInstall(Destructor, 0x647950);
     RH_ScopedInstall(PositionPedOutOfCollision, 0x6479B0);
+    RH_ScopedVMTInstall(GetTaskType, 0x647930);
+    RH_ScopedVMTInstall(MakeAbortable, 0x647940);
     RH_ScopedVMTInstall(Clone, 0x649F50);
     RH_ScopedVMTInstall(ProcessPed, 0x647D10);
 }

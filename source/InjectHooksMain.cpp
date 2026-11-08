@@ -340,6 +340,7 @@
 #include "TaskComplexDriveWander.h"
 #include "TaskSimpleStealthKill.h"
 #include "TaskSimpleCarSetPedOut.h"
+#include "TaskSimpleCarForcePedOut.h"
 #include "TaskSimpleAnim.h"
 #include "TaskSimpleRunAnim.h"
 #include "Tasks/TaskTypes/TaskComplexInvestigateDisturbance.h"
@@ -1290,8 +1291,9 @@ void InjectHooksMain() {
         CTaskSimpleGoTo::InjectHooks();
         CTaskComplexPartner::InjectHooks();
         CTaskSimpleCarSetPedInAsDriver::InjectHooks();
-    CTaskSimpleCarSetPedInAsPassenger::InjectHooks();
+        CTaskSimpleCarSetPedInAsPassenger::InjectHooks();
         CTaskSimpleCarSetPedOut::InjectHooks();
+        CTaskSimpleCarForcePedOut::InjectHooks();
         CTaskComplexWander::InjectHooks();
         CTaskSimplePutDownEntity::InjectHooks();
         CTaskComplexUseSwatRope::InjectHooks();
