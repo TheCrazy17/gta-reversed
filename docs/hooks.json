@@ -17515,6 +17515,36 @@
     "IsReversed": true
   },
   {
+    "Category": "Common",
+    "Name": "TransformPoint",
+    "IsReversed": true
+  },
+  {
+    "Category": "Common",
+    "Name": "TransformVectors-simple",
+    "IsReversed": true
+  },
+  {
+    "Category": "Common",
+    "Name": "TransformPoints",
+    "IsReversed": true
+  },
+  {
+    "Category": "Common",
+    "Name": "GxtCharStrcat",
+    "IsReversed": true
+  },
+  {
+    "Category": "Common",
+    "Name": "GxtCharStrcpy",
+    "IsReversed": true
+  },
+  {
+    "Category": "Common",
+    "Name": "TextCopy",
+    "IsReversed": true
+  },
+  {
     "Category": "CCam",
     "Name": "CanSeeBothPlayers",
     "IsReversed": true
@@ -20446,7 +20476,32 @@
   },
   {
     "Category": "CDummy",
+    "Name": "operator new",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDummy",
+    "Name": "operator delete",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDummy",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDummy",
     "Name": "IsDummyPointerValid",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDummyObject",
+    "Name": "Constructor0",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDummyObject",
+    "Name": "Constructor1",
     "IsReversed": true
   },
   {
@@ -22240,6 +22295,61 @@
     "IsReversed": true
   },
   {
+    "Category": "CSimpleTransform",
+    "Name": "UpdateRwMatrix",
+    "IsReversed": true
+  },
+  {
+    "Category": "CSimpleTransform",
+    "Name": "Invert",
+    "IsReversed": true
+  },
+  {
+    "Category": "CSimpleTransform",
+    "Name": "UpdateMatrix",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "Flush",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "AddRelationship",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "ClearRelationshipWithPlayer",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "GetRelationshipWithPlayer",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "RecordRelationshipWithPlayer",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPlayerRelationshipRecorder",
+    "Name": "GetPlayerRelationshipRecorder",
+    "IsReversed": true
+  },
+  {
     "Category": "CMatrixLink",
     "Name": "Insert",
     "IsReversed": true
@@ -22405,1328 +22515,23 @@
     "IsReversed": true
   },
   {
-    "Category": "CModelInfo",
-    "Name": "Initialise",
+    "Category": "CTaskCategories",
+    "Name": "ComputeTaskCategory",
     "IsReversed": true
   },
   {
-    "Category": "CModelInfo",
-    "Name": "ShutDown",
+    "Category": "CTaskCategories",
+    "Name": "IsFleePedTask",
     "IsReversed": true
   },
   {
-    "Category": "CModelInfo",
-    "Name": "ReInit2dEffects",
+    "Category": "CTaskCategories",
+    "Name": "IsFollowPedTask",
     "IsReversed": true
   },
   {
-    "Category": "CModelInfo",
-    "Name": "Get2dEffectStore",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "GetModelInfoUInt16",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "GetModelInfoFromHashKey",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "GetModelInfo-full",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "GetModelInfo-minmax",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddAtomicModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddDamageAtomicModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddLodAtomicModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddTimeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddLodTimeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddWeaponModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddClumpModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddVehicleModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "AddPedModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsBoatModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsCarModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsTrainModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsHeliModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsPlaneModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsBikeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsFakePlaneModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsMonsterTruckModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsQuadBikeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsBmxModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsTrailerModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CModelInfo",
-    "Name": "IsVehicleModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "AsAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "AsDamageAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "AsLodAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "GetTimeInfo",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "Shutdown",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetAnimFile",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "ConvertAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "GetAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetTexDictionary",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "ClearTexDictionary",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "AddTexDictionaryRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "RemoveTexDictionaryRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "AddRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "RemoveRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetColModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "Init2dEffects",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "DeleteCollisionModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "Get2dEffect",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "Add2dEffect",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "GetIsDrawLast",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "HasBeenPreRendered",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "HasComplexHierarchy",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IsBackfaceCulled",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IsLod",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IsRoad",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetHasBeenPreRendered",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetIsLod",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetOwnsColModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IncreaseAlpha",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IsBreakableStatuePart",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "IsTagModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SwaysInWind",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBaseModelInfo",
-    "Name": "SetBaseModelInfoFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "AsAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "DeleteRwObject",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "GetRwModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "SetAtomic",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "GetAtomicFromDistance",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "SetupVehicleUpgradeFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CAtomicModelInfo",
-    "Name": "SetAtomicModelInfoFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CLodAtomicModelInfo",
-    "Name": "AsLodAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CLodAtomicModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CLodAtomicModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CLinkedUpgradeList",
-    "Name": "AddUpgradeLink",
-    "IsReversed": true
-  },
-  {
-    "Category": "CLinkedUpgradeList",
-    "Name": "FindOtherUpgrade",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "DeleteRwObject",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "CreateInstance",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAnimFile",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ConvertAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetClump",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRenderCallbacks",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetVehicleComponentFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetWheelPosn",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetOriginalCompPosition",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ChooseComponent",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ChooseSecondComponent",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "IsUpgradeAvailable",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetVehicleColour",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ChooseVehicleColour",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetNumRemaps",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "AddRemap",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetRenderPipelines",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetCustomCarPlateText",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetCustomCarPlateText",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ReduceMaterialsInVehicle",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetCarCustomPlate",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "DisableEnvMap",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEnvMapCoeff",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetNumDoors",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "PreprocessHierarchy",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetupLightFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ShutdownLightTexture",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetMaximumNumberOfPassengersFromNumberOfDoors",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "UseCommonVehicleTexDicationary",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "StopUsingCommonVehicleTexDicationary",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "FindTextureCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "MoveObjectsCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ResetEditableMaterials",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEditableMaterials",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEditableMaterialsCB-RpMaterial",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEditableMaterialsCB-RpAtomic",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "StoreAtomicUsedMaterialsCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "HideDamagedAtomicCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "HideAllComponentsAtomicCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "HasAlphaMaterialCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB_RealHeli",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB_Plane",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB_Boat",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB_Heli",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicRendererCB_Train",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetAtomicFlagCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ClearAtomicFlagCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "AddWheelUpgrade",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetNumWheelUpgrades",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetWheelUpgrade",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "DeleteVehicleColourTextures",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetDirtTextures",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ShutdownEnvironmentMaps",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetMatFXEffectMaterialCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEnvironmentMapCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEnvMapCoeffCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetRenderPipelinesCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "CollapseFramesCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEnvironmentMapAtomicCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetEnvMapCoeffAtomicCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "AssignRemapTxd",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "SetupCommonData",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "LoadVehicleColours",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "LoadVehicleUpgrades",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "LoadEnvironmentMaps",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "IsValidCompRule",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "ChooseComponent-Global",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "CountCompsInRule",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetListOfComponentsNotUsedByRules",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "RemoveWindowAlphaCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CVehicleModelInfo",
-    "Name": "GetOkAndDamagedAtomicCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "Shutdown",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "DeleteRwObject",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetRwModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "CreateInstance-void",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "CreateInstance-mat",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetAnimFile",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "ConvertAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetAnimFileIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetBoundingBox",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetClump",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetFrameIds",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetHierarchyForSkinAtomic",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "AtomicSetupLightingCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetAtomicRendererCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "FindFrameFromNameCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "FindFrameFromNameWithoutIdCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "FindFrameFromIdCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "FillFrameArrayCB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetFrameFromId",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "GetFrameFromName",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "FillFrameArray",
-    "IsReversed": true
-  },
-  {
-    "Category": "CClumpModelInfo",
-    "Name": "SetClumpModelInfoFlags",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeModelInfo",
-    "Name": "GetTimeInfo",
-    "IsReversed": true
-  },
-  {
-    "Category": "CDamageAtomicModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CDamageAtomicModelInfo",
-    "Name": "AsDamageAtomicModelInfoPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CDamageAtomicModelInfo",
-    "Name": "DeleteRwObject",
-    "IsReversed": true
-  },
-  {
-    "Category": "CDamageAtomicModelInfo",
-    "Name": "SetDamagedAtomic",
-    "IsReversed": true
-  },
-  {
-    "Category": "CWeaponModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CWeaponModelInfo",
-    "Name": "Init",
-    "IsReversed": true
-  },
-  {
-    "Category": "CWeaponModelInfo",
-    "Name": "SetClump",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "GetModelType",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "DeleteRwObject",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "SetClump",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "AddXtraAtomics",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "SetFaceTexture",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "CreateHitColModelSkinned",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "AnimatePedColModelSkinned",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "AnimatePedColModelSkinnedWorld",
-    "IsReversed": true
-  },
-  {
-    "Category": "CPedModelInfo",
-    "Name": "IncrementVoice",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "FindOtherTimeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "GetOtherTimeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "GetTimeOff",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "GetTimeOn",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "SetOtherTimeModel",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTimeInfo",
-    "Name": "SetTimes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTempColModels",
-    "Name": "Shutdown",
-    "IsReversed": true
-  },
-  {
-    "Category": "CTempColModels",
-    "Name": "Initialise",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColSphere",
-    "Name": "Set",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColSphere",
-    "Name": "IntersectRay",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColSphere",
-    "Name": "IntersectEdge",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColSphere",
-    "Name": "IntersectPoint",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColSphere",
-    "Name": "IntersectSphere",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColDisk",
-    "Name": "Set",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColLine",
-    "Name": "Set",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColTrianglePlane",
-    "Name": "GetNormal-Out",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColTrianglePlane",
-    "Name": "Set",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBox",
-    "Name": "Set",
-    "IsReversed": true
-  },
-  {
-    "Category": "CBox",
-    "Name": "Recalc",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "operator new",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "operator delete",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "operator=",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "MakeMultipleAlloc",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "AllocateData-void",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "AllocateData-params",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "RemoveCollisionVolumes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "CalculateTrianglePlanes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColModel",
-    "Name": "RemoveTrianglePlanes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "RemoveCollisionVolumes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "RemoveTrianglePlanes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "Copy",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "GetTrianglePoint",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "GetShadTrianglePoint",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "CalculateTrianglePlanes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "SetLinkPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CCollisionData",
-    "Name": "GetLinkPtr",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "Initialise",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "Shutdown",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "AddCollisionNeededAtPosn",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "AddColSlot",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "AddRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "IsValidSlot",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "RemoveRef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "EnsureCollisionIsInMemory",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "SetCollisionRequired",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "RequestCollision",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "RemoveColSlot",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "RemoveCol",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "LoadCol-",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "LoadCol-2",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "IncludeModelIndex",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "RemoveAllCollision",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "LoadAllCollision",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "LoadAllBoundingBoxes",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "BoundingBoxesPostProcess",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "GetBoundingBox",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "HasCollisionLoaded",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "LoadCollision",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "SetIfCollisionIsRequired",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColStore",
-    "Name": "SetIfCollisionIsRequiredReducedBB",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "isCacheLoading",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "endCache",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "addCacheCol",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "cacheLoadCol",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "addColDef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "getColDef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "setIplDef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "getIplDef",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "cacheIPLSection",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "addIPLEntity",
-    "IsReversed": true
-  },
-  {
-    "Category": "CColAccel",
-    "Name": "startCache",
+    "Category": "CTaskCategories",
+    "Name": "IsKillPedTask",
     "IsReversed": true
   },
   {
@@ -32957,6 +31762,1331 @@
   {
     "Category": "CTaskTimer",
     "Name": "IsOutOfTime",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "Initialise",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "ShutDown",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "ReInit2dEffects",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "Get2dEffectStore",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "GetModelInfoUInt16",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "GetModelInfoFromHashKey",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "GetModelInfo-full",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "GetModelInfo-minmax",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddAtomicModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddDamageAtomicModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddLodAtomicModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddTimeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddLodTimeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddWeaponModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddClumpModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddVehicleModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "AddPedModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsBoatModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsCarModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsTrainModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsHeliModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsPlaneModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsBikeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsFakePlaneModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsMonsterTruckModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsQuadBikeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsBmxModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsTrailerModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CModelInfo",
+    "Name": "IsVehicleModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "AsAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "AsDamageAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "AsLodAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "GetTimeInfo",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "Shutdown",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetAnimFile",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "ConvertAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "GetAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetTexDictionary",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "ClearTexDictionary",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "AddTexDictionaryRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "RemoveTexDictionaryRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "AddRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "RemoveRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetColModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "Init2dEffects",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "DeleteCollisionModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "Get2dEffect",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "Add2dEffect",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "GetIsDrawLast",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "HasBeenPreRendered",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "HasComplexHierarchy",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IsBackfaceCulled",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IsLod",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IsRoad",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetHasBeenPreRendered",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetIsLod",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetOwnsColModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IncreaseAlpha",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IsBreakableStatuePart",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "IsTagModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SwaysInWind",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBaseModelInfo",
+    "Name": "SetBaseModelInfoFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "AsAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "DeleteRwObject",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "GetRwModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "SetAtomic",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "GetAtomicFromDistance",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "SetupVehicleUpgradeFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CAtomicModelInfo",
+    "Name": "SetAtomicModelInfoFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CLodAtomicModelInfo",
+    "Name": "AsLodAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CLodAtomicModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CLodAtomicModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CLinkedUpgradeList",
+    "Name": "AddUpgradeLink",
+    "IsReversed": true
+  },
+  {
+    "Category": "CLinkedUpgradeList",
+    "Name": "FindOtherUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "DeleteRwObject",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "CreateInstance",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAnimFile",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ConvertAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetClump",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRenderCallbacks",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetVehicleComponentFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetWheelPosn",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetOriginalCompPosition",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ChooseComponent",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ChooseSecondComponent",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "IsUpgradeAvailable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetVehicleColour",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ChooseVehicleColour",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetNumRemaps",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "AddRemap",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetRenderPipelines",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetCustomCarPlateText",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetCustomCarPlateText",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ReduceMaterialsInVehicle",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetCarCustomPlate",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "DisableEnvMap",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEnvMapCoeff",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetNumDoors",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "PreprocessHierarchy",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetupLightFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ShutdownLightTexture",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetMaximumNumberOfPassengersFromNumberOfDoors",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "UseCommonVehicleTexDicationary",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "StopUsingCommonVehicleTexDicationary",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "FindTextureCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "MoveObjectsCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ResetEditableMaterials",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEditableMaterials",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEditableMaterialsCB-RpMaterial",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEditableMaterialsCB-RpAtomic",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "StoreAtomicUsedMaterialsCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "HideDamagedAtomicCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "HideAllComponentsAtomicCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "HasAlphaMaterialCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB_RealHeli",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB_Plane",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB_Boat",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB_Heli",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicRendererCB_Train",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetAtomicFlagCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ClearAtomicFlagCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "AddWheelUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetNumWheelUpgrades",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetWheelUpgrade",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "DeleteVehicleColourTextures",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetDirtTextures",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ShutdownEnvironmentMaps",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetMatFXEffectMaterialCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEnvironmentMapCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEnvMapCoeffCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetRenderPipelinesCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "CollapseFramesCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEnvironmentMapAtomicCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetEnvMapCoeffAtomicCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "AssignRemapTxd",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "SetupCommonData",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "LoadVehicleColours",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "LoadVehicleUpgrades",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "LoadEnvironmentMaps",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "IsValidCompRule",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "ChooseComponent-Global",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "CountCompsInRule",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetListOfComponentsNotUsedByRules",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "RemoveWindowAlphaCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CVehicleModelInfo",
+    "Name": "GetOkAndDamagedAtomicCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "Shutdown",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "DeleteRwObject",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetRwModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "CreateInstance-void",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "CreateInstance-mat",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetAnimFile",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "ConvertAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetAnimFileIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetBoundingBox",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetClump",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetFrameIds",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetHierarchyForSkinAtomic",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "AtomicSetupLightingCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetAtomicRendererCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "FindFrameFromNameCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "FindFrameFromNameWithoutIdCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "FindFrameFromIdCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "FillFrameArrayCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetFrameFromId",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "GetFrameFromName",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "FillFrameArray",
+    "IsReversed": true
+  },
+  {
+    "Category": "CClumpModelInfo",
+    "Name": "SetClumpModelInfoFlags",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeModelInfo",
+    "Name": "GetTimeInfo",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDamageAtomicModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDamageAtomicModelInfo",
+    "Name": "AsDamageAtomicModelInfoPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDamageAtomicModelInfo",
+    "Name": "DeleteRwObject",
+    "IsReversed": true
+  },
+  {
+    "Category": "CDamageAtomicModelInfo",
+    "Name": "SetDamagedAtomic",
+    "IsReversed": true
+  },
+  {
+    "Category": "CWeaponModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CWeaponModelInfo",
+    "Name": "Init",
+    "IsReversed": true
+  },
+  {
+    "Category": "CWeaponModelInfo",
+    "Name": "SetClump",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "GetModelType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "DeleteRwObject",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "SetClump",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "AddXtraAtomics",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "SetFaceTexture",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "CreateHitColModelSkinned",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "AnimatePedColModelSkinned",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "AnimatePedColModelSkinnedWorld",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedModelInfo",
+    "Name": "IncrementVoice",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "FindOtherTimeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "GetOtherTimeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "GetTimeOff",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "GetTimeOn",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "SetOtherTimeModel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimeInfo",
+    "Name": "SetTimes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTempColModels",
+    "Name": "Shutdown",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTempColModels",
+    "Name": "Initialise",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColSphere",
+    "Name": "Set",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColSphere",
+    "Name": "IntersectRay",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColSphere",
+    "Name": "IntersectEdge",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColSphere",
+    "Name": "IntersectPoint",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColSphere",
+    "Name": "IntersectSphere",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColDisk",
+    "Name": "Set",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColLine",
+    "Name": "Set",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColTrianglePlane",
+    "Name": "GetNormal-Out",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColTrianglePlane",
+    "Name": "Set",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBox",
+    "Name": "Set",
+    "IsReversed": true
+  },
+  {
+    "Category": "CBox",
+    "Name": "Recalc",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "operator new",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "operator delete",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "operator=",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "MakeMultipleAlloc",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "AllocateData-void",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "AllocateData-params",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "RemoveCollisionVolumes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "CalculateTrianglePlanes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColModel",
+    "Name": "RemoveTrianglePlanes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "RemoveCollisionVolumes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "RemoveTrianglePlanes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "Copy",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "GetTrianglePoint",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "GetShadTrianglePoint",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "CalculateTrianglePlanes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "SetLinkPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CCollisionData",
+    "Name": "GetLinkPtr",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "Initialise",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "Shutdown",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "AddCollisionNeededAtPosn",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "AddColSlot",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "AddRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "IsValidSlot",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "RemoveRef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "EnsureCollisionIsInMemory",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "SetCollisionRequired",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "RequestCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "RemoveColSlot",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "RemoveCol",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "LoadCol-",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "LoadCol-2",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "IncludeModelIndex",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "RemoveAllCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "LoadAllCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "LoadAllBoundingBoxes",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "BoundingBoxesPostProcess",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "GetBoundingBox",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "HasCollisionLoaded",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "LoadCollision",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "SetIfCollisionIsRequired",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColStore",
+    "Name": "SetIfCollisionIsRequiredReducedBB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "isCacheLoading",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "endCache",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "addCacheCol",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "cacheLoadCol",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "addColDef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "getColDef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "setIplDef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "getIplDef",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "cacheIPLSection",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "addIPLEntity",
+    "IsReversed": true
+  },
+  {
+    "Category": "CColAccel",
+    "Name": "startCache",
     "IsReversed": true
   },
   {

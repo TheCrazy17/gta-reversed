@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 08, 2026 at 22:43:19 UTC
-(Triggered by commit [5a81e1fa](https://github.com/TheCrazy17/gta-reversed/commit/5a81e1fa4d56afe15ee5050ecd22bea5e964fd9c))
+Last update was at Nov 09, 2026 at 01:11:21 UTC
+(Triggered by commit [40d8dd7f](https://github.com/TheCrazy17/gta-reversed/commit/40d8dd7f))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8456 out of 8456 functions done in 733 categories)
+## Stats (8482 out of 8482 functions done in 736 categories)
 
-#### Completely reversed categories (733/733) [100%]
+#### Completely reversed categories (736/736) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -237,7 +237,7 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 - CPPTriPlantBuffer (7)<br />
 - CPlantSurfPropMgr (4)<br />
 - RwCore (4)<br />
-- Common (9)<br />
+- Common (15)<br />
 - CCam (50)<br />
 - CCarAI (25)<br />
 - CCarFXRenderer (10)<br />
@@ -265,8 +265,8 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 - CPlaceable (16)<br />
 - CEntity (70)<br />
 - CPhysical (56)<br />
-- CDummy (1)<br />
-- CDummyObject (2)<br />
+- CDummy (4)<br />
+- CDummyObject (4)<br />
 - CObject (48)<br />
 - CCutsceneObject (6)<br />
 - CHandObject (3)<br />
@@ -330,6 +330,8 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 - CEventAcquaintancePedHate (1)<br />
 - CEventAcquaintancePedHateBadlyLit (2)<br />
 - CRect (8)<br />
+- CSimpleTransform (3)<br />
+- CPlayerRelationshipRecorder (8)<br />
 - CMatrixLink (2)<br />
 - CMatrixLinkList (10)<br />
 - CEntryInfoNode (2)<br />
@@ -337,28 +339,7 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 - CQuadTreeNode<T> (12)<br />
 - CNodeRoute (2)<br />
 - CKeyGen (4)<br />
-- CModelInfo (29)<br />
-- CBaseModelInfo (34)<br />
-- CAtomicModelInfo (9)<br />
-- CLodAtomicModelInfo (3)<br />
-- CLinkedUpgradeList (2)<br />
-- CVehicleModelInfo (75)<br />
-- CClumpModelInfo (24)<br />
-- CTimeModelInfo (2)<br />
-- CDamageAtomicModelInfo (4)<br />
-- CWeaponModelInfo (3)<br />
-- CPedModelInfo (9)<br />
-- CTimeInfo (6)<br />
-- CTempColModels (2)<br />
-- CColSphere (5)<br />
-- CColDisk (1)<br />
-- CColLine (1)<br />
-- CColTrianglePlane (2)<br />
-- CBox (2)<br />
-- CColModel (9)<br />
-- CCollisionData (8)<br />
-- CColStore (24)<br />
-- CColAccel (11)<br />
+- CTaskCategories (4)<br />
 - CPedScriptedTaskRecord (5)<br />
 - CPedScriptedTaskRecordData (8)<br />
 - CScriptedBrainTaskEntry (1)<br />
@@ -631,6 +612,28 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 - CTaskComplexUseSequence (6)<br />
 - CTaskSequences (2)<br />
 - CTaskTimer (2)<br />
+- CModelInfo (29)<br />
+- CBaseModelInfo (34)<br />
+- CAtomicModelInfo (9)<br />
+- CLodAtomicModelInfo (3)<br />
+- CLinkedUpgradeList (2)<br />
+- CVehicleModelInfo (75)<br />
+- CClumpModelInfo (24)<br />
+- CTimeModelInfo (2)<br />
+- CDamageAtomicModelInfo (4)<br />
+- CWeaponModelInfo (3)<br />
+- CPedModelInfo (9)<br />
+- CTimeInfo (6)<br />
+- CTempColModels (2)<br />
+- CColSphere (5)<br />
+- CColDisk (1)<br />
+- CColLine (1)<br />
+- CColTrianglePlane (2)<br />
+- CBox (2)<br />
+- CColModel (9)<br />
+- CCollisionData (8)<br />
+- CColStore (24)<br />
+- CColAccel (11)<br />
 - C2dEffect (14)<br />
 - NodeNamePlugin (3)<br />
 - JPegPlugin (5)<br />
@@ -751,14 +754,14 @@ Last update was at Nov 08, 2026 at 22:43:19 UTC
 
 </details>
 
-#### Partially reversed categories (0/733) [0%]
+#### Partially reversed categories (0/736) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/733) [0%]
+#### Not-at-all reversed categories (0/736) [0%]
 
 <details>
 <summary>See list of categories</summary>
