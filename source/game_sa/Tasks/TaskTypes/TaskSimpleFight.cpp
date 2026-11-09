@@ -3,13 +3,42 @@
 #include "TaskSimpleFight.h"
 
 // 0x61C470
-CTaskSimpleFight::CTaskSimpleFight(CEntity* entity, int32 nCommand, uint32 nIdlePeriod) : CTaskSimple() {
-    plugin::CallMethod<0x61C470, CTaskSimpleFight*, CEntity*, int32, uint32>(this, entity, nCommand, nIdlePeriod);
+CTaskSimpleFight::CTaskSimpleFight(CEntity* entity, int32 nCommand, uint32 nIdlePeriod) :
+    CTaskSimple{},
+    m_bIsFinished{false},
+    m_bIsInControl{true},
+    m_bAnimsReferenced{false},
+    m_nRequiredAnimGroup{(AssocGroupId)0x21}, // No group required yet
+    m_nIdlePeriod{(uint16)std::min(nIdlePeriod, 60'000u)},
+    m_nIdleCounter{0},
+    m_nContinueStrike{0},
+    m_nChainCounter{0},
+    m_pTargetEntity{entity},
+    m_pAnim{nullptr},
+    m_pIdleAnim{nullptr},
+    m_nComboSet{-1},
+    m_nCurrentMove{(eFightAttackType)-1},
+    m_nNextCommand{(uint8)nCommand},
+    m_nLastCommand{0}
+{
+    CEntity::SafeRegisterRef(m_pTargetEntity);
 }
 
 // 0x61C530
 CTaskSimpleFight::~CTaskSimpleFight() {
-    plugin::CallMethod<0x61C530, CTaskSimpleFight*>(this);
+    CEntity::SafeCleanUpRef(m_pTargetEntity);
+
+    if (m_pAnim) {
+        m_pAnim->SetDefaultDeleteCallback();
+    }
+    if (m_pIdleAnim) {
+        m_pIdleAnim->SetDefaultDeleteCallback();
+    }
+
+    if (m_bAnimsReferenced && m_nRequiredAnimGroup != (AssocGroupId)0x21) {
+        CAnimManager::RemoveAnimBlockRef(CAnimManager::GetAnimationBlockIndex(m_nRequiredAnimGroup));
+        m_bAnimsReferenced = false;
+    }
 }
 
 // 0x6240B0
@@ -214,6 +243,9 @@ bool CTaskSimpleFight::ProcessPed(CPed* ped) {
 void CTaskSimpleFight::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleFight, 0x86D684, 9);
     RH_ScopedCategory("Tasks/TaskTypes");
+
+    RH_ScopedInstall(Constructor, 0x61C470);
+    RH_ScopedInstall(Destructor, 0x61C530);
 
     RH_ScopedInstall(ControlFight, 0x61C5E0);
     RH_ScopedInstall(IsComboSet, 0x4ABDC0);
