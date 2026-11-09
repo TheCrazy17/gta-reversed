@@ -3352,9 +3352,9 @@ bool IsCharUsingMapAttractor(CPed& ped) {
     return GetPedAttractorManager()->IsPedRegisteredWithEffect(&ped);
 }
 
-// todo: move that to somewhere else
+// The reversed function is CCarEnterExit::ComputeTargetDoorToExit (0x64F110); this only adapts the reference arguments
 eTargetDoor ComputeTargetDoorToExit(const CVehicle& vehicle, const CPed& ped) {
-    return plugin::CallAndReturn<eTargetDoor, 0x64F110, const CVehicle&, const CPed&>(vehicle, ped);
+    return (eTargetDoor)CCarEnterExit::ComputeTargetDoorToExit(&vehicle, &ped);
 }
 
 /*

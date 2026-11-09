@@ -6,6 +6,7 @@ void CTaskComplexPartnerChat::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexPartnerChat, 0x8707C4, 14);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedInstall(Constructor, 0x684290);
+    RH_ScopedVMTInstall(MakeAbortable, 0x682C60);
 }
 
 // 0x684290
@@ -37,7 +38,17 @@ CTaskComplexPartnerChat* CTaskComplexPartnerChat::Constructor(const char* comman
 
 // 0x682C60
 bool CTaskComplexPartnerChat::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event) {
-    return plugin::CallMethodAndReturn<bool, 0x682C60, CTask*, CPed*, int32, const CEvent*>(this, ped, priority, event);
+    // The exe forwards without a null check; the task always has a sub task while it runs.
+    if (!m_pSubTask->MakeAbortable(ped, priority, event)) {
+        return false;
+    }
+
+    // Aborted, so the conversation this task started has to be released for the next one
+    if (m_conversationEnabled && m_pedConversationLoaded) {
+        CAEPedSpeechAudioEntity::ReleasePedConversation();
+        m_pedConversationLoaded = false;
+    }
+    return true;
 }
 
 // 0x684380

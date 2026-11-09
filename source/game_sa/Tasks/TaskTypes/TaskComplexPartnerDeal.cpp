@@ -24,9 +24,10 @@ CTaskComplexPartnerDeal* CTaskComplexPartnerDeal::Constructor(const char* comman
     return this;
 }
 
+// 0x6823B0 (a jump to CTaskComplexPartner::CreateFirstSubTask)
 CTask* CTaskComplexPartnerDeal::CreateFirstSubTask(CPed* ped)
 {
-    return plugin::CallMethodAndReturn<CTask*, 0x6823B0, CTask*, CPed*>(this, ped);
+    return CTaskComplexPartner::CreateFirstSubTask(ped);
 }
 
 // 0x6823C0

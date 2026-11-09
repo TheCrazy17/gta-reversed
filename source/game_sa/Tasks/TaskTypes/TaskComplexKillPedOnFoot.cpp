@@ -16,6 +16,7 @@ void CTaskComplexKillPedOnFoot::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexKillPedOnFoot, 0x86D894, 11);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedInstall(Constructor, 0x620E30);
+    RH_ScopedVMTInstall(MakeAbortable, 0x625E40);
     RH_ScopedInstall(CreateSubTask, 0x625E70);
 }
 
@@ -51,8 +52,11 @@ CTaskComplexKillPedOnFoot* CTaskComplexKillPedOnFoot::Constructor(CPed* target, 
     return this;
 }
 
+// 0x625E40
 bool CTaskComplexKillPedOnFoot::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event) {
-    return plugin::CallMethodAndReturn<bool, 0x625E40, CTaskComplexKillPedOnFoot*, CPed*, eAbortPriority, const CEvent*>(this, ped, priority, event);
+    // The task sets this flag while it runs (bit 22 of the third flag dword, 0x474); leaving the task clears it
+    ped->bDontAcceptIKLookAts = false;
+    return m_pSubTask ? m_pSubTask->MakeAbortable(ped, priority, event) : true;
 }
 
 CTask* CTaskComplexKillPedOnFoot::CreateNextSubTask(CPed* ped) {

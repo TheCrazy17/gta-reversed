@@ -7,6 +7,7 @@ void CTaskComplexWanderStandard::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedInstall(SetNextMinScanTime, 0x66AF60);
+    RH_ScopedInstall(WillChat, 0x66AED0);
 }
 
 // 0x48E4F0
@@ -46,7 +47,13 @@ void CTaskComplexWanderStandard::ScanForStuff(CPed* ped) {
 
 // 0x66AED0
 bool CTaskComplexWanderStandard::WillChat(const CPed& first, const CPed& second) {
-    return plugin::CallMethodAndReturn<bool, 0x66AED0, CTaskComplexWanderStandard*, const CPed&, const CPed&>(this, first, second);
+    // Cops, prostitutes, gang members and the player never chat while wandering
+    for (const CPed* const ped : { &first, &second }) {
+        if (ped->m_nPedType == PED_TYPE_PROSTITUTE || ped->m_nPedType == PED_TYPE_COP || ped->IsPlayer() || ped->IsGangster()) {
+            return false;
+        }
+    }
+    return CPedIntelligence::AreFriends(first, second);
 }
 
 // 0x66AF60

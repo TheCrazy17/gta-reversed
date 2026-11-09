@@ -8,6 +8,7 @@ void CTaskComplexFollowPedFootsteps::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedInstall(Constructor, 0x694E20);
+    RH_ScopedVMTInstall(MakeAbortable, 0x694ED0);
 }
 
 // 0x694E20
@@ -36,8 +37,10 @@ CTaskComplexFollowPedFootsteps::~CTaskComplexFollowPedFootsteps() {
     m_pointRoute = nullptr;
 }
 
+// 0x694ED0
 bool CTaskComplexFollowPedFootsteps::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event) {
-    return plugin::CallMethodAndReturn<bool, 0x694ED0, CTaskComplexFollowPedFootsteps*, CPed*, eAbortPriority, const CEvent*>(this, ped, priority, event);
+    // The exe forwards without a null check; the task always has a sub task while it runs.
+    return m_pSubTask->MakeAbortable(ped, priority, event);
 }
 
 CTask* CTaskComplexFollowPedFootsteps::CreateNextSubTask(CPed* ped) {

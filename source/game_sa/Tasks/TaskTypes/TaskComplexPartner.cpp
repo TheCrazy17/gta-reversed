@@ -1,11 +1,14 @@
 #include "StdInc.h"
 
 #include "TaskComplexPartner.h"
+#include "TaskComplexPartnerChat.h"
+#include "TaskSimpleStandStill.h"
 
 void CTaskComplexPartner::InjectHooks() {
     RH_ScopedVirtualClass(CTaskComplexPartner, 0x870664, 14);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedInstall(Constructor, 0x681E70);
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x681F20);
     RH_ScopedVMTInstall(StreamRequiredAnims, 0x682310);
     RH_ScopedVMTInstall(RemoveStreamedAnims, 0x682370);
 }
@@ -51,8 +54,27 @@ CTask* CTaskComplexPartner::CreateNextSubTask(CPed* ped) {
     return plugin::CallMethodAndReturn<CTask*, 0x683AD0, CTaskComplexPartner*, CPed*>(this, ped);
 }
 
+// 0x681F20
 CTask* CTaskComplexPartner::CreateFirstSubTask(CPed* ped) {
-    return plugin::CallMethodAndReturn<CTask*, 0x681F20, CTaskComplexPartner*, CPed*>(this, ped);
+    // The chat is the only partner task with a conversation. Its extra fields live past this class's size, which
+    // is why the exe checks the task id here and reads them from the derived task directly (this is also the
+    // function CTaskComplexPartnerDeal::CreateFirstSubTask, 0x6823B0, jumps to).
+    if (m_leadSpeaker && m_taskId == TASK_COMPLEX_PARTNER_CHAT) {
+        auto* const chat = static_cast<CTaskComplexPartnerChat*>(this);
+        if (chat->m_conversationEnabled) {
+            if (CAEPedSpeechAudioEntity::RequestPedConversation(ped, m_partner)) {
+                chat->m_pedConversationLoaded = true;
+            } else if (chat->field_75) {
+                // No conversation could be loaded, carry on without one
+                chat->m_conversationEnabled = false;
+            } else {
+                return nullptr;
+            }
+        }
+    }
+
+    ped->StopPlayingHandSignal();
+    return new CTaskSimpleStandStill(50, false, false, 8.0f);
 }
 
 CTask* CTaskComplexPartner::ControlSubTask(CPed* ped) {

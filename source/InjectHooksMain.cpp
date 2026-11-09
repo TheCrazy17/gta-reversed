@@ -1316,7 +1316,7 @@ void InjectHooksMain() {
         CTaskComplexEnterCar::InjectHooks();
         // CTaskSimpleTogglePedThreatScanner::InjectHooks();
         CTaskComplexUseGoggles::InjectHooks();
-        // CTaskComplexCrossRoadLookAndAchieveHeading::InjectHooks();
+        CTaskComplexCrossRoadLookAndAchieveHeading::InjectHooks();
         CTaskComplexGoToPointAndStandStill::InjectHooks();
         CTaskSimpleAchieveHeading::InjectHooks();
         CTaskSimpleGiveCPR::InjectHooks();
@@ -1331,7 +1331,7 @@ void InjectHooksMain() {
         CTaskSimpleThrowProjectile::InjectHooks();
         CTaskSimpleGoToPoint::InjectHooks();
         // CTaskComplexWanderMedic::InjectHooks();
-        // CTaskSimpleCarDriveTimed::InjectHooks();
+        CTaskSimpleCarDriveTimed::InjectHooks();
         // CTaskComplexDriveWander::InjectHooks();
         CTaskSimpleStealthKill::InjectHooks();
         // CTaskSimpleCarSetPedOut::InjectHooks();
@@ -1487,7 +1487,7 @@ void InjectHooksMain() {
         FxInterpInfo32_c::InjectHooks();
         FxInterpInfoU255_c::InjectHooks();
         FxInterpInfo255_c::InjectHooks();
-        // ReversibleHooks::Install("FxFrustumInfo_c", "IsCollision", 0x4AA030, &FxFrustumInfo_c::IsCollision);
+        FxFrustumInfo_c::InjectHooks();
         FxEmitterPrt_c::InjectHooks();
         FxEmitterBP_c::InjectHooks();
         FxEmitter_c::InjectHooks();
