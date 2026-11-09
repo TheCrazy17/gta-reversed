@@ -14,5 +14,11 @@ public:
     eEventType GetEventType() const override { return EVENT_ACQUAINTANCE_PED_RESPECT; }
     int32 GetEventPriority() const override { return 23; }
     CEventEditableResponse* CloneEditable() const noexcept override { return new CEventAcquaintancePedRespect(m_AcquaintancePed); }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventAcquaintancePedRespect* Constructor(CPed* ped) { this->CEventAcquaintancePedRespect::CEventAcquaintancePedRespect(ped); return this; }
+    CEventAcquaintancePedRespect* Destructor() { this->CEventAcquaintancePedRespect::~CEventAcquaintancePedRespect(); return this; }
 };
 VALIDATE_SIZE(CEventAcquaintancePedRespect, 0x18);

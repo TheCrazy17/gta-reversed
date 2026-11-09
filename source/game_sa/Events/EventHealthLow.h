@@ -6,7 +6,7 @@
 #include "Ped.h"
 
 
-class CEventHealthLow : public CEventEditableResponse {
+class NOTSA_EXPORT_VTABLE CEventHealthLow : public CEventEditableResponse {
 public:
     CEventHealthLow() = default;
     ~CEventHealthLow() override = default;
@@ -16,5 +16,10 @@ public:
     int32 GetLifeTime() override { return 0; }
     bool AffectsPed(CPed* ped) override { return ped->IsAlive(); };
     CEventEditableResponse* CloneEditable() const noexcept override { return new CEventHealthLow(); }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventHealthLow* Constructor() { this->CEventHealthLow::CEventHealthLow(); return this; }
 };
 VALIDATE_SIZE(CEventHealthLow, 0x14);

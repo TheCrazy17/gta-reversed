@@ -14,5 +14,10 @@ public:
     int32 GetLifeTime() override { return 0; }
     bool AffectsPed(CPed* ped) override { return ped->IsAlive(); }
     CEventEditableResponse* CloneEditable() const noexcept override { return new CEventLowAngerAtPlayer(); }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventLowAngerAtPlayer* Constructor() { this->CEventLowAngerAtPlayer::CEventLowAngerAtPlayer(); return this; }
 };
 VALIDATE_SIZE(CEventLowAngerAtPlayer, 0x14);

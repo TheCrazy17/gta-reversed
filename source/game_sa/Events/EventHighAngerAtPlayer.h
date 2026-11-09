@@ -6,7 +6,7 @@
 #include "Ped.h"
 
 
-class CEventHighAngerAtPlayer : public CEventEditableResponse {
+class NOTSA_EXPORT_VTABLE CEventHighAngerAtPlayer : public CEventEditableResponse {
 public:
     CEventHighAngerAtPlayer() = default;
     ~CEventHighAngerAtPlayer() override = default;
@@ -16,5 +16,10 @@ public:
     int32 GetLifeTime() override { return 0; }
     bool AffectsPed(CPed* ped) override { return ped->IsAlive(); };
     CEventEditableResponse* CloneEditable() const noexcept override { return new CEventHighAngerAtPlayer(); }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventHighAngerAtPlayer* Constructor() { this->CEventHighAngerAtPlayer::CEventHighAngerAtPlayer(); return this; }
 };
 VALIDATE_SIZE(CEventHighAngerAtPlayer, 0x14);

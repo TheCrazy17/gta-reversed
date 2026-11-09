@@ -20,5 +20,11 @@ public:
     int32      GetLifeTime()               override { return 0; }
     CEvent*    Clone() const noexcept                     override { return new CEventCreatePartnerTask(m_partnerType, m_partner, m_isLeadSpeaker, m_meetDist); }
     bool       AffectsPed(CPed* ped)       override { return true; }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventCreatePartnerTask* Constructor(int32 type, CPed* partner, bool isLeadSpeaker, float meetDist) { this->CEventCreatePartnerTask::CEventCreatePartnerTask(type, partner, isLeadSpeaker, meetDist); return this; }
+    CEventCreatePartnerTask* Destructor() { this->CEventCreatePartnerTask::~CEventCreatePartnerTask(); return this; }
 };
 VALIDATE_SIZE(CEventCreatePartnerTask, 0x1C);

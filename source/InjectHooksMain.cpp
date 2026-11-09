@@ -176,6 +176,16 @@
 #include "AttractorScanner.h"
 #include "TaskSimpleGangDriveBy.h"
 #include "PedSaveStructure.h"
+#include "EventPotentialGetRunOver.h"
+#include "EventCreatePartnerTask.h"
+#include "EventVehicleThreat.h"
+#include "EventLowAngerAtPlayer.h"
+#include "EventHighAngerAtPlayer.h"
+#include "EventHealthReallyLow.h"
+#include "EventHealthLow.h"
+#include "EventAcquaintancePedDislike.h"
+#include "EventAcquaintancePedLike.h"
+#include "EventAcquaintancePedRespect.h"
 #include "EventFireNearby.h"
 #include "EventSpecial.h"
 #include "EventInWater.h"
@@ -679,6 +689,16 @@ void InjectHooksMain() {
     CKeyboardState::InjectHooks();
     CMouseControllerState::InjectHooks();
     CRect::InjectHooks();
+    CEventPotentialGetRunOver::InjectHooks();
+    CEventCreatePartnerTask::InjectHooks();
+    CEventVehicleThreat::InjectHooks();
+    CEventLowAngerAtPlayer::InjectHooks();
+    CEventHighAngerAtPlayer::InjectHooks();
+    CEventHealthReallyLow::InjectHooks();
+    CEventHealthLow::InjectHooks();
+    CEventAcquaintancePedDislike::InjectHooks();
+    CEventAcquaintancePedLike::InjectHooks();
+    CEventAcquaintancePedRespect::InjectHooks();
     CEventFireNearby::InjectHooks();
     CEventSpecial::InjectHooks();
     CEventInWater::InjectHooks();
