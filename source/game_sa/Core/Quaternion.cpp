@@ -164,6 +164,8 @@ void CQuaternion::Set(const RwMatrix& m) {
         y               = 0.5f * root;
         const auto s    = 0.5f / root;
         w               = (m.at.x - m.right.z) * s;
+        // The exe subtracts here (0x59C4CA) where the textbook conversion adds (up.x + right.y); this is the one case
+        // in which Set(matrix) does not undo Get(matrix), and it is kept because the exe behaves that way
         x               = (m.up.x - m.right.y) * s;
         z               = (m.at.y + m.up.z) * s;
         return;
