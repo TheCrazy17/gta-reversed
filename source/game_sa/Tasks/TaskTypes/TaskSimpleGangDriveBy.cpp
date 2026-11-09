@@ -2,6 +2,16 @@
 
 #include "TaskSimpleGangDriveBy.h"
 
+void CTaskSimpleGangDriveBy::InjectHooks() {
+    RH_ScopedVirtualClass(CTaskSimpleGangDriveBy, 0x86D944, 9);
+    RH_ScopedCategory("Tasks/TaskTypes");
+
+    RH_ScopedInstall(Constructor, 0x6217D0);
+    RH_ScopedInstall(Destructor, 0x6218C0);
+    RH_ScopedVMTInstall(Clone, 0x6236D0);
+}
+
+// 0x6217D0
 CTaskSimpleGangDriveBy::CTaskSimpleGangDriveBy(CEntity* target, const CVector* targetPos, float abortRange, int8 frequencyPercentage, eDrivebyStyle drivebyStyle, bool seatRHS) {
     m_bSeatRHS             = seatRHS;
     m_nDrivebyStyle        = drivebyStyle;
@@ -31,6 +41,7 @@ CTaskSimpleGangDriveBy::CTaskSimpleGangDriveBy(CEntity* target, const CVector* t
     }
 }
 
+// 0x6218C0
 CTaskSimpleGangDriveBy::~CTaskSimpleGangDriveBy()
 {
     if (m_bAnimsReferenced)
@@ -42,8 +53,11 @@ CTaskSimpleGangDriveBy::~CTaskSimpleGangDriveBy()
     CEntity::SafeCleanUpRef(m_pTargetEntity);
 }
 
+// 0x6236D0
 CTask* CTaskSimpleGangDriveBy::Clone() const {
-    return plugin::CallMethodAndReturn<CTask*, 0x6236D0, const CTask*>(this);
+    auto* const clone = new CTaskSimpleGangDriveBy(m_pTargetEntity, &m_vecCoords, m_fAbortRange, m_nFrequencyPercentage, m_nDrivebyStyle, m_bSeatRHS);
+    clone->m_bFromScriptCommand = m_bFromScriptCommand; // The only member the constructor does not take
+    return clone;
 }
 
 bool CTaskSimpleGangDriveBy::MakeAbortable(CPed* ped, eAbortPriority priority, const CEvent* event)

@@ -83,6 +83,32 @@ void MakeLowerCase(char* str) {
     }
 }
 
+// 0x719240
+void GxtCharStripTags(GxtChar* str) {
+    // Removes every `~x~` control code, and a bare `~~` pair, from the string in place. The exe works on a copy of the
+    // string, but the write position never gets ahead of the read position, so doing it in place gives the same result.
+    // Its search for the closing tilde has no check for the end of the string; this one stops at it
+    const GxtChar* in  = str;
+    GxtChar*       out = str;
+    while (*in) {
+        if (*in != '~') {
+            *out++ = *in++;
+            continue;
+        }
+
+        in++; // Opening tilde
+        if (*in != '~') {
+            while (*in && *in != '~') {
+                in++;
+            }
+        }
+        if (*in) {
+            in++; // Closing tilde
+        }
+    }
+    *out = '\0';
+}
+
 // 0x69F910
 void TextCopy(GxtChar* dst, const GxtChar* src) {
     while (*src) {

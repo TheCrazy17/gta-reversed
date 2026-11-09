@@ -322,7 +322,7 @@ void CStats::BuildStatLine(const char* labelKey, void* pValue1, int32 metrics, v
 
     // Prepare the label (Without any of the `~x~` control codes) and the value
     GxtCharStrcpy(gGxtString, TheText.Get(labelKey));
-    plugin::Call<0x719240, GxtChar*>(gGxtString); // Removes the control codes
+    GxtCharStripTags(gGxtString); // Removes the control codes
     AsciiToGxtChar(gString2, gGxtString2);
 }
 
@@ -716,7 +716,7 @@ int32 CStats::ConstructStatLine(int32 lineIdx, uint8 listId) {
     // The label is the text of the stat, the value is what's in `gString2`
     const auto ShowLine = [] {
         GxtCharStrcpy(gGxtString, TheText.Get(gString));
-        plugin::Call<0x719240, GxtChar*>(gGxtString); // Removes the control codes
+        GxtCharStripTags(gGxtString); // Removes the control codes
         AsciiToGxtChar(gString2, gGxtString2);
     };
     const auto ShowFormatted = [&](const char* format, auto... args) {

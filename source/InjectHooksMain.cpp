@@ -172,6 +172,10 @@
 #include "SimpleTransform.h"
 #include "TaskCategories.h"
 #include "PlayerRelationshipRecorder.h"
+#include "EventSource.h"
+#include "AttractorScanner.h"
+#include "TaskSimpleGangDriveBy.h"
+#include "PedSaveStructure.h"
 #include "LoadingScreen.h"
 #include "Securom.h"
 #include "GridRef.h"
@@ -662,6 +666,10 @@ void InjectHooksMain() {
     CSimpleTransform::InjectHooks();
     CTaskCategories::InjectHooks();
     CPlayerRelationshipRecorder::InjectHooks();
+    CEventSource::InjectHooks();
+    CAttractorScanner::InjectHooks();
+    CTaskSimpleGangDriveBy::InjectHooks();
+    CPedSaveStructure::InjectHooks();
 
     /******* Don't hook these, performance is bad ********
     /* CVector::InjectHooks();

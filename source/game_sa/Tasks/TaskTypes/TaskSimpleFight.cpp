@@ -50,6 +50,33 @@ const CMeleeInfo& CTaskSimpleFight::CurrentComboData() const {
     return m_aComboData[std::max(0, m_nComboSet - MELEE_COMBO_UNARMED_1)];
 }
 
+// 0x5BD360
+uint8 CTaskSimpleFight::GetHitLevel(const char* str) {
+    // Only the first character is read, so the two letter names the exe also compares against afterwards
+    // (0x484C, 0x4C4C and 0x474C, which could never match a single byte) always end up as the last level
+    switch (*str) {
+    case 'H': return 0;
+    case 'L': return 1;
+    case 'G': return 2;
+    case 'B': return 3;
+    default:  return 7;
+    }
+}
+
+// 0x5BD3B0
+int16 CTaskSimpleFight::GetHitSound(int32 id) {
+    switch (id) {
+    case 1:  return 0x3D;
+    case 3:  return 0x3F;
+    case 4:  return 0x40;
+    case 5:  return 0x41;
+    case 6:  return 0x42;
+    case 7:  return 0x43;
+    case 8:  return 0x44;
+    default: return 0x3E; // 2 and anything out of range
+    }
+}
+
 // 0x5BEDC0
 void CTaskSimpleFight::LoadMeleeData() {
     ZoneScoped;
@@ -58,9 +85,6 @@ void CTaskSimpleFight::LoadMeleeData() {
 
     // The three values for every level of the fight, read from the first section of the file
     static auto& s_Levels = StaticRef<std::array<CVector, 7>>(0xC177D0);
-    // Not hooked
-    const auto GetHitLevel = [](const char* str) { return plugin::CallAndReturn<uint8, 0x5BD360, const char*>(str); };
-    const auto GetHitSound = [](int32 id) { return plugin::CallAndReturn<int16, 0x5BD3B0, int32>(id); };
 
     // Everything has a default in case the file is missing something
     for (auto& combo : m_aComboData) {
@@ -196,6 +220,8 @@ void CTaskSimpleFight::InjectHooks() {
     RH_ScopedInstall(IsHitComboSet, 0x4ABDF0);
     RH_ScopedInstall(GetComboAnimGroupID, 0x4ABDA0);
     RH_ScopedInstall(LoadMeleeData, 0x5BEDC0);
+    RH_ScopedInstall(GetHitLevel, 0x5BD360);
+    RH_ScopedInstall(GetHitSound, 0x5BD3B0);
 }
 
 CTaskSimpleFight* CTaskSimpleFight::Constructor(CEntity* entity, int32 nCommand, uint32 nIdlePeriod) {

@@ -138,6 +138,7 @@ public:
     // returns true if ped type is PED_TYPE_CIVMALE 
     static bool CanJeerAtStripper(eModelID modelIndex);
     static void PlaceGangMembers(ePedType pedType, uint32 numOfPeds, const CVector& posn);
+    static int32 ChooseGangSize();
 
     static void LoadSpecificDriverModelsForCar(eModelID carModelIndex);
     static void  RemoveSpecificDriverModelsForCar(eModelID carModelIndex);

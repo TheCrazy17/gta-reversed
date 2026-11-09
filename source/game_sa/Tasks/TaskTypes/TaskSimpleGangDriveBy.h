@@ -64,6 +64,19 @@ public:
     CTask* Clone() const override;
     bool MakeAbortable(CPed* ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent* event = nullptr) override;
     bool ProcessPed(CPed* ped) override;
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+
+    CTaskSimpleGangDriveBy* Constructor(CEntity* target, const CVector* targetPos, float abortRange, int8 frequencyPercentage, eDrivebyStyle drivebyStyle, bool seatRHS) {
+        this->CTaskSimpleGangDriveBy::CTaskSimpleGangDriveBy(target, targetPos, abortRange, frequencyPercentage, drivebyStyle, seatRHS);
+        return this;
+    }
+    CTaskSimpleGangDriveBy* Destructor() {
+        this->CTaskSimpleGangDriveBy::~CTaskSimpleGangDriveBy();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskSimpleGangDriveBy, 0x44);
 

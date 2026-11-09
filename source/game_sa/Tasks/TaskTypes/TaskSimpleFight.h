@@ -93,8 +93,8 @@ public:
     void GetComboType(char*);
     AssocGroupId GetComboAnimGroupID();
     const CMeleeInfo& CurrentComboData() const;
-    void GetHitLevel(const char*);
-    void GetHitSound(int32);
+    static uint8 GetHitLevel(const char* str);
+    static int16 GetHitSound(int32 id);
     void GetRange();
     void GetStrikeDamage(CPed* ped);
 

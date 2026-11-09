@@ -38,6 +38,7 @@ void InjectCommonHooks() {
     RH_ScopedGlobalInstall(GxtCharStrcat, 0x718630);
     RH_ScopedGlobalInstall(GxtCharStrcpy, 0x718660);
     RH_ScopedGlobalInstall(TextCopy, 0x69F910);
+    RH_ScopedGlobalInstall(GxtCharStripTags, 0x719240);
 }
 
 // 0x54ECE0

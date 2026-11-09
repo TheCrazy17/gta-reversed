@@ -48,6 +48,13 @@ GxtChar* GxtCharStrcat(GxtChar* dst, const GxtChar* src);
 uint32 GxtCharStrlen(const GxtChar* str);
 
 /**
+ * Remove the `~x~` control codes from a null terminated GXT string, in place
+ *
+ * @param   str    pointer to the null-terminated string
+ */
+void GxtCharStripTags(GxtChar* str);
+
+/**
  * Lowercase null terminated string
  * NOTE: this function does NOT use locale.
  *

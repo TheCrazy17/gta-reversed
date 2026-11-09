@@ -47,6 +47,7 @@ void CPopulation::InjectHooks() {
     RH_ScopedCategoryGlobal();
 
     RH_ScopedGlobalInstall(FindPedRaceFromName, 0x5B6D40);
+    RH_ScopedGlobalInstall(ChooseGangSize, 0x610DB0);
 
     RH_ScopedGlobalInstall(LoadPedGroups, 0x5BCFE0);
     RH_ScopedGlobalInstall(LoadCarGroups, 0x5BD1A0);
@@ -595,6 +596,16 @@ bool CPopulation::CanSolicitPlayerInCar(eModelID modelIndex) {
 // 0x6117B0
 bool CPopulation::CanJeerAtStripper(eModelID modelIndex) {
     return CModelInfo::GetPedModelInfo(modelIndex)->GetPedType() == PED_TYPE_CIVMALE;
+}
+
+// 0x610DB0
+int32 CPopulation::ChooseGangSize() {
+    // The range is kept in two globals of the exe (1 and 5 as shipped), the upper end being exclusive.
+    // The product is taken in double precision, as the x87 code does, before it is cut down to an integer
+    static auto& s_MinGangSize = StaticRef<int32>(0x86C6C4);
+    static auto& s_MaxGangSize = StaticRef<int32>(0x86C6C8);
+    const auto random = rand() & 0xFFFF;
+    return (int32)((double)random * (double)(1.0f / 32768.0f) * (double)(s_MaxGangSize - s_MinGangSize)) + s_MinGangSize;
 }
 
 // 0x6117D0
@@ -1666,7 +1677,7 @@ bool CPopulation::AddToPopulation(float arg0, float arg1, float arg2, float arg3
             type = m_AllRandomPedsThisType;
         }
         if (type >= 7 && type <= 16) {
-            count = plugin::CallAndReturn<int32, 0x610DB0>();
+            count = ChooseGangSize();
         }
     } else if (!retval && !forceCop) {
         return retval;
