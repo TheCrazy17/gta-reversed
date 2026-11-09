@@ -410,7 +410,10 @@ void CCutsceneMgr::LoadCutsceneData_loading() {
 
     // Finally, process attachments
     for (const auto& v : ms_iAttachObjectToBone | rngv::take(ms_numAttachObjectToBones)) {
-        AttachObjectToBone(ms_pCutsceneObjects[v.m_nCutscenePedObjectId], ms_pCutsceneObjects[v.m_nCutscenePedObjectId], v.m_nBoneId);
+        // The object that gets attached is the one with the attachment id and the bone belongs to the ped (0x5B1390..0x5B13C7).
+        // This used to pass the ped for both, so the held object (the suitcase of the opening mission) was never attached
+        // and stayed where its animation left it, at the wrong position and rotation
+        AttachObjectToBone(ms_pCutsceneObjects[v.m_nCutsceneAttachmentObjectId], ms_pCutsceneObjects[v.m_nCutscenePedObjectId], v.m_nBoneId);
     }
 }
 

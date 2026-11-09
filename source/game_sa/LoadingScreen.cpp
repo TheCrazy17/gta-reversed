@@ -350,8 +350,10 @@ void CLoadingScreen::DoPCScreenChange(bool isLastOne) {
         m_FadeAlpha = (uint8)alpha;
 
         if (isLastOne || m_bFadeInNextSplashFromBlack) {
-            float amp = (isLastOne && m_bFadeOutCurrSplashToBlack)
-                ? ((255.0f - alpha) / 25.0f)
+            // The exe scales by 1 / 255 (0x590BA7) and only looks at the fade out flag (0x590B8E); dividing by 25 made the
+            // volume ten times too high at the start of the fade out, so the tune did not fade away with the screen
+            const float amp = m_bFadeOutCurrSplashToBlack
+                ? ((255.0f - alpha) * (1.0f / 255.0f))
                 : 1.0f;
             AudioEngine.ServiceLoadingTune(amp);
         }
