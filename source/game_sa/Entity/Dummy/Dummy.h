@@ -18,6 +18,9 @@ public:
 
 public:
     static void InjectHooks();
+
+private:
+    CDummy* Constructor() { this->CDummy::CDummy(); return this; } // Wrapper for the hook
 };
 VALIDATE_SIZE(CDummy, 0x38);
 

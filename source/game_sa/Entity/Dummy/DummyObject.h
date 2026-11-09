@@ -18,6 +18,11 @@ public:
 
     CObject* CreateObject();
     void     UpdateFromObject(CObject* obj);
+
+private:
+    // Wrappers for the hooks of the constructors
+    CDummyObject* Constructor0() { this->CDummyObject::CDummyObject(); return this; }
+    CDummyObject* Constructor1(CObject* obj) { this->CDummyObject::CDummyObject(obj); return this; }
 };
 
 VALIDATE_SIZE(CDummyObject, 0x38);

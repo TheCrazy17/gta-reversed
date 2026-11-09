@@ -7,6 +7,8 @@ void CDummyObject::InjectHooks() {
     RH_ScopedVirtualClass(CDummyObject, 0x866E78, 22);
     RH_ScopedCategory("Entity/Dummy");
 
+    RH_ScopedInstall(Constructor0, 0x59EA00);
+    RH_ScopedInstall(Constructor1, 0x59EA20);
     RH_ScopedInstall(CreateObject, 0x59EAC0);
     RH_ScopedInstall(UpdateFromObject, 0x59EB70);
 }
@@ -18,7 +20,9 @@ CDummyObject::CDummyObject() : CDummy() {
 
 // 0x59EA20
 CDummyObject::CDummyObject(CObject* obj) : CDummy() {
-    CEntity::SetModelIndexNoCreate(GetModelIndex());
+    // The exe reads the model index from the object the dummy is made from (0x59EA4D). This used to read the one of the
+    // dummy that is being built, which has no model yet, so the dummy ended up without the model of its object
+    CEntity::SetModelIndexNoCreate(obj->GetModelIndex());
     if (obj->GetRwObject())
         CEntity::AttachToRwObject(obj->GetRwObject(), true);
 

@@ -17,6 +17,8 @@ public:
     CVector m_vPosn;
     float m_fHeading;
 
+    static void InjectHooks();
+
     void UpdateRwMatrix(RwMatrix* out);
     void Invert(const CSimpleTransform& base);
     void UpdateMatrix(class CMatrix* out);

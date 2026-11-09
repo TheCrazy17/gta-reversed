@@ -9,6 +9,15 @@
 
 #include "SimpleTransform.h"
 
+void CSimpleTransform::InjectHooks() {
+    RH_ScopedClass(CSimpleTransform);
+    RH_ScopedCategory("Core");
+
+    RH_ScopedInstall(UpdateRwMatrix, 0x54EF40);
+    RH_ScopedInstall(Invert, 0x54EF90);
+    RH_ScopedInstall(UpdateMatrix, 0x54F1B0);
+}
+
 // 0x54EF40
 void CSimpleTransform::UpdateRwMatrix(RwMatrix* out)
 {

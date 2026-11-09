@@ -169,6 +169,9 @@
 #include "ScriptResourceManager.h"
 #include "PedAttractorManager.h"
 #include "Attractors/PedAttractorPedPlacer.h"
+#include "SimpleTransform.h"
+#include "TaskCategories.h"
+#include "PlayerRelationshipRecorder.h"
 #include "LoadingScreen.h"
 #include "Securom.h"
 #include "GridRef.h"
@@ -656,6 +659,9 @@ void InjectHooksMain() {
     CKeyboardState::InjectHooks();
     CMouseControllerState::InjectHooks();
     CRect::InjectHooks();
+    CSimpleTransform::InjectHooks();
+    CTaskCategories::InjectHooks();
+    CPlayerRelationshipRecorder::InjectHooks();
 
     /******* Don't hook these, performance is bad ********
     /* CVector::InjectHooks();

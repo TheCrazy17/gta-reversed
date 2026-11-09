@@ -20,6 +20,8 @@ public:
     std::array<PlayerRelationship, 16> m_Relationships;
 
 public:
+    static void InjectHooks();
+
     CPlayerRelationshipRecorder();
     ~CPlayerRelationshipRecorder();
 
@@ -28,6 +30,11 @@ public:
     void AddRelationship(const CPed* ped, int32 value);
     int32 GetRelationshipWithPlayer(const CPed* ped);
     void RecordRelationshipWithPlayer(const CPed* ped);
+
+private:
+    // Wrappers for the hooks of the constructor and the destructor
+    CPlayerRelationshipRecorder* Constructor() { this->CPlayerRelationshipRecorder::CPlayerRelationshipRecorder(); return this; }
+    CPlayerRelationshipRecorder* Destructor() { this->CPlayerRelationshipRecorder::~CPlayerRelationshipRecorder(); return this; }
 };
 
 CPlayerRelationshipRecorder& GetPlayerRelationshipRecorder();

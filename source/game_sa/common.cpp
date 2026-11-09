@@ -32,6 +32,12 @@ void InjectCommonHooks() {
     RH_ScopedGlobalInstall(LittleTest, 0x541330);
     RH_ScopedGlobalInstall(DoesInfiniteLineTouchScreen, 0x71DB80);
     RH_ScopedGlobalInstall(IsPointInsideLine, 0x71E050);
+    RH_ScopedGlobalInstall(TransformPoint, 0x54ECE0);
+    RH_ScopedGlobalOverloadedInstall(TransformVectors, "simple", 0x54EE30, void (*)(RwV3d*, int32, const CSimpleTransform&, const RwV3d*));
+    RH_ScopedGlobalInstall(TransformPoints, 0x54EEF0);
+    RH_ScopedGlobalInstall(GxtCharStrcat, 0x718630);
+    RH_ScopedGlobalInstall(GxtCharStrcpy, 0x718660);
+    RH_ScopedGlobalInstall(TextCopy, 0x69F910);
 }
 
 // 0x54ECE0
@@ -55,8 +61,14 @@ void TransformVectors(RwV3d* vecsOut, int32 numVectors, const CMatrix& matrix, c
 
 // 0x54EE30
 void TransformVectors(RwV3d* vecsOut, int32 numVectors, const CSimpleTransform& transform, const RwV3d* vecsIn) {
+    // Vectors are only rotated by the heading; unlike TransformPoint the position of the transform is NOT added
+    // (this used to call TransformPoint, which does add it) and z is copied through. The statements keep the exe's
+    // order, which matters when vecsOut and vecsIn are the same array: y reads the x that has just been written
+    const auto cos = std::cos(transform.m_fHeading), sin = std::sin(transform.m_fHeading);
     for (auto i = 0; i < numVectors; i++) {
-        TransformPoint(*vecsOut++, transform, *vecsIn++);
+        vecsOut[i].x = cos * vecsIn[i].x - sin * vecsIn[i].y;
+        vecsOut[i].y = sin * vecsIn[i].x + cos * vecsIn[i].y;
+        vecsOut[i].z = vecsIn[i].z;
     }
 }
 

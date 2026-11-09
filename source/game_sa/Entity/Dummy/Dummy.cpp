@@ -6,6 +6,9 @@ void CDummy::InjectHooks() {
     RH_ScopedVirtualClass(CDummy, 0x8638C0, 22);
     RH_ScopedCategory("Entity/Dummy");
 
+    RH_ScopedInstall(operator new, 0x5326E0);
+    RH_ScopedInstall(operator delete, 0x5326F0);
+    RH_ScopedInstall(Constructor, 0x532540);
     RH_ScopedGlobalInstall(IsDummyPointerValid, 0x532730);
 }
 
