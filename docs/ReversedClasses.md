@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 01:44:22 UTC
-(Triggered by commit [0760518d](https://github.com/TheCrazy17/gta-reversed/commit/0760518d))
+Last update was at Nov 09, 2026 at 02:03:07 UTC
+(Triggered by commit [20ae44e8](https://github.com/TheCrazy17/gta-reversed/commit/20ae44e8))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8530 out of 8530 functions done in 749 categories)
+## Stats (8556 out of 8556 functions done in 756 categories)
 
-#### Completely reversed categories (749/749) [100%]
+#### Completely reversed categories (756/756) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -274,6 +274,13 @@ Last update was at Nov 09, 2026 at 01:44:22 UTC
 - CBuilding (2)<br />
 - CAnimatedBuilding (3)<br />
 - CGroupEventHandler (32)<br />
+- CEventFireNearby (4)<br />
+- CEventSpecial (3)<br />
+- CEventInWater (4)<br />
+- CEventSexyVehicle (4)<br />
+- CEventSexyPed (4)<br />
+- CEventRevived (3)<br />
+- CEventChatPartner (4)<br />
 - CEventGotKnockedOverByCar (4)<br />
 - CEventGunAimedAt (6)<br />
 - CEventPedToFlee (3)<br />
@@ -767,14 +774,14 @@ Last update was at Nov 09, 2026 at 01:44:22 UTC
 
 </details>
 
-#### Partially reversed categories (0/749) [0%]
+#### Partially reversed categories (0/756) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/749) [0%]
+#### Not-at-all reversed categories (0/756) [0%]
 
 <details>
 <summary>See list of categories</summary>

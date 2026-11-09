@@ -21005,6 +21005,136 @@
     "IsReversed": true
   },
   {
+    "Category": "CEventFireNearby",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventFireNearby",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventFireNearby",
+    "Name": "TakesPriorityOver",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventFireNearby",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSpecial",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSpecial",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSpecial",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventInWater",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventInWater",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventInWater",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventInWater",
+    "Name": "TakesPriorityOver",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyVehicle",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyVehicle",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyVehicle",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyVehicle",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyPed",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyPed",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyPed",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventSexyPed",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventRevived",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventRevived",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventRevived",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventChatPartner",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventChatPartner",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventChatPartner",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventChatPartner",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
     "Category": "CEventGotKnockedOverByCar",
     "Name": "Constructor",
     "IsReversed": true
