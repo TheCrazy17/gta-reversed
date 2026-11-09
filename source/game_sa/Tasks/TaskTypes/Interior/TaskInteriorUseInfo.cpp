@@ -5,6 +5,7 @@
 #include "Interior/InteriorInfo_t.h"
 #include "TaskInteriorGoToInfo.h"
 #include "TaskInteriorLieInBed.h"
+#include "TaskInteriorSitInChair.h"
 #include "TaskInteriorSitAtDesk.h"
 #include "TaskInteriorShopKeeper.h"
 #include "Interior/InteriorManager_c.h"
@@ -73,12 +74,8 @@ CTask* CTaskInteriorUseInfo::CreateNextSubTask(CPed* ped) {
             return new CTaskInteriorLieInBed{ m_Dur, m_IntInfo, false, m_bDoInstantly };
         case eInteriorInfoType::UNK_4:
             return new CTaskInteriorLieInBed{ m_Dur, m_IntInfo, true, m_bDoInstantly };
-        case eInteriorInfoType::UNK_1: {
-            // No class for this one yet, so build it with the original constructor
-            const auto task = (CTask*)CTask::operator new(0x2C);
-            plugin::CallMethod<0x675C30, CTask*, int32, InteriorInfo_t*, bool>(task, m_Dur, m_IntInfo, m_bDoInstantly);
-            return task;
-        }
+        case eInteriorInfoType::UNK_1:
+            return new CTaskInteriorSitInChair{ m_Dur, m_IntInfo, m_bDoInstantly };
         case eInteriorInfoType::UNK_2:
             return new CTaskSimpleStandStill{ 9999999, false, false, 8.0f };
         case eInteriorInfoType::UNK_5:

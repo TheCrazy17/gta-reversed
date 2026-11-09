@@ -505,8 +505,7 @@ void CPlayerInfo::ProcessEnterExitVehicle(uint32 playerIndex, CPad* pad) {
         if (auto* const task = taskMgr.GetActiveTask(); task && !task->MakeAbortable(ped, ABORT_PRIORITY_URGENT, nullptr)) {
             return;
         }
-        auto* const task = (CTaskComplexGoPickUpEntity*)CTask::operator new(sizeof(CTaskComplexGoPickUpEntity));
-        plugin::CallMethod<0x6919C0, CTaskComplexGoPickUpEntity*, CEntity*, int32>(task, objectToSteal, 0x51);
+        auto* const task = new CTaskComplexGoPickUpEntity{ objectToSteal, (AssocGroupId)0x51 };
         CEventScriptCommand event{ 3, task, false };
         ped->GetIntelligence()->m_eventGroup.Add(&event, false);
         return;

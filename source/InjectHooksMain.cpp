@@ -348,6 +348,7 @@
 #include "TaskSimpleCarSetPedInAsPassenger.h"
 #include "TaskComplexDriveFireTruck.h"
 #include "Interior/TaskInteriorLieInBed.h"
+#include "Interior/TaskInteriorSitInChair.h"
 #include "TaskSimpleSwim.h"
 #include "TaskComplexWalkRoundObject.h"
 #include "TaskSimplePause.h"
@@ -1053,7 +1054,7 @@ void InjectHooksMain() {
             CTaskInteriorLieInBed::InjectHooks();
             CTaskInteriorShopKeeper::InjectHooks();
             CTaskInteriorSitAtDesk::InjectHooks();
-        // CTaskInteriorSitInChair::InjectHooks();
+            CTaskInteriorSitInChair::InjectHooks();
             CTaskInteriorUseInfo::InjectHooks();
         };
 
@@ -1288,7 +1289,7 @@ void InjectHooksMain() {
         CTaskSimplePlayerOnFoot::InjectHooks();
         CTaskComplexFollowPedFootsteps::InjectHooks();
         CTaskComplexGetUpAndStandStill::InjectHooks();
-        // CTaskComplexGoPickUpEntity::InjectHooks();
+        CTaskComplexGoPickUpEntity::InjectHooks();
         CTaskSimpleDie__InjectHooks();
         CTaskSimpleDuck::InjectHooks();
         CTaskComplexPolicePursuit::InjectHooks();
