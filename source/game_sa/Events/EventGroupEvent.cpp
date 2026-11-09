@@ -2,6 +2,18 @@
 
 #include "EventGroupEvent.h"
 
+void CEventGroupEvent::InjectHooks() {
+    RH_ScopedVirtualClass(CEventGroupEvent, 0x85AE48, 16);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4ADFD0);
+    RH_ScopedInstall(Destructor, 0x4AE070);
+    RH_ScopedVMTInstall(Clone, 0x4B6EE0);
+    RH_ScopedVMTInstall(AffectsPedGroup, 0x4AE0E0);
+    RH_ScopedInstall(BaseEventTakesPriorityOverBaseEvent, 0x4AE100);
+}
+
+
 // 0x4ADFD0
 CEventGroupEvent::CEventGroupEvent(CPed* ped, CEvent* event) : CEvent() {
     m_ped = ped;

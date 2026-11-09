@@ -30,6 +30,11 @@ public:
 
 private:
     bool IsPriorityEvent() const;
+
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventGroupEvent* Constructor(CPed* ped, CEvent* event) { this->CEventGroupEvent::CEventGroupEvent(ped, event); return this; }
+    CEventGroupEvent* Destructor() { this->CEventGroupEvent::~CEventGroupEvent(); return this; }
 };
 
 VALIDATE_SIZE(CEventGroupEvent, 0x14);

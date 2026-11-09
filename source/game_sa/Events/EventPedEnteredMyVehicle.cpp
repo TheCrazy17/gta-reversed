@@ -1,6 +1,17 @@
 #include "StdInc.h"
 #include "EventPedEnteredMyVehicle.h"
 
+void CEventPedEnteredMyVehicle::InjectHooks() {
+    RH_ScopedVirtualClass(CEventPedEnteredMyVehicle, 0x85AFE8, 17);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4AEAC0);
+    RH_ScopedInstall(Destructor, 0x4AEB90);
+    RH_ScopedVMTInstall(AffectsPed, 0x4AEC00);
+    RH_ScopedVMTInstall(CloneEditable, 0x4B7170);
+}
+
+
 
 // 0x4AEAC0
 CEventPedEnteredMyVehicle::CEventPedEnteredMyVehicle(CPed* pedThatEntered, CVehicle* vehicle, eTargetDoor targetDoor) :

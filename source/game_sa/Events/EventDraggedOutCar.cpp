@@ -2,6 +2,18 @@
 
 #include "EventDraggedOutCar.h"
 
+void CEventDraggedOutCar::InjectHooks() {
+    RH_ScopedVirtualClass(CEventDraggedOutCar, 0x85AD30, 17);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4AD250);
+    RH_ScopedInstall(Destructor, 0x4AD330);
+    RH_ScopedVMTInstall(AffectsPed, 0x4AD3A0);
+    RH_ScopedVMTInstall(AffectsPedGroup, 0x4AD3C0);
+    RH_ScopedVMTInstall(CloneEditable, 0x4B6DC0);
+}
+
+
 // 0x4AD250
 CEventDraggedOutCar::CEventDraggedOutCar(CVehicle* vehicle, CPed* carjacker, bool IsDriverSeat) : CEventEditableResponse() {
     m_CarJacker = carjacker;
@@ -30,4 +42,9 @@ bool CEventDraggedOutCar::AffectsPedGroup(CPedGroup* pedGroup) {
 // 0x4B6DC0
 CEventEditableResponse* CEventDraggedOutCar::CloneEditable() const noexcept {
     return new CEventDraggedOutCar(m_Vehicle, m_CarJacker, m_IsDriverSeat);
+}
+
+CEventDraggedOutCar* CEventDraggedOutCar::Constructor(CVehicle* vehicle, CPed* carjacker, bool IsDriverSeat) {
+    this->CEventDraggedOutCar::CEventDraggedOutCar(vehicle, carjacker, IsDriverSeat);
+    return this;
 }

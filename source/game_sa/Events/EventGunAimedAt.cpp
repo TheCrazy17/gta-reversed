@@ -4,6 +4,19 @@
 
 #include "PedType.h"
 
+void CEventGunAimedAt::InjectHooks() {
+    RH_ScopedVirtualClass(CEventGunAimedAt, 0x85B330, 17);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4B0700);
+    RH_ScopedInstall(Destructor, 0x4B07B0);
+    RH_ScopedVMTInstall(AffectsPed, 0x4B4EE0);
+    RH_ScopedVMTInstall(ReportCriminalEvent, 0x4B09E0);
+    RH_ScopedVMTInstall(TakesPriorityOver, 0x4B0810);
+    RH_ScopedVMTInstall(CloneEditable, 0x4B7630);
+}
+
+
 // 0x4B0700
 CEventGunAimedAt::CEventGunAimedAt(CPed* ped) : CEventEditableResponse() {
     m_AimedBy = ped;
