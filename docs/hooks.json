@@ -10801,6 +10801,11 @@
   },
   {
     "Category": "CFont",
+    "Name": "GetScriptLetterSize",
+    "IsReversed": true
+  },
+  {
+    "Category": "CFont",
     "Name": "FindSubFontCharacter",
     "IsReversed": true
   },
@@ -29200,6 +29205,26 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskComplexGoPickUpEntity",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexGoPickUpEntity",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexGoPickUpEntity",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexGoPickUpEntity",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskSimpleDie",
     "Name": "Constructor-1",
     "IsReversed": true
@@ -31617,6 +31642,16 @@
   {
     "Category": "CTaskComplexEnterBoatAsDriver",
     "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleFight",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleFight",
+    "Name": "Destructor",
     "IsReversed": true
   },
   {

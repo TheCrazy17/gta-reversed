@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 19:46:05 UTC
-(Triggered by commit [79c7961e](https://github.com/TheCrazy17/gta-reversed/commit/79c7961e))
+Last update was at Nov 09, 2026 at 23:12:31 UTC
+(Triggered by commit [e2779b6a](https://github.com/TheCrazy17/gta-reversed/commit/e2779b6a))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8634 out of 8634 functions done in 771 categories)
+## Stats (8641 out of 8641 functions done in 772 categories)
 
-#### Completely reversed categories (771/771) [100%]
+#### Completely reversed categories (772/772) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -138,7 +138,7 @@ Last update was at Nov 09, 2026 at 19:46:05 UTC
 - CIniFile (1)<br />
 - CStencilShadowObject (4)<br />
 - CStencilShadows (13)<br />
-- CFont (36)<br />
+- CFont (37)<br />
 - CGameLogic (27)<br />
 - CStuckCarCheck (8)<br />
 - CUpsideDownCarCheck (5)<br />
@@ -542,6 +542,7 @@ Last update was at Nov 09, 2026 at 19:46:05 UTC
 - CTaskSimplePlayerOnFoot (12)<br />
 - CTaskComplexFollowPedFootsteps (2)<br />
 - CTaskComplexGetUpAndStandStill (5)<br />
+- CTaskComplexGoPickUpEntity (4)<br />
 - CTaskSimpleDie (7)<br />
 - CTaskSimpleDuck (15)<br />
 - CTaskComplexPolicePursuit (13)<br />
@@ -611,7 +612,7 @@ Last update was at Nov 09, 2026 at 19:46:05 UTC
 - CTaskSimpleIKLookAt (8)<br />
 - CTaskComplexDie (5)<br />
 - CTaskComplexEnterBoatAsDriver (8)<br />
-- CTaskSimpleFight (7)<br />
+- CTaskSimpleFight (9)<br />
 - CTaskComplexUseWaterCannon (5)<br />
 - CTaskSimpleSlideToCoord (6)<br />
 - CTaskSimplePickUpEntity (4)<br />
@@ -789,14 +790,14 @@ Last update was at Nov 09, 2026 at 19:46:05 UTC
 
 </details>
 
-#### Partially reversed categories (0/771) [0%]
+#### Partially reversed categories (0/772) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/771) [0%]
+#### Not-at-all reversed categories (0/772) [0%]
 
 <details>
 <summary>See list of categories</summary>
