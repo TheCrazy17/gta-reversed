@@ -6326,6 +6326,11 @@
   },
   {
     "Category": "CPedIntelligence",
+    "Name": "IsInHearingRange",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedIntelligence",
     "Name": "IsInSeeingRange",
     "IsReversed": true
   },
@@ -6502,6 +6507,11 @@
   {
     "Category": "CPedIntelligence",
     "Name": "RecordEventForScript",
+    "IsReversed": true
+  },
+  {
+    "Category": "CPedIntelligence",
+    "Name": "HasInterestingEntites",
     "IsReversed": true
   },
   {
@@ -7352,6 +7362,11 @@
   {
     "Category": "CTimer",
     "Name": "Update",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTimer",
+    "Name": "GetMillisecondTime",
     "IsReversed": true
   },
   {
@@ -18430,6 +18445,11 @@
     "IsReversed": true
   },
   {
+    "Category": "FxFrustumInfo_c",
+    "Name": "IsCollision",
+    "IsReversed": true
+  },
+  {
     "Category": "FxEmitterPrt_c",
     "Name": "operator new[]",
     "IsReversed": true
@@ -28895,6 +28915,11 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskComplexPartnerChat",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskSimpleUseGun",
     "Name": "FinishGunAnimCB",
     "IsReversed": true
@@ -29097,6 +29122,11 @@
   {
     "Category": "CTaskComplexFollowPedFootsteps",
     "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexFollowPedFootsteps",
+    "Name": "MakeAbortable",
     "IsReversed": true
   },
   {
@@ -30015,6 +30045,11 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskComplexWanderStandard",
+    "Name": "WillChat",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskComplexSunbathe",
     "Name": "Constructor",
     "IsReversed": true
@@ -30167,6 +30202,26 @@
   {
     "Category": "CTaskComplexUseGoggles",
     "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexCrossRoadLookAndAchieveHeading",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexCrossRoadLookAndAchieveHeading",
+    "Name": "CreateSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexCrossRoadLookAndAchieveHeading",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexCrossRoadLookAndAchieveHeading",
+    "Name": "CreateNextSubTask",
     "IsReversed": true
   },
   {
@@ -30381,6 +30436,11 @@
   },
   {
     "Category": "CTaskComplexKillPedOnFoot",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexKillPedOnFoot",
     "Name": "CreateSubTask",
     "IsReversed": true
   },
@@ -30456,6 +30516,11 @@
   },
   {
     "Category": "CTaskSimpleGoToPoint",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleCarDriveTimed",
     "Name": "ProcessPed",
     "IsReversed": true
   },
@@ -31032,6 +31097,11 @@
   {
     "Category": "CTaskComplexPartner",
     "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskComplexPartner",
+    "Name": "CreateFirstSubTask",
     "IsReversed": true
   },
   {

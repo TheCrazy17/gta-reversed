@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 18:59:31 UTC
-(Triggered by commit [f8d6df4a](https://github.com/TheCrazy17/gta-reversed/commit/f8d6df4a))
+Last update was at Nov 09, 2026 at 19:43:35 UTC
+(Triggered by commit [2b73eefa](https://github.com/TheCrazy17/gta-reversed/commit/2b73eefa))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8611 out of 8611 functions done in 766 categories)
+## Stats (8625 out of 8625 functions done in 769 categories)
 
-#### Completely reversed categories (766/766) [100%]
+#### Completely reversed categories (769/769) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -96,7 +96,7 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CObjectSaveStructure (2)<br />
 - CCompressedMatrixNotAligned (2)<br />
 - CVisibilityPlugins (84)<br />
-- CPedIntelligence (53)<br />
+- CPedIntelligence (55)<br />
 - CMentalState (2)<br />
 - CAutoPilot (1)<br />
 - CPedGroupIntelligence (27)<br />
@@ -109,7 +109,7 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CVehicleAnimGroupData (5)<br />
 - CPedDamageResponseCalculator (7)<br />
 - CPedClothesDesc (7)<br />
-- CTimer (13)<br />
+- CTimer (14)<br />
 - CTagManager (19)<br />
 - CWaterLevel (37)<br />
 - cBuoyancy (9)<br />
@@ -252,6 +252,7 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - FxInterpInfo32_c (1)<br />
 - FxInterpInfoU255_c (1)<br />
 - FxInterpInfo255_c (1)<br />
+- FxFrustumInfo_c (1)<br />
 - FxEmitterPrt_c (1)<br />
 - FxEmitterBP_c (9)<br />
 - FxEmitter_c (7)<br />
@@ -532,12 +533,12 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CTaskComplexWanderCop (9)<br />
 - CTaskSimpleStandStill (3)<br />
 - CTaskSimpleCarDrive (15)<br />
-- CTaskComplexPartnerChat (1)<br />
+- CTaskComplexPartnerChat (2)<br />
 - CTaskSimpleUseGun (19)<br />
 - CTaskComplexObserveTrafficLightsAndAchieveHeading (5)<br />
 - CTaskSimpleInAir (4)<br />
 - CTaskSimplePlayerOnFoot (12)<br />
-- CTaskComplexFollowPedFootsteps (1)<br />
+- CTaskComplexFollowPedFootsteps (2)<br />
 - CTaskComplexGetUpAndStandStill (5)<br />
 - CTaskSimpleDie (7)<br />
 - CTaskSimpleDuck (15)<br />
@@ -560,10 +561,11 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CTaskSimpleClimb (15)<br />
 - CTaskComplexPlayHandSignalAnim (9)<br />
 - CTaskComplexJump (6)<br />
-- CTaskComplexWanderStandard (1)<br />
+- CTaskComplexWanderStandard (2)<br />
 - CTaskComplexSunbathe (11)<br />
 - CTaskComplexEnterCar (15)<br />
 - CTaskComplexUseGoggles (5)<br />
+- CTaskComplexCrossRoadLookAndAchieveHeading (4)<br />
 - CTaskComplexGoToPointAndStandStill (7)<br />
 - CTaskSimpleAchieveHeading (5)<br />
 - CTaskSimpleGiveCPR (6)<br />
@@ -571,9 +573,10 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CTaskSimpleSwim (11)<br />
 - CTaskComplexWalkRoundObject (2)<br />
 - CTaskSimplePause (4)<br />
-- CTaskComplexKillPedOnFoot (2)<br />
+- CTaskComplexKillPedOnFoot (3)<br />
 - CTaskSimpleThrowProjectile (9)<br />
 - CTaskSimpleGoToPoint (6)<br />
+- CTaskSimpleCarDriveTimed (1)<br />
 - CTaskSimpleStealthKill (7)<br />
 - CTaskSimpleAnim (1)<br />
 - CTaskSimpleRunAnim (5)<br />
@@ -591,7 +594,7 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 - CTaskComplexStuckInAir (6)<br />
 - CTaskSimpleHoldEntity (14)<br />
 - CTaskSimpleGoTo (4)<br />
-- CTaskComplexPartner (3)<br />
+- CTaskComplexPartner (4)<br />
 - CTaskSimpleCarSetPedInAsDriver (1)<br />
 - CTaskSimpleCarSetPedInAsPassenger (1)<br />
 - CTaskSimpleCarSetPedOut (7)<br />
@@ -784,14 +787,14 @@ Last update was at Nov 09, 2026 at 18:59:31 UTC
 
 </details>
 
-#### Partially reversed categories (0/766) [0%]
+#### Partially reversed categories (0/769) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/766) [0%]
+#### Not-at-all reversed categories (0/769) [0%]
 
 <details>
 <summary>See list of categories</summary>
