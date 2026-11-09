@@ -56,7 +56,7 @@ void CFont::InjectHooks() {
     RH_ScopedInstall(PrintStringFromBottom, 0x71A820);
     RH_ScopedInstall(GetCharacterSize, 0x719750);
     RH_ScopedInstall(LoadFontValues, 0x7187C0);
-    // Install("", "GetScriptLetterSize", 0x719670, &GetScriptLetterSize);
+    RH_ScopedGlobalInstall(GetScriptLetterSize, 0x719670);
     RH_ScopedInstall(FindSubFontCharacter, 0x7192C0);
     RH_ScopedGlobalInstall(GetLetterIdPropValue, 0x718770);
 }
@@ -909,7 +909,40 @@ float CFont::GetHeight(bool a1) {
 
 // 0x719670, original name unknown
 float GetScriptLetterSize(uint8 letterId) {
-    return plugin::CallAndReturn<float, 0x719670, uint8>(letterId);
+    if (letterId == '?') {
+        letterId = 0;
+    }
+
+    // Same as `CFont::GetCharacterSize`, but the style, outline and scale come from the script text line that is
+    // still being built, because `CFont`'s own state is only set once the line is printed
+    const auto& line = CTheScripts::IntroTextLines[CTheScripts::NumberOfIntroTextLinesThisFrame];
+
+    uint8 fontTextureId{};
+    uint8 propValueIdx{};
+    switch (line.FontStyle.get_underlying()) { // The exe compares the whole dword, not only the low byte
+    case FONT_MENU:
+        fontTextureId = 0;
+        propValueIdx  = CFont::FindSubFontCharacter(letterId, 2);
+        break;
+    case FONT_PRICEDOWN:
+        fontTextureId = 1;
+        propValueIdx  = CFont::FindSubFontCharacter(letterId, 1);
+        break;
+    default: // The texture is the style itself, without a sub font
+        fontTextureId = static_cast<uint8>(line.FontStyle.get_underlying());
+        if (letterId == 145) {
+            propValueIdx = '@';
+        } else if (letterId > 155) {
+            propValueIdx = 0;
+        } else {
+            propValueIdx = letterId;
+        }
+        break;
+    }
+
+    const auto& fontData = gFontData[fontTextureId];
+    const auto  width    = line.IsProportional ? fontData.m_propValues[propValueIdx] : fontData.m_unpropValue;
+    return ((float)width + (float)line.TextEdge) * line.Scale.x;
 }
 
 // 0x7192C0
