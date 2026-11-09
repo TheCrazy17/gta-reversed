@@ -369,6 +369,8 @@
 #include "TaskComplexMoveBackAndJump.h"
 #include "TaskComplexSeekEntityAiming.h"
 #include "TaskSimpleCarDriveTimed.h"
+#include "TaskSimpleChat.h"
+#include "TaskSimpleDoHandSignal.h"
 #include "TaskComplexKillPedOnFootStealth.h"
 #include "TaskComplexDriveWander.h"
 #include "TaskSimpleStealthKill.h"
@@ -1205,13 +1207,13 @@ void InjectHooksMain() {
         CTaskSimpleCarSlowBeDraggedOut::InjectHooks();
         CTaskSimpleCarWaitToSlowDown::InjectHooks();
         CTaskSimpleCarWaitForDoorNotToBeInUse::InjectHooks();
-        // CTaskSimpleChat::InjectHooks();
+        CTaskSimpleChat::InjectHooks();
         CTaskSimpleCower::InjectHooks();
         CTaskSimpleClearLookAt::InjectHooks();
         // CTaskSimpleDead::InjectHooks();
         // CTaskSimpleDetonate::InjectHooks();
         // + CTaskSimpleDieInCar
-        // CTaskSimpleDoHandSignal::InjectHooks();
+        CTaskSimpleDoHandSignal::InjectHooks();
         CTaskSimpleDrown::InjectHooks();
         CTaskSimpleDrownInCar::InjectHooks();
         CTaskSimpleDuckToggle::InjectHooks();
