@@ -27570,6 +27570,21 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskSimpleChat",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleChat",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleChat",
+    "Name": "IsInterruptable",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskSimpleCower",
     "Name": "Constructor",
     "IsReversed": true
@@ -27616,6 +27631,36 @@
   },
   {
     "Category": "CTaskSimpleClearLookAt",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskSimpleDoHandSignal",
     "Name": "ProcessPed",
     "IsReversed": true
   },

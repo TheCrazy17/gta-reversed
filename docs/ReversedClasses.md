@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 19:43:35 UTC
-(Triggered by commit [2b73eefa](https://github.com/TheCrazy17/gta-reversed/commit/2b73eefa))
+Last update was at Nov 09, 2026 at 19:46:05 UTC
+(Triggered by commit [79c7961e](https://github.com/TheCrazy17/gta-reversed/commit/79c7961e))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8625 out of 8625 functions done in 769 categories)
+## Stats (8634 out of 8634 functions done in 771 categories)
 
-#### Completely reversed categories (769/769) [100%]
+#### Completely reversed categories (771/771) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -483,8 +483,10 @@ Last update was at Nov 09, 2026 at 19:43:35 UTC
 - CTaskSimpleCarSlowBeDraggedOut (9)<br />
 - CTaskSimpleCarWaitToSlowDown (6)<br />
 - CTaskSimpleCarWaitForDoorNotToBeInUse (7)<br />
+- CTaskSimpleChat (3)<br />
 - CTaskSimpleCower (4)<br />
 - CTaskSimpleClearLookAt (6)<br />
+- CTaskSimpleDoHandSignal (6)<br />
 - CTaskSimpleDrown (1)<br />
 - CTaskSimpleDrownInCar (1)<br />
 - CTaskSimpleDuckToggle (6)<br />
@@ -787,14 +789,14 @@ Last update was at Nov 09, 2026 at 19:43:35 UTC
 
 </details>
 
-#### Partially reversed categories (0/769) [0%]
+#### Partially reversed categories (0/771) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/769) [0%]
+#### Not-at-all reversed categories (0/771) [0%]
 
 <details>
 <summary>See list of categories</summary>
