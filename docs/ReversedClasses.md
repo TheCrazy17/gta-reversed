@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 01:11:21 UTC
-(Triggered by commit [40d8dd7f](https://github.com/TheCrazy17/gta-reversed/commit/40d8dd7f))
+Last update was at Nov 09, 2026 at 01:44:22 UTC
+(Triggered by commit [0760518d](https://github.com/TheCrazy17/gta-reversed/commit/0760518d))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8482 out of 8482 functions done in 736 categories)
+## Stats (8530 out of 8530 functions done in 749 categories)
 
-#### Completely reversed categories (736/736) [100%]
+#### Completely reversed categories (749/749) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -87,7 +87,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CKeyboardState (1)<br />
 - CMouseControllerState (3)<br />
 - CReferences (4)<br />
-- CPopulation (66)<br />
+- CPopulation (67)<br />
 - CRemote (2)<br />
 - CShotInfo (5)<br />
 - SurfaceInfos_c (48)<br />
@@ -237,7 +237,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CPPTriPlantBuffer (7)<br />
 - CPlantSurfPropMgr (4)<br />
 - RwCore (4)<br />
-- Common (15)<br />
+- Common (16)<br />
 - CCam (50)<br />
 - CCarAI (25)<br />
 - CCarFXRenderer (10)<br />
@@ -258,6 +258,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - Fx_c (27)<br />
 - CPedAttractorPedPlacer (1)<br />
 - CCopPed (7)<br />
+- CPedSaveStructure (2)<br />
 - CPed (145)<br />
 - CPlayerPed (65)<br />
 - CPlayerSkin (4)<br />
@@ -273,6 +274,16 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CBuilding (2)<br />
 - CAnimatedBuilding (3)<br />
 - CGroupEventHandler (32)<br />
+- CEventGotKnockedOverByCar (4)<br />
+- CEventGunAimedAt (6)<br />
+- CEventPedToFlee (3)<br />
+- CEventPedToChase (3)<br />
+- CEventPedEnteredMyVehicle (4)<br />
+- CEventGroupEvent (5)<br />
+- CEventDeadPed (4)<br />
+- CEventDeath (3)<br />
+- CEventDraggedOutCar (5)<br />
+- CEventSource (1)<br />
 - CEvent (3)<br />
 - CEventSeenPanickedPed (2)<br />
 - CEventCarUpsideDown (2)<br />
@@ -332,6 +343,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CRect (8)<br />
 - CSimpleTransform (3)<br />
 - CPlayerRelationshipRecorder (8)<br />
+- CAttractorScanner (1)<br />
 - CMatrixLink (2)<br />
 - CMatrixLinkList (10)<br />
 - CEntryInfoNode (2)<br />
@@ -340,24 +352,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CNodeRoute (2)<br />
 - CKeyGen (4)<br />
 - CTaskCategories (4)<br />
-- CPedScriptedTaskRecord (5)<br />
-- CPedScriptedTaskRecordData (8)<br />
-- CScriptedBrainTaskEntry (1)<br />
-- CScriptedBrainTaskStore (4)<br />
-- CTask (4)<br />
-- CPedGroupDefaultTaskAllocatorFollowAnyMeans (2)<br />
-- CPedGroupDefaultTaskAllocatorFollowLimited (2)<br />
-- CPedGroupDefaultTaskAllocatorStandStill (2)<br />
-- CPedGroupDefaultTaskAllocatorChat (2)<br />
-- CPedGroupDefaultTaskAllocatorSitInLeaderCar (2)<br />
-- CPedGroupDefaultTaskAllocatorRandom (2)<br />
-- CTaskAllocator (3)<br />
-- CTaskAllocatorKillThreatsBasic (6)<br />
-- CTaskAllocatorKillThreatsDriveby (5)<br />
-- CTaskAllocatorKillThreatsBasicRandomGroup (2)<br />
-- CTaskAllocatorKillOnFoot (4)<br />
-- CTaskAllocatorAttack (5)<br />
-- CTaskAllocatorPlayerCommandAttack (3)<br />
+- CTaskSimpleGangDriveBy (3)<br />
 - CTaskComplexUseClosestFreeScriptedAttractorRun (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractorSprint (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractor (8)<br />
@@ -594,7 +589,7 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CTaskSimpleIKLookAt (8)<br />
 - CTaskComplexDie (5)<br />
 - CTaskComplexEnterBoatAsDriver (8)<br />
-- CTaskSimpleFight (5)<br />
+- CTaskSimpleFight (7)<br />
 - CTaskComplexUseWaterCannon (5)<br />
 - CTaskSimpleSlideToCoord (6)<br />
 - CTaskSimplePickUpEntity (4)<br />
@@ -607,6 +602,24 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 - CEntitySeekPosCalculatorFixedPos (1)<br />
 - CScriptsForBrains (13)<br />
 - CTaskComplexChat (7)<br />
+- CPedScriptedTaskRecord (5)<br />
+- CPedScriptedTaskRecordData (8)<br />
+- CScriptedBrainTaskEntry (1)<br />
+- CScriptedBrainTaskStore (4)<br />
+- CTask (4)<br />
+- CPedGroupDefaultTaskAllocatorFollowAnyMeans (2)<br />
+- CPedGroupDefaultTaskAllocatorFollowLimited (2)<br />
+- CPedGroupDefaultTaskAllocatorStandStill (2)<br />
+- CPedGroupDefaultTaskAllocatorChat (2)<br />
+- CPedGroupDefaultTaskAllocatorSitInLeaderCar (2)<br />
+- CPedGroupDefaultTaskAllocatorRandom (2)<br />
+- CTaskAllocator (3)<br />
+- CTaskAllocatorKillThreatsBasic (6)<br />
+- CTaskAllocatorKillThreatsDriveby (5)<br />
+- CTaskAllocatorKillThreatsBasicRandomGroup (2)<br />
+- CTaskAllocatorKillOnFoot (4)<br />
+- CTaskAllocatorAttack (5)<br />
+- CTaskAllocatorPlayerCommandAttack (3)<br />
 - CTaskComplexSequence (13)<br />
 - CTaskManager (18)<br />
 - CTaskComplexUseSequence (6)<br />
@@ -754,14 +767,14 @@ Last update was at Nov 09, 2026 at 01:11:21 UTC
 
 </details>
 
-#### Partially reversed categories (0/736) [0%]
+#### Partially reversed categories (0/749) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/736) [0%]
+#### Not-at-all reversed categories (0/749) [0%]
 
 <details>
 <summary>See list of categories</summary>
