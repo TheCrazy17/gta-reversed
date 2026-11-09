@@ -17,5 +17,11 @@ public:
     int32 GetLifeTime() override { return 0; }
     CEventSexyVehicle* Clone() const noexcept override { return new CEventSexyVehicle(m_vehicle); }
     bool AffectsPed(CPed* ped) override;
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventSexyVehicle* Constructor(CVehicle* vehicle) { this->CEventSexyVehicle::CEventSexyVehicle(vehicle); return this; }
+    CEventSexyVehicle* Destructor() { this->CEventSexyVehicle::~CEventSexyVehicle(); return this; }
 };
 VALIDATE_SIZE(CEventSexyVehicle, 0x10);

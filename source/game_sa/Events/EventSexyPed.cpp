@@ -1,6 +1,17 @@
 #include "StdInc.h"
 #include "EventSexyPed.h"
 
+void CEventSexyPed::InjectHooks() {
+    RH_ScopedVirtualClass(CEventSexyPed, 0x85B0B0, 17);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4AEDF0);
+    RH_ScopedInstall(Destructor, 0x4AEEA0);
+    RH_ScopedVMTInstall(AffectsPed, 0x4AEF00);
+    RH_ScopedVMTInstall(CloneEditable, 0x4B7280);
+}
+
+
 
 CEventSexyPed::CEventSexyPed(CPed* ped) : CEventEditableResponse() {
     m_SexyPed = ped;

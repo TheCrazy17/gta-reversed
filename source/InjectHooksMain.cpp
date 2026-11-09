@@ -176,6 +176,13 @@
 #include "AttractorScanner.h"
 #include "TaskSimpleGangDriveBy.h"
 #include "PedSaveStructure.h"
+#include "EventFireNearby.h"
+#include "EventSpecial.h"
+#include "EventInWater.h"
+#include "EventSexyVehicle.h"
+#include "EventSexyPed.h"
+#include "EventRevived.h"
+#include "EventChatPartner.h"
 #include "EventGotKnockedOverByCar.h"
 #include "EventGunAimedAt.h"
 #include "EventPedToFlee.h"
@@ -672,6 +679,13 @@ void InjectHooksMain() {
     CKeyboardState::InjectHooks();
     CMouseControllerState::InjectHooks();
     CRect::InjectHooks();
+    CEventFireNearby::InjectHooks();
+    CEventSpecial::InjectHooks();
+    CEventInWater::InjectHooks();
+    CEventSexyVehicle::InjectHooks();
+    CEventSexyPed::InjectHooks();
+    CEventRevived::InjectHooks();
+    CEventChatPartner::InjectHooks();
     CEventGotKnockedOverByCar::InjectHooks();
     CEventGunAimedAt::InjectHooks();
     CEventPedToFlee::InjectHooks();

@@ -22,5 +22,11 @@ public:
     bool AffectsPed(CPed* ped) override;
     CEntity* GetSourceEntity() const override { return m_SexyPed; }
     CEventEditableResponse* CloneEditable() const noexcept override { return new CEventSexyPed(m_SexyPed); }
+
+private:
+    friend void InjectHooksMain();
+    static void InjectHooks();
+    CEventSexyPed* Constructor(CPed* ped) { this->CEventSexyPed::CEventSexyPed(ped); return this; }
+    CEventSexyPed* Destructor() { this->CEventSexyPed::~CEventSexyPed(); return this; }
 };
 VALIDATE_SIZE(CEventSexyPed, 0x18);

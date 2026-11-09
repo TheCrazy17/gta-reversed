@@ -1,6 +1,17 @@
 #include "StdInc.h"
 #include "EventChatPartner.h"
 
+void CEventChatPartner::InjectHooks() {
+    RH_ScopedVirtualClass(CEventChatPartner, 0x85B070, 16);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4AECD0);
+    RH_ScopedInstall(Destructor, 0x4AED60);
+    RH_ScopedVMTInstall(Clone, 0x4B7210);
+    RH_ScopedVMTInstall(AffectsPed, 0x4AEDC0);
+}
+
+
 
 CEventChatPartner::CEventChatPartner(bool leadSpeaker, CPed* partner) : CEvent() {
     m_leadSpeaker = leadSpeaker;

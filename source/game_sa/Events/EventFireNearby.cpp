@@ -1,6 +1,17 @@
 #include "StdInc.h"
 #include "EventFireNearby.h"
 
+void CEventFireNearby::InjectHooks() {
+    RH_ScopedVirtualClass(CEventFireNearby, 0x85B6E8, 17);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4B1F10);
+    RH_ScopedVMTInstall(AffectsPed, 0x4B1F90);
+    RH_ScopedVMTInstall(TakesPriorityOver, 0x4B1FC0);
+    RH_ScopedVMTInstall(CloneEditable, 0x4B7A70);
+}
+
+
 
 CEventFireNearby::CEventFireNearby(const CVector& position) : CEventEditableResponse() {
     m_position = position;

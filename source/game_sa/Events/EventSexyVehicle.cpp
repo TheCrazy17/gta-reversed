@@ -1,6 +1,17 @@
 #include "StdInc.h"
 #include "EventSexyVehicle.h"
 
+void CEventSexyVehicle::InjectHooks() {
+    RH_ScopedVirtualClass(CEventSexyVehicle, 0x85B0F8, 16);
+    RH_ScopedCategory("Events");
+
+    RH_ScopedInstall(Constructor, 0x4AF010);
+    RH_ScopedInstall(Destructor, 0x4AF0A0);
+    RH_ScopedVMTInstall(Clone, 0x4B72F0);
+    RH_ScopedVMTInstall(AffectsPed, 0x4AF100);
+}
+
+
 
 CEventSexyVehicle::CEventSexyVehicle(CVehicle* vehicle) : CEvent() {
     m_vehicle = vehicle;
