@@ -21005,6 +21005,281 @@
     "IsReversed": true
   },
   {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "GetSourceEntity",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "GetLocalSoundLevel",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventPotentialGetRunOver",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventCreatePartnerTask",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventVehicleThreat",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventLowAngerAtPlayer",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventLowAngerAtPlayer",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventLowAngerAtPlayer",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventLowAngerAtPlayer",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventLowAngerAtPlayer",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHighAngerAtPlayer",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHighAngerAtPlayer",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHighAngerAtPlayer",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHighAngerAtPlayer",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHighAngerAtPlayer",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthReallyLow",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthReallyLow",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthReallyLow",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthReallyLow",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthReallyLow",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthLow",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthLow",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthLow",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthLow",
+    "Name": "AffectsPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventHealthLow",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedDislike",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedDislike",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedDislike",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedDislike",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedDislike",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedLike",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedLike",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedLike",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedLike",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedLike",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedRespect",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedRespect",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedRespect",
+    "Name": "GetEventType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedRespect",
+    "Name": "GetEventPriority",
+    "IsReversed": true
+  },
+  {
+    "Category": "CEventAcquaintancePedRespect",
+    "Name": "CloneEditable",
+    "IsReversed": true
+  },
+  {
     "Category": "CEventFireNearby",
     "Name": "Constructor",
     "IsReversed": true

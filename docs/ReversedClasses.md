@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 02:03:07 UTC
-(Triggered by commit [20ae44e8](https://github.com/TheCrazy17/gta-reversed/commit/20ae44e8))
+Last update was at Nov 09, 2026 at 18:59:31 UTC
+(Triggered by commit [f8d6df4a](https://github.com/TheCrazy17/gta-reversed/commit/f8d6df4a))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8556 out of 8556 functions done in 756 categories)
+## Stats (8611 out of 8611 functions done in 766 categories)
 
-#### Completely reversed categories (756/756) [100%]
+#### Completely reversed categories (766/766) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -274,6 +274,16 @@ Last update was at Nov 09, 2026 at 02:03:07 UTC
 - CBuilding (2)<br />
 - CAnimatedBuilding (3)<br />
 - CGroupEventHandler (32)<br />
+- CEventPotentialGetRunOver (8)<br />
+- CEventCreatePartnerTask (6)<br />
+- CEventVehicleThreat (6)<br />
+- CEventLowAngerAtPlayer (5)<br />
+- CEventHighAngerAtPlayer (5)<br />
+- CEventHealthReallyLow (5)<br />
+- CEventHealthLow (5)<br />
+- CEventAcquaintancePedDislike (5)<br />
+- CEventAcquaintancePedLike (5)<br />
+- CEventAcquaintancePedRespect (5)<br />
 - CEventFireNearby (4)<br />
 - CEventSpecial (3)<br />
 - CEventInWater (4)<br />
@@ -774,14 +784,14 @@ Last update was at Nov 09, 2026 at 02:03:07 UTC
 
 </details>
 
-#### Partially reversed categories (0/756) [0%]
+#### Partially reversed categories (0/766) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/756) [0%]
+#### Not-at-all reversed categories (0/766) [0%]
 
 <details>
 <summary>See list of categories</summary>
