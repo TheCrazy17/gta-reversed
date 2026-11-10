@@ -13,6 +13,7 @@
 #include "SeekEntity/TaskComplexSeekEntity.h"
 #include "TaskSimpleGoToPoint.h"
 #include "TaskComplexGangLeader.h"
+#include "TaskComplexFollowLeaderInFormation.h"
 #include "TaskComplexPassObject.h"
 #include "TaskComplexPlayHandSignalAnim.h"
 #include "TaskSimpleRunAnim.h"
@@ -28,12 +29,13 @@ void CTaskComplexGangFollower::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x65EAA0);
     RH_ScopedInstall(Destructor, 0x65EBB0);
-    //RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40, { .Reversed = false }); // not hooked because i want to keep CVector return, but original function took a CVector&
-    RH_ScopedInstall(Clone, 0x65ECB0);
-    RH_ScopedInstall(MakeAbortable, 0x65EC30);
-    RH_ScopedInstall(CreateNextSubTask, 0x665E00);
-    RH_ScopedInstall(CreateFirstSubTask, 0x666160);
-    RH_ScopedInstall(ControlSubTask, 0x662A10);
+    RH_ScopedInstall(CalculateOffsetPosition, 0x65ED40);
+    RH_ScopedVMTInstall(Clone, 0x65ECB0);
+    RH_ScopedVMTInstall(GetTaskType, 0x65EBA0);
+    RH_ScopedVMTInstall(MakeAbortable, 0x65EC30);
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x665E00);
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x666160);
+    RH_ScopedVMTInstall(ControlSubTask, 0x662A10);
 }
 
 // 0x65EAA0
@@ -73,9 +75,22 @@ CTaskComplexGangFollower::~CTaskComplexGangFollower() {
 
 // 0x65ED40
 CVector CTaskComplexGangFollower::CalculateOffsetPosition() {
-    CVector ret;
-    plugin::CallMethod<0x65ED40, CTaskComplexGangFollower*>(this, &ret);
-    return ret;
+    const auto  leaderMoveState = m_Leader->m_nMoveState;
+    const auto  leaderIsMoving  = leaderMoveState == PEDMOVE_WALK || leaderMoveState == PEDMOVE_RUN || leaderMoveState == PEDMOVE_SPRINT;
+    const auto& formation       = CTaskComplexFollowLeaderInFormation::ms_offsets;
+
+    if (leaderIsMoving) {
+        // The offset follows the heading of the leader while it walks or runs; the exe does not check for the matrix
+        const CVector movingOffset{ formation.MovingOffsets[byte3C] };
+        dword20.FromMultiply3x3(*m_Leader->m_matrix, movingOffset);
+        m_Flags &= ~0x10;
+    } else if (const auto leaderPos = m_Leader->GetPosition(); (leaderPos - m_PedPosn).SquaredMagnitude() > 9.0f || !(m_Flags & 0x10)) {
+        // The leader stopped (or moved at least 3 units since the last time); the offset is not rotated, so it is taken from the standing formation
+        m_PedPosn = leaderPos;
+        dword20   = CVector{ formation.Offsets[byte3C] };
+        m_Flags |= 0x10;
+    }
+    return dword20;
 }
 
 // 0x65ECB0
@@ -96,17 +111,18 @@ bool CTaskComplexGangFollower::MakeAbortable(CPed* ped, eAbortPriority priority,
     return true;
 }
 
-// Run after the leader, keeping the offset the gang member was given
-static CTask* CreateSeekLeaderTask(CPed* leader, const CVector& offset) {
+// Run after the leader, keeping the offset the gang member was given.
+// The exe only turns to face the leader when the task is made by CreateFirstSubTask, not by CreateNextSubTask.
+static CTask* CreateSeekLeaderTask(CPed* leader, const CVector& offset, bool faceLeaderWhenDone) {
     auto* const seek = new CTaskComplexSeekEntity<CEntitySeekPosCalculatorXYOffset>{
         leader,
         50'000,
         1'000,
         0.5f,
-        6.0f,
+        5.0f,
         2.0f,
         false,
-        true,
+        faceLeaderWhenDone,
         CEntitySeekPosCalculatorXYOffset{ offset }
     };
     seek->SetMoveState(PEDMOVE_SPRINT);
@@ -164,7 +180,7 @@ CTask* CTaskComplexGangFollower::CreateNextSubTask(CPed* ped) {
             return CreateFirstSubTask(ped);
         default:
             if (m_Flags & 4) {
-                return CreateSeekLeaderTask(m_Leader, dword20);
+                return CreateSeekLeaderTask(m_Leader, dword20, false);
             }
             return new CTaskSimpleStandStill{ 500, false, false, 8.0f };
         }
@@ -193,7 +209,7 @@ CTask* CTaskComplexGangFollower::CreateFirstSubTask(CPed* ped) {
 
     static auto& s_MaxStaticCounter = StaticRef<int32>(0x86C938);
     if ((m_Flags & 4) && !(ped->GetIntelligence()->m_AnotherStaticCounter > s_MaxStaticCounter)) {
-        return CreateSeekLeaderTask(m_Leader, dword20);
+        return CreateSeekLeaderTask(m_Leader, dword20, true);
     }
     return new CTaskSimpleStandStill{ 500, false, false, 8.0f };
 }
@@ -322,7 +338,7 @@ CTask* CTaskComplexGangFollower::ControlSubTask(CPed* ped) {
             lookTarget = m_Leader;
         }
         if (lookTarget) {
-            g_ikChainMan.LookAt("Task", ped, lookTarget, lookTime, BONE_HEAD, nullptr, true, 0.15f, 500, 3, false);
+            g_ikChainMan.LookAt("TaskGangFollower", ped, lookTarget, lookTime, BONE_HEAD, nullptr, true, 0.15f, 500, 3, false);
         }
     }
 
