@@ -1057,6 +1057,7 @@ void InjectHooksMain() {
             CTaskInteriorSitInChair::InjectHooks();
             CTaskInteriorUseInfo::InjectHooks();
         };
+        Interior(); // This lambda was never called, so none of the interior tasks were hooked
 
         CTaskComplexUseClosestFreeScriptedAttractorRun::InjectHooks();
         CTaskComplexUseClosestFreeScriptedAttractorSprint::InjectHooks();
