@@ -58,6 +58,9 @@ static inline auto& gameTxdSlot = StaticRef<int32>(0xB728E8);
 static inline auto& gbLARiots = StaticRef<bool>(0xB72958);
 static inline auto& gbLARiots_NoPoliceCars = StaticRef<bool>(0xB72959);
 static inline auto& col1 = StaticRef<std::array<CColModel, 2>>(0xC17824);
+// col1[0] is a small probe model (one sphere inside a cube) used for fist and foot contact checks;
+// its collision data is built over the memory of col1[1]
+void ResizeTempColModel(float radius);
 
 bool MoveMem(void **pMem);
 bool MoveColModelMemory(CColModel &colModel, bool a2);

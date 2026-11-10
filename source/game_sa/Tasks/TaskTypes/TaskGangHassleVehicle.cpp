@@ -348,7 +348,7 @@ CTask* CTaskGangHassleVehicle::ControlSubTask(CPed* ped) {
                     CMatrix probe{ ped->GetMatrix() };
                     probe.GetPosition() += ped->GetMatrix().GetForward(); // roughly arm's-reach in front of the ped
 
-                    plugin::Call<0x61D5F0, float>(0.5f); // resizes the shared probe CColModel (`col1[0]`) to a +-0.5 cube/sphere
+                    ResizeTempColModel(0.5f); // shared probe CColModel (`col1[0]`) as a +-0.5 cube with a sphere
 
                     if (CCollision::ProcessColModels(probe, col1[0], m_Vehicle->GetMatrix(), *m_Vehicle->GetColModel(), CWorld::m_aTempColPts, nullptr, nullptr, false) > 0) {
                         // NOTSA: the original also spawns a hit FX/sound/rattle here (0x61D0B0) - not translated,

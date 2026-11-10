@@ -88,6 +88,26 @@ void CGame::InjectHooks() {
     RH_ScopedGlobalInstall(CameraDestroy, 0x72FD90);
     RH_ScopedGlobalInstall(ValidateVersion, 0x5BA060);
     RH_ScopedGlobalInstall(D3DDeviceRestoreCallback, 0x5BA120);
+    RH_ScopedGlobalInstall(ResizeTempColModel, 0x61D5F0);
+}
+
+// 0x61D5F0
+void ResizeTempColModel(float radius) {
+    auto& model = col1[0];
+    if (!model.m_pColData) {
+        // Only these fields are set: the sphere array is the exe global right behind col1[1] (0xC17884)
+        auto* const data = reinterpret_cast<CCollisionData*>(&col1[1]);
+        model.m_pColData    = data;
+        data->m_pSpheres    = reinterpret_cast<CColSphere*>(0xC17884);
+        data->m_nNumSpheres = 1;
+    }
+
+    model.m_pColData->m_pSpheres[0].Set(radius, CVector{ 0.0f, 0.0f, 0.0f }, SURFACE_DEFAULT, 0, tColLighting{ 0xFF });
+
+    model.m_boundSphere.m_vecCenter = CVector{ 0.0f, 0.0f, 0.0f };
+    model.m_boundSphere.m_fRadius   = radius;
+    model.m_boundBox.m_vecMin       = CVector{ -radius, -radius, -radius };
+    model.m_boundBox.m_vecMax       = CVector{ radius, radius, radius };
 }
 
 // 0x72FD90
