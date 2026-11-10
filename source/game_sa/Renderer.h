@@ -63,6 +63,12 @@ public:
     using tScanFunction = void(__cdecl*)(int32, int32);
     static void ScanWorld(CVector2D* points, int32 pointsCount, tScanFunction scanFunction);
     static void SetExtraRectangleToScan(float minX, float maxX, float minY, float maxY);
+
+    // Sectors queued by `SetExtraRectangleToScan`; `ScanWorld` calls the scan function for each of them and clears the count.
+    // The exe has room for 4, plain arrays so that an overflow behaves like in the exe instead of tripping a bounds check
+    static inline auto& ms_ExtraSectorsY   = StaticRef<int32[4]>(0xC81598);
+    static inline auto& ms_ExtraSectorsX   = StaticRef<int32[4]>(0xC815A8);
+    static inline auto& ms_NumExtraSectors = StaticRef<int32>(0xC815B8);
 };
 
 class CRenderer {

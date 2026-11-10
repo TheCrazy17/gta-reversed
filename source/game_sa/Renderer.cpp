@@ -56,6 +56,12 @@ void CRenderer::InjectHooks()
     RH_ScopedInstall(RequestObjectsInFrustum, 0x555960);
     RH_ScopedInstall(RequestObjectsInDirection, 0x555CB0);
 
+    {
+        RH_ScopedClass(CWorldScan);
+        RH_ScopedCategoryGlobal();
+
+        RH_ScopedInstall(SetExtraRectangleToScan, 0x72D5E0);
+    }
 }
 
 void CWorldScan::ScanWorld(CVector2D *points, int32 pointsCount, tScanFunction scanFunction)
@@ -63,9 +69,22 @@ void CWorldScan::ScanWorld(CVector2D *points, int32 pointsCount, tScanFunction s
     plugin::Call<0x72CAE0,CVector2D*, int32, tScanFunction>(points,pointsCount, scanFunction);
 }
 
-void CWorldScan::SetExtraRectangleToScan(float minX, float maxX, float minY, float maxY)
-{
-    plugin::Call<0x72D5E0, float, float, float, float>(minX, maxX, minY, maxY);
+// 0x72D5E0
+void CWorldScan::SetExtraRectangleToScan(float minX, float maxX, float minY, float maxY) {
+    // x87 floor and ceil in double precision, the bounds are recomputed every iteration in the exe but never change
+    const auto firstX = (int32)std::floor((double)minX);
+    const auto endX   = (int32)std::ceil((double)maxX);
+    const auto firstY = (int32)std::floor((double)minY);
+    const auto endY   = (int32)std::ceil((double)maxY);
+
+    // The count is not checked against the 4 slots, like in the exe
+    for (auto x = firstX; x < endX; x++) {
+        for (auto y = firstY; y < endY; y++) {
+            ms_ExtraSectorsY[ms_NumExtraSectors] = y;
+            ms_ExtraSectorsX[ms_NumExtraSectors] = x;
+            ms_NumExtraSectors++;
+        }
+    }
 }
 
 void CRenderer::Init() {
