@@ -1102,7 +1102,8 @@ void CTaskSimpleUseGun::StartAnim(CPed* ped) {
         break;
     }
     case eGunCommand::PISTOLWHIP: {
-        if (tDuck && tDuck->StopFireGun()) {
+        // The exe uses IsTaskInUseByOtherTasks here (0x6251B1), not StopFireGun
+        if (tDuck && tDuck->IsTaskInUseByOtherTasks()) {
             return;
         }
         m_Anim = CAnimManager::BlendAnimation( // 0x6251DC

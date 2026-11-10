@@ -1503,7 +1503,12 @@ struct NeedsRemoveQuatFlips<false, false, true, false> : std::true_type {}; // F
 */
 template<bool IsCompressed, bool IsSkinned, bool ExtractVelocity, bool Extract3DVelocity>
 void FrameUpdateCallBackT(AnimBlendFrameData* fd, AnimBlendUpdateData* c) {
-    const auto partialScale = 1.f - CalculateTotalBlendOfPartial(c, fd, true);
+    // Only the exe's non compressed skinned callbacks with velocity extraction (0x4D1A50 and 0x4D1680) leave the partial
+    // animations flagged ANIMATION_DONT_ADD_TO_PARTIAL_BLEND out of the sum; every other variant, including the plain
+    // skinned one that updates all the bones of a ped (0x4D2B90), counts them. Skipping them everywhere changed how much
+    // the partial animations weigh against the rest, which is what the aiming and firing poses are made of
+    constexpr bool CheckDontAddToPartialBlend = !IsCompressed && IsSkinned && ExtractVelocity;
+    const auto partialScale = 1.f - CalculateTotalBlendOfPartial(c, fd, CheckDontAddToPartialBlend);
 
     // The exe's 3D extraction callbacks (0x4D1A50, 0x4D2450 and the compressed ones) only test ANIMATION_CAN_EXTRACT_VELOCITY.
     // Only the 2D (ped) callbacks also test ANIMATION_CAN_EXTRACT_X_VELOCITY and ANIMATION_IGNORE_ROOT_TRANSLATION.
