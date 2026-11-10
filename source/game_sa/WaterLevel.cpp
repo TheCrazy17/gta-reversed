@@ -972,8 +972,7 @@ bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, fl
 
 // 0x6E76F0
 bool CWaterLevel::IsLocationOutOfWorldBounds_WS(const CVector& pos, int32 border) {
-    // The world is 120 by 120 tiles of 50 units around the origin; the exe does this in double precision
-    // (x87 with a 53 bit mantissa), so a float expression could pick the neighbouring tile at a tile edge
+    // The world is 120 by 120 tiles of 50 units around the origin; the exe floors a double here, so it is done in double too
     const auto TileOf = [](float coord) {
         return (int32)std::floor((double)coord * (double)0.02f + (double)60.0f);
     };
