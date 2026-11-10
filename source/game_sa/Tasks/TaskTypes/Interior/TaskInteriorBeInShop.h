@@ -8,6 +8,9 @@ struct InteriorInfo_t;
 
 class NOTSA_EXPORT_VTABLE CTaskInteriorBeInShop : public CTaskComplexWander {
 public:
+    // Without this `Type` resolves to the one of CTaskComplexWander, but the exe returns its own (0x57C)
+    static constexpr auto Type = eTaskType::TASK_INTERIOR_BE_IN_SHOP;
+
     static void InjectHooks();
 
     CTaskInteriorBeInShop(InteriorGroup_c* interiorGroup);
@@ -37,3 +40,4 @@ private:
     InteriorInfo_t*  m_CurrIntInfo{};
     bool             m_bScanForStuff{true};
 };
+VALIDATE_SIZE(CTaskInteriorBeInShop, 0x34);

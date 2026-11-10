@@ -34,7 +34,7 @@ CTaskInteriorBeInOffice::CTaskInteriorBeInOffice(const CTaskInteriorBeInOffice& 
 }
 
 // 0x675300
-void CTaskInteriorBeInOffice::GetInfoForPedToUse(CPed* ped, int32* outDur) {
+void CTaskInteriorBeInOffice::GetInfoForPedToUse(int32* outDur) {
     using enum eInteriorInfoType;
 
     // How this isn't an infinite loop is beyond me
@@ -45,8 +45,10 @@ void CTaskInteriorBeInOffice::GetInfoForPedToUse(CPed* ped, int32* outDur) {
     } while (!m_CurrIntInfo);
 
     // Figure out duration now
-    *outDur = type == UNK_6 // NOTSA: Moved this outside the loop, no need for it to be there
-        ? CGeneral::RandomBool(20.f)
+    // NOTSA: Moved this outside the loop, no need for it to be there. The exe compares the roll with 20 using `<=`,
+    // so a roll of 0 to 20 (not just 0 to 19) gives a duration
+    *outDur = type == UNK_6
+        ? CGeneral::GetRandomNumberInRange(0, 100) <= 20
             ? CGeneral::GetRandomNumberInRange(5'000, 30'000)
             : -1
         : CGeneral::GetRandomNumberInRange(5'000, 10'000);
@@ -54,7 +56,12 @@ void CTaskInteriorBeInOffice::GetInfoForPedToUse(CPed* ped, int32* outDur) {
 
 // notsa (code is sa)
 CTask* CTaskInteriorBeInOffice::CreateUseInfoTask(CPed* ped, bool bDoInstantly) {
+    // Only the exe's CreateNextSubTask (bDoInstantly is false) raises this flag and walks the ped to the spot
+    if (!bDoInstantly) {
+        ped->bHasJustSoughtCover = true;
+    }
+
     int32 dur;
-    GetInfoForPedToUse(ped, &dur);
-    return new CTaskInteriorUseInfo{ m_CurrIntInfo, m_CurrInt, dur, true };
+    GetInfoForPedToUse(&dur);
+    return new CTaskInteriorUseInfo{ m_CurrIntInfo, m_CurrInt, dur, bDoInstantly };
 }

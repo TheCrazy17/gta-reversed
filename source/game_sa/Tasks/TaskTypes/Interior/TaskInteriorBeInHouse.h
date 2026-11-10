@@ -21,7 +21,7 @@ public:
 
     CTask*    Clone() const override { return new CTaskInteriorBeInHouse{ *this }; }
     eTaskType GetTaskType() const override { return Type; }
-    CTask*    CreateNextSubTask(CPed* ped) override { return CreateFirstSubTask(ped); }
+    CTask*    CreateNextSubTask(CPed* ped) override;
     CTask*    CreateFirstSubTask(CPed* ped) override;
     CTask*    ControlSubTask(CPed* ped) override { return m_pSubTask; }
 
@@ -43,3 +43,4 @@ private:
     Interior_c*      m_Int{};     //< Current inerior
     InteriorInfo_t*  m_IntInfo{}; //< Current interior's info
 };
+VALIDATE_SIZE(CTaskInteriorBeInHouse, 0x18);

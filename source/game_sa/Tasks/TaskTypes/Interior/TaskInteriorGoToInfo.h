@@ -40,3 +40,4 @@ private:
     Interior_c*     m_Int          = {};
     bool            m_bDoInstantly = {};
 };
+VALIDATE_SIZE(CTaskInteriorGoToInfo, 0x18);

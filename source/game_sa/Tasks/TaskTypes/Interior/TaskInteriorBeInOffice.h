@@ -24,7 +24,7 @@ public:
     CTask*    ControlSubTask(CPed* ped) override { return m_pSubTask; }
 
 private:
-    void   GetInfoForPedToUse(CPed* ped, int32* outDur);
+    void   GetInfoForPedToUse(int32* outDur); // The exe takes only the duration (`ret 4`)
     CTask* CreateUseInfoTask(CPed* ped, bool bDoInstantly); // notsa
 
 private: // Wrappers for hooks
@@ -45,3 +45,4 @@ private:
     Interior_c*      m_CurrInt{};
     InteriorInfo_t*  m_CurrIntInfo{};
 };
+VALIDATE_SIZE(CTaskInteriorBeInOffice, 0x18);

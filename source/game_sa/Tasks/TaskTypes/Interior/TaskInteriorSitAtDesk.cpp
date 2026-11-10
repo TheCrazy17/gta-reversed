@@ -36,7 +36,7 @@ CTaskInteriorSitAtDesk::CTaskInteriorSitAtDesk(const CTaskInteriorSitAtDesk& o) 
 // 0x676080
 CTaskInteriorSitAtDesk::~CTaskInteriorSitAtDesk() {
     if (m_Anim) {
-        m_Anim->SetDefaultFinishCallback();
+        m_Anim->SetDefaultDeleteCallback(); // The exe sets the delete callback (type 2), not the finish callback
     }
 }
 
@@ -60,17 +60,19 @@ void CTaskInteriorSitAtDesk::FinishAnimCB(CAnimBlendAssociation* anim, void* dat
 void CTaskInteriorSitAtDesk::StartRandomLoopAnim(CPed* ped, float blendDelta) {
     using CGeneral::GetRandomNumberInRange;
 
+    // Typing lasts the longest (7000 to 12000); the idle and bored loops are short (2000 to 5000). Both the animations
+    // and the durations were swapped here, the exe picks them as below
     const auto chance = GetRandomNumberInRange(100u);
     StartAnim(
         ped,
         chance > 40
             ? ANIM_ID_OFF_SIT_TYPE_LOOP
             : chance > 10
-                ? ANIM_ID_OFF_SIT_BORED_LOOP
-                : ANIM_ID_OFF_SIT_IDLE_LOOP,
+                ? ANIM_ID_OFF_SIT_IDLE_LOOP
+                : ANIM_ID_OFF_SIT_BORED_LOOP,
         blendDelta
     );
-    m_AnimTimer.Start(chance > 40 ? GetRandomNumberInRange(2000, 5000) : GetRandomNumberInRange(7000, 12000));
+    m_AnimTimer.Start(chance > 40 ? GetRandomNumberInRange(7000, 12000) : GetRandomNumberInRange(2000, 5000));
 }
 
 // 0x677880
@@ -94,7 +96,7 @@ bool CTaskInteriorSitAtDesk::MakeAbortable(CPed* ped, eAbortPriority priority, C
     if (priority == ABORT_PRIORITY_IMMEDIATE) {
         if (m_Anim) {
             m_Anim->SetBlendDelta(-1000.f);
-            m_Anim->SetDefaultFinishCallback();
+            m_Anim->SetDefaultDeleteCallback();
             m_Anim = nullptr;
         }
         return true;
@@ -227,7 +229,7 @@ bool CTaskInteriorSitAtDesk::ProcessPed(CPed* ped) {
 
 void CTaskInteriorSitAtDesk::StartAnim(CPed* ped, AnimationId animId, float blendDelta) {
     if (m_Anim) {
-        m_Anim->SetDefaultFinishCallback();
+        m_Anim->SetDefaultDeleteCallback();
     }
     m_Anim = CAnimManager::BlendAnimation(ped->GetRpClump(), ANIM_GROUP_INT_OFFICE, animId, blendDelta);
     m_Anim->SetFinishCallback(FinishAnimCB, this);

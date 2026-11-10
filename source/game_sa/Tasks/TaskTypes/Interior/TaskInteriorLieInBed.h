@@ -65,3 +65,4 @@ private:
     bool                   m_TaskAborting{};                  //< `MakeAbortable` was called, but not with IMMIDIATE mode, so we gotta gradually abort the task
     AnimationId            m_BaseAnimId{};                    //< The base animation ID (That is, the first animation in the sequence: `GET_IN`)
 };
+VALIDATE_SIZE(CTaskInteriorLieInBed, 0x30);

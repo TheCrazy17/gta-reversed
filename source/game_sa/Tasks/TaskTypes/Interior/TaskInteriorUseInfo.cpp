@@ -48,7 +48,10 @@ CTaskInteriorUseInfo::CTaskInteriorUseInfo(const CTaskInteriorUseInfo& o) :
 
 // 0x675A90
 CTaskInteriorUseInfo::~CTaskInteriorUseInfo() {
-    m_IntInfo->IsInUse = false;
+    // The exe checks for a missing spot too; the tasks that create this one can pass none
+    if (m_IntInfo) {
+        m_IntInfo->IsInUse = false;
+    }
 }
 
 // 0x675B30

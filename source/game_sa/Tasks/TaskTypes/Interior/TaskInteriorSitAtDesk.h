@@ -46,14 +46,16 @@ private: // Wrappers for hooks
     }
 
 private:
-    int32                  m_Duration;
-    InteriorInfo_t*        m_InteriorInfo;
-    bool                   m_bDoInstantly;
-    CAnimBlendAssociation* m_Anim;
+    // The exe constructor clears the animation and the three flags, so they are not left uninitialised here
+    int32                  m_Duration{};
+    InteriorInfo_t*        m_InteriorInfo{};
+    bool                   m_bDoInstantly{};
+    CAnimBlendAssociation* m_Anim{};
     AnimationId            m_PrevAnimId{ANIM_ID_UNDEFINED};
-    CTaskTimer             m_TaskTimer;
-    CTaskTimer             m_AnimTimer;
-    bool                   m_bUpdatePedPos;
-    bool                   m_bTaskFinished;
-    bool                   m_bTaskAborting;
+    CTaskTimer             m_TaskTimer{};
+    CTaskTimer             m_AnimTimer{};
+    bool                   m_bUpdatePedPos{};
+    bool                   m_bTaskFinished{};
+    bool                   m_bTaskAborting{};
 };
+VALIDATE_SIZE(CTaskInteriorSitAtDesk, 0x38);

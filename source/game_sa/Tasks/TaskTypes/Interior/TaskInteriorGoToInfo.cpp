@@ -72,12 +72,18 @@ CTask* CTaskInteriorGoToInfo::CreateFirstSubTask(CPed* ped) {
         return nullptr;
     }
 
-    if (g_interiorMan.GetPedsInterior(ped) == m_Int) {
+    auto* const pedInt = g_interiorMan.GetPedsInterior(ped);
+    if (pedInt == m_Int) {
         return new CTaskSimpleGoToPoint{ PEDMOVE_WALK,  m_IntInfo->Pos, 0.2f };
     }
 
+    // The route goes to the node of the interior we want, but starts from the node of the interior the ped is in now;
+    // using the target's node for both made the start and the destination the same node.
+    // The exe dereferences a null `pedInt` here, so the start node is only set when the ped is in an interior
     const auto tFollowNodeRoute = new CTaskComplexFollowNodeRoute{ PEDMOVE_WALK, ThePaths.GetPathNode(m_Int->GetNodeAddress())->GetPosition(), 0.2f};
-    tFollowNodeRoute->SetStartNode(m_Int->GetNodeAddress());
+    if (pedInt) {
+        tFollowNodeRoute->SetStartNode(pedInt->GetNodeAddress());
+    }
     return tFollowNodeRoute;
 }
 

@@ -46,3 +46,4 @@ private:
     InteriorInfo_t*  m_IntInfo{};
     Interior_c*      m_Int{};
 };
+VALIDATE_SIZE(CTaskInteriorShopKeeper, 0x20);

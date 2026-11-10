@@ -42,3 +42,4 @@ private:
     int32           m_Dur{};
     bool            m_bDoInstantly{};
 };
+VALIDATE_SIZE(CTaskInteriorUseInfo, 0x1C);

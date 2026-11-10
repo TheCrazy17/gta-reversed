@@ -62,7 +62,8 @@ void CTaskInteriorBeInShop::ScanForStuff(CPed* ped) {
     };
     switch (closestIntInfo->Type) {
     case eInteriorInfoType::UNK_8: {
-        if (CGeneral::DoCoinFlip()) {
+        // The exe rolls 0 to 100 and looks at the spot for a roll of 50 or less
+        if (CGeneral::GetRandomNumberInRange(0, 100) <= 50) {
             g_ikChainMan.LookAt(
                 "TaskBeInShop",
                 ped,
@@ -82,7 +83,8 @@ void CTaskInteriorBeInShop::ScanForStuff(CPed* ped) {
         break;
     }
     case eInteriorInfoType::UNK_9: {
-        if (!CGeneral::DoCoinFlip()) {
+        // Only a roll above 80 of 0 to 100 triggers the event, so it is much rarer than a coin flip
+        if (CGeneral::GetRandomNumberInRange(0, 100) > 80) {
             m_bScanForStuff = false;
             PedAddUseInfoEvent();
         }

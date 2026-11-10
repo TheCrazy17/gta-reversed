@@ -33,6 +33,9 @@ CTaskInteriorShopKeeper::CTaskInteriorShopKeeper(InteriorGroup_c* intGrp, bool b
 CTaskInteriorShopKeeper::CTaskInteriorShopKeeper(const CTaskInteriorShopKeeper& o) :
     CTaskInteriorShopKeeper{o.m_IntGrp, o.m_bIsSetup}
 {
+    // The exe's Clone also copies the spot that was found, the constructor alone leaves them empty
+    m_IntInfo = o.m_IntInfo;
+    m_Int     = o.m_Int;
 }
 
 // 0x6756A0
@@ -53,12 +56,17 @@ CTask* CTaskInteriorShopKeeper::CreateFirstSubTask(CPed* ped) {
         VERIFY(m_IntGrp->FindInteriorInfo(eInteriorInfoType::UNK_10, &m_IntInfo, &m_Int));
     }
     m_IntInfo->IsInUse = true;
-    return new CTaskInteriorUseInfo{ m_IntInfo, m_Int, 0, m_bIsSetup };
+
+    // The first time the shop keeper goes to the spot instantly; the flag was passed as it is, which inverted it and never set it
+    const bool bDoInstantly = !m_bIsSetup;
+    m_bIsSetup = true;
+    return new CTaskInteriorUseInfo{ m_IntInfo, m_Int, 0, bDoInstantly };
 }
 
 // 0x675740
 CTask* CTaskInteriorShopKeeper::ControlSubTask(CPed* ped) {
     if (m_bStartServeAnim) {
+        m_bStartServeAnim = false; // Only once, otherwise a new animation task is created every frame
         return new CTaskSimpleRunAnim{ ANIM_GROUP_INT_SHOP, ANIM_ID_SHOP_CASHIER, 4.f, 0 };
     }
     return m_pSubTask;

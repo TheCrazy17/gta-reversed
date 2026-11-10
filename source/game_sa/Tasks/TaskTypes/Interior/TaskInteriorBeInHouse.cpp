@@ -50,6 +50,9 @@ void CTaskInteriorBeInHouse::GetInfoForPedToUse(CPed* ped, int32* outDuration) {
         return false;
     };
 
+    // The exe clears the spot first; without it a spot found by an earlier call is kept and, for gangsters
+    // (chanceA is 0), the same one is reused forever
+    m_IntInfo    = nullptr;
     *outDuration = -1;
 
     const auto rndChance0To100 = CGeneral::GetRandomNumberInRange(0, 100);
@@ -78,6 +81,16 @@ void CTaskInteriorBeInHouse::GetInfoForPedToUse(CPed* ped, int32* outDuration) {
     if (!m_IntInfo) {
         FindInterior({ UNK_1, UNK_2 });
     }
+}
+
+// 0x676200
+CTask* CTaskInteriorBeInHouse::CreateNextSubTask(CPed* ped) {
+    // Unlike the first sub task the ped walks to the next spot (bDoInstantly is false), and the exe raises this flag first
+    ped->bHasJustSoughtCover = true;
+
+    int32 duration{};
+    GetInfoForPedToUse(ped, &duration);
+    return new CTaskInteriorUseInfo{ m_IntInfo, m_Int, duration, false };
 }
 
 // 0x6762B0
