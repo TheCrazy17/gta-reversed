@@ -65,6 +65,9 @@ public:
     bool MakeAbortable(CPed* ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent* event = nullptr) override;
     bool ProcessPed(CPed* ped) override;
 
+    bool StartDriveByAnim(CPed* ped);
+    static void FinishGangDriveByAnimCB(CAnimBlendAssociation* anim, void* data);
+
 private:
     friend void InjectHooksMain();
     static void InjectHooks();
