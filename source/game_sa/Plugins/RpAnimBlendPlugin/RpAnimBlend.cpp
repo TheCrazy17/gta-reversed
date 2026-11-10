@@ -1505,7 +1505,12 @@ template<bool IsCompressed, bool IsSkinned, bool ExtractVelocity, bool Extract3D
 void FrameUpdateCallBackT(AnimBlendFrameData* fd, AnimBlendUpdateData* c) {
     const auto partialScale = 1.f - CalculateTotalBlendOfPartial(c, fd, true);
 
-    constexpr bool IsFixBugs = true;
+    // The exe's 3D extraction callbacks (0x4D1A50, 0x4D2450 and the compressed ones) only test ANIMATION_CAN_EXTRACT_VELOCITY.
+    // Only the 2D (ped) callbacks also test ANIMATION_CAN_EXTRACT_X_VELOCITY and ANIMATION_IGNORE_ROOT_TRANSLATION.
+    // With the "fix" on, the 3D path dropped the whole X translation of every animation that lacks the X flag, which is
+    // every cutscene animation (SetCutsceneAnim only sets CAN_EXTRACT_VELOCITY): actors, vehicles and props could not
+    // move along X, so they stayed behind when the shot moved to another set
+    constexpr bool IsFixBugs = false;
 
     const auto GetVelocityFromTranslation = [](CAnimBlendNode* node, CVector t) {
         return CVector{
