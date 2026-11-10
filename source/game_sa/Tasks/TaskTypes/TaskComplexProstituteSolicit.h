@@ -25,17 +25,18 @@ public:
     uint16 bPedsCanPotentiallySeeThis : 1;
     uint16 bPedsCanSeeThis : 1;
     uint16 bCopsCanSeeThis : 1;
-    uint16 b07 : 1;
-    uint16 b08 : 1;
-
+    uint16 b07 : 1; // The visit stat has not been counted yet; set by the constructor
+    uint16 b08 : 1; // First frame of the drive; set by the constructor, cleared once the car has been checked
     uint16 bMoveCameraDown : 1;
-    uint16 b10 : 1;
+    uint16 b10 : 1; // The prostitute may comment while the car moves; set by the constructor
     uint16 bPlayerHasAcceptedSexProposition : 1;
     uint16 bVehicleShifted : 1;
     uint16 bSecludedPlaceMessageShown : 1;
 
 public:
     static constexpr auto Type = TASK_COMPLEX_PROSTITUTE_SOLICIT;
+
+    static void InjectHooks();
 
     explicit CTaskComplexProstituteSolicit(CPed* client);
     ~CTaskComplexProstituteSolicit() override;
@@ -50,6 +51,19 @@ public:
     CTask* CreateSubTask(eTaskType taskType, CPed* prostitute);
     static void GetRidOfPlayerProstitute();
     static bool IsTaskValid(CPed* prostitute, CPed* ped);
+
+private: // Wrappers for hooks
+    // 0x661A60
+    CTaskComplexProstituteSolicit* Constructor(CPed* client) {
+        this->CTaskComplexProstituteSolicit::CTaskComplexProstituteSolicit(client);
+        return this;
+    }
+
+    // 0x661AF0
+    CTaskComplexProstituteSolicit* Destructor() {
+        this->CTaskComplexProstituteSolicit::~CTaskComplexProstituteSolicit();
+        return this;
+    }
 };
 
 VALIDATE_SIZE(CTaskComplexProstituteSolicit, 0x30);

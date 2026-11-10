@@ -1,6 +1,8 @@
 #pragma once
 
 #include "TaskComplexWander.h"
+#include "TaskTimer.h"
+#include "eMoveState.h"
 #include "Ped.h"
 
 class NOTSA_EXPORT_VTABLE CTaskComplexWanderGang : public CTaskComplexWander {
@@ -9,6 +11,8 @@ public:
     uint32     m_NextScanTime;
 
 public:
+    static void InjectHooks();
+
     CTaskComplexWanderGang(eMoveState moveState, uint8 dir, uint32 scanTime, bool bWanderSensibly, float fTargetRadius);
     ~CTaskComplexWanderGang() override = default; // 0x66F650
 
@@ -17,5 +21,12 @@ public:
     void ScanForStuff(CPed* ped) override; // 0x66F640
 
     bool CanJoinGang() { return m_TaskTimer.IsOutOfTime(); }
+
+private: // Wrappers for hooks
+    // 0x66F5C0
+    CTaskComplexWanderGang* Constructor(eMoveState moveState, uint8 dir, uint32 scanTime, bool bWanderSensibly, float fTargetRadius) {
+        this->CTaskComplexWanderGang::CTaskComplexWanderGang(moveState, dir, scanTime, bWanderSensibly, fTargetRadius);
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskComplexWanderGang, 0x38);

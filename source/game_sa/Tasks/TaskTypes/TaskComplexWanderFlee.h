@@ -14,9 +14,9 @@ public:
     CTaskComplexWanderFlee(const CTaskComplexWanderFlee&);
     ~CTaskComplexWanderFlee() = default;
 
-    CTask*      Clone() const override { return new CTaskComplexWanderFlee{ *this }; }
-    eWanderType GetWanderType() override { return WANDER_TYPE_FLEE; }
-    void        ScanForStuff(CPed* ped) override { /*nop*/ }
+    CTask*      Clone() const override { return new CTaskComplexWanderFlee{ *this }; } // 0x65CD70
+    eWanderType GetWanderType() override { return WANDER_TYPE_FLEE; } // 0x65B350
+    void        ScanForStuff(CPed* ped) override { /*nop*/ } // 0x65B360
 
 private: // Wrappers for hooks
     // 0x65B320
@@ -31,3 +31,4 @@ private: // Wrappers for hooks
         return this;
     }
 };
+VALIDATE_SIZE(CTaskComplexWanderFlee, 0x28);

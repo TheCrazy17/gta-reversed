@@ -10,6 +10,9 @@ void CTaskComplexWanderCop::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedInstall(Constructor, 0x460C80);
+    RH_ScopedInstall(Destructor, 0x460D80);
+    RH_ScopedVMTInstall(Clone, 0x460CE0);
+    RH_ScopedVMTInstall(GetWanderType, 0x460D50);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x674860);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x674750);
     RH_ScopedVMTInstall(ControlSubTask, 0x674D80);
@@ -21,7 +24,7 @@ void CTaskComplexWanderCop::InjectHooks() {
 }
 CTaskComplexWanderCop* CTaskComplexWanderCop::Constructor(eMoveState moveState, uint8 dir) { this->CTaskComplexWanderCop::CTaskComplexWanderCop(moveState, dir); return this; }
 
-// 0x460D80
+// 0x460C80
 CTaskComplexWanderCop::CTaskComplexWanderCop(eMoveState moveState, uint8 dir) : CTaskComplexWander(moveState, dir, true, 0.5f) {
     m_pGoToPointAndStandStillTask = nullptr;
     m_nTimePassedSinceLastLookedForCriminals = 0;
@@ -29,7 +32,7 @@ CTaskComplexWanderCop::CTaskComplexWanderCop(eMoveState moveState, uint8 dir) : 
     m_pLastCriminalPedLookedFor = nullptr;
 }
 
-// 0x460D60
+// 0x460D80 (the exe vtable destructor 0x460D60 is the scalar deleting wrapper around it)
 CTaskComplexWanderCop::~CTaskComplexWanderCop() {
     delete m_pGoToPointAndStandStillTask;
 }
@@ -104,24 +107,15 @@ CTask* CTaskComplexWanderCop::ControlSubTask(CPed* ped) {
 
 // 0x6702B0
 void CTaskComplexWanderCop::ScanForStuff(CPed* ped) {
-    if (!m_nScanForStuffTimer.m_bStarted) {
-        m_nScanForStuffTimer.m_nStartTime = CTimer::GetTimeInMS();
-        m_nScanForStuffTimer.m_nInterval = 50;
-        m_nScanForStuffTimer.m_bStarted = true;
-    }
+    m_nScanForStuffTimer.StartIfNotAlready(50);
 
-    if (GetTaskType() == TASK_COMPLEX_POLICE_PURSUIT || !m_nScanForStuffTimer.m_bStarted)
+    // The exe asks the sub task here; this task's own type is always TASK_COMPLEX_WANDER
+    if (m_pSubTask->GetTaskType() == TASK_COMPLEX_POLICE_PURSUIT) {
         return;
-
-    if (m_nScanForStuffTimer.m_bStopped) {
-        m_nScanForStuffTimer.m_nStartTime = CTimer::GetTimeInMS();
-        m_nScanForStuffTimer.m_bStopped = false;
     }
 
-    if (CTimer::GetTimeInMS() >= (m_nScanForStuffTimer.m_nStartTime + m_nScanForStuffTimer.m_nInterval)) {
-        m_nScanForStuffTimer.m_nInterval = 50;
-        m_nScanForStuffTimer.m_nStartTime = CTimer::GetTimeInMS();
-        m_nScanForStuffTimer.m_bStarted = true;
+    if (m_nScanForStuffTimer.IsOutOfTime()) {
+        m_nScanForStuffTimer.Start(50);
 
         if (CTimer::GetTimeInMS() >= m_nTimePassedSinceLastLookedForCarAlarmsAndStolenCopCars) {
             LookForCarAlarms(ped);
@@ -140,7 +134,8 @@ void CTaskComplexWanderCop::LookForCarAlarms(CPed* ped) {
     if (!vehicle || !vehicle->IsAutomobile())
         return;
 
-    if (!vehicle->m_nAlarmState || vehicle->m_nAlarmState == -1 || vehicle->GetStatus() == STATUS_WRECKED)
+    // m_nAlarmState is a uint16; comparing it against int -1 would never match 0xFFFF
+    if (!vehicle->m_nAlarmState || vehicle->m_nAlarmState == 0xFFFF || vehicle->GetStatus() == STATUS_WRECKED)
         return;
 
     float distance = DistanceBetweenPointsSquared(ped->GetPosition(), vehicle->GetPosition());

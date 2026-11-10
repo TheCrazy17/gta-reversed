@@ -44,7 +44,9 @@ CTaskComplexWander::CTaskComplexWander(eMoveState moveState, uint8 dir, bool bWa
     m_nMoveState = moveState;
     m_nDir = dir;
     m_fTargetRadius = fTargetRadius;
-    m_bWanderSensibly = bWanderSensibly;
+    // The exe clears the low nibble of the flags byte (new dir, new nodes, all nodes blocked) and
+    // sets bit 0; tasks are not zeroed on allocation so the other flags would start as garbage
+    m_nFlags = bWanderSensibly ? 1 : 0;
     m_nLastUpdateDirFrameCount = 0;
 }
 
@@ -293,9 +295,12 @@ void CTaskComplexWander::ScanForBlockedNodes(CPed* ped) {
         if (ScanForBlockedNode(ped, m_NextNode)) {
             m_pSubTask->MakeAbortable(ped, ABORT_PRIORITY_LEISURE, nullptr);
 
-            uint8 outDir = 0;
-            UpdatePathNodes(ped, m_nDir, m_LastNode, m_NextNode, outDir);
-            if (ScanForBlockedNode(ped, m_NextNode) || &m_NextNode == &m_LastNode) {
+            // The exe looks for another way on copies of the nodes and direction; the task's own ones stay
+            CNodeAddress lastNode = m_LastNode;
+            CNodeAddress nextNode = m_NextNode;
+            uint8        outDir   = m_nDir;
+            UpdatePathNodes(ped, m_nDir, lastNode, nextNode, outDir);
+            if (ScanForBlockedNode(ped, nextNode) || nextNode == m_LastNode) {
                 m_bAllNodesBlocked = true;
             }
         }

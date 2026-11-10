@@ -381,6 +381,7 @@
 #include "TaskSimpleRunAnim.h"
 #include "Tasks/TaskTypes/TaskComplexInvestigateDisturbance.h"
 #include "TaskComplexWanderCriminal.h"
+#include "TaskComplexWanderGang.h"
 #include "TaskComplexWanderProstitute.h"
 #include "TaskComplexWalkRoundBuildingAttempt.h"
 #include "TaskSimpleLookAbout.h"
@@ -1346,7 +1347,8 @@ void InjectHooksMain() {
         CTaskSimpleAnim::InjectHooks();
         CTaskSimpleRunAnim::InjectHooks();
         CTaskComplexWanderCriminal::InjectHooks();
-        // CTaskComplexWanderProstitute::InjectHooks();
+        CTaskComplexWanderGang::InjectHooks();
+        CTaskComplexWanderProstitute::InjectHooks();
         CTaskComplexPartnerGreet::InjectHooks();
         CTaskComplexWalkRoundCar::InjectHooks();
         CTaskComplexMedicTreatInjuredPed::InjectHooks();
@@ -1359,7 +1361,7 @@ void InjectHooksMain() {
         CTaskComplexGoToPointAndStandStillTimed::InjectHooks();
         CTaskComplexPartnerShove::InjectHooks();
         CTaskSimpleRunNamedAnim::InjectHooks();
-        // CTaskComplexProstituteSolicit::InjectHooks();
+        CTaskComplexProstituteSolicit::InjectHooks();
         CTaskComplexStuckInAir::InjectHooks();
         CTaskSimpleHoldEntity::InjectHooks();
         CTaskSimpleGoTo::InjectHooks();
