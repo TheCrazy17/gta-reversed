@@ -31,6 +31,17 @@
 #include "Wanted.h"
 #include "Weather.h"
 #include "World.h"
+#include "Radar.h"
+#include "Heli.h"
+#include "Automobile.h"
+#include "Object.h"
+#include "TheZones.h"
+#include "MenuSystem.h"
+#include "Interior/InteriorManager_c.h"
+#include "ModelInfo.h"
+#include "Game.h"
+#include "CarCtrl.h"
+#include "Camera.h"
 
 /*!
 * Small commands that only call into the game or flip a flag. Those that store a flag keep the exe's
@@ -265,6 +276,189 @@ void SwitchStreaming(bool enabled) { CStreaming::ms_disableStreaming = !enabled;
 
 // SWITCH_WORLD_PROCESSING(03B7); the stored flag is "only process the cutscene"
 void SwitchWorldProcessing(bool enabled) { CWorld::bProcessCutsceneOnly = !enabled; }
+
+// BUY_ITEM(0790)
+void BuyItem(uint32 key) { CShopping::Buy(key, 0); }
+
+// SET_AREA51_SAM_SITE(07A8); the stored flag is "disabled"
+void SetArea51SamSite(bool enabled) { CObject::bArea51SamSiteDisabled = !enabled; }
+
+// DISPLAY_HUD(0826)
+void DisplayHud(bool display) { CTheScripts::bDisplayHud = display; }
+
+// CAN_TRIGGER_GANG_WAR_WHEN_ON_A_MISSION(08A3)
+void CanTriggerGangWarWhenOnAMission(bool can) { CGangWars::bCanTriggerGangWarWhenOnAMission = can; }
+
+// SET_GANG_WARS_TRAINING_MISSION(08AC)
+void SetGangWarsTrainingMission(bool training) { CGangWars::bTrainingMission = training; }
+
+// SWITCH_DEATH_PENALTIES(08DD)
+void SwitchDeathPenalties(bool enabled) { CGameLogic::bPenaltyForDeathApplies = enabled; }
+
+// SET_CREATE_RANDOM_COPS(099E); the stored flag is "do not create"
+void SetCreateRandomCops(bool create) { CPopulation::m_bDontCreateRandomCops = !create; }
+
+// HIDE_ALL_FRONTEND_BLIPS(09AC)
+void HideAllFrontendBlips(bool hide) { CTheScripts::HideAllFrontEndMapBlips = hide; }
+
+// DISPLAY_CAR_NAMES(09B9); the stored flag is "do not display"
+void DisplayCarNames(bool display) { CHud::bScriptDontDisplayVehicleName = !display; }
+
+// SET_SCRIPT_COOP_GAME(0A3F)
+void SetScriptCoopGame(bool coop) { CGameLogic::bScriptCoopGameGoingOn = coop; }
+
+// SET_ENABLE_RC_DETONATE(048A); the stored flag is "disabled"
+void SetEnableRcDetonate(bool enabled) { CVehicle::bDisableRemoteDetonation = !enabled; }
+
+// SET_ENABLE_RC_DETONATE_ON_CONTACT(04D6); the stored flag is "disabled"
+void SetEnableRcDetonateOnContact(bool enabled) { CVehicle::bDisableRemoteDetonationOnContact = !enabled; }
+
+// SET_LA_RIOTS(06C8)
+void SetLaRiots(bool riots) { gbLARiots = riots; }
+
+// SWITCH_EMERGENCY_SERVICES(06D0)
+void SwitchEmergencyServices(bool enabled) { CCarCtrl::bAllowEmergencyServicesToBeCreated = enabled; }
+
+// PAUSE_CURRENT_BEAT_TRACK(0991)
+void PauseCurrentBeatTrack(bool pause) { AudioEngine.PauseBeatTrack(pause); }
+
+// DRAW_CROSSHAIR(09A3)
+void DrawCrosshair(bool draw) { CTheScripts::bDrawCrossHair = (eCrossHairType)(draw ? 1 : 0); }
+
+// ENABLE_BURGLARY_HOUSES(09E6)
+void EnableBurglaryHouses(bool enable) { CEntryExitManager::EnableBurglaryHouses(enable); }
+
+// REMOVE_BLIP(0164)
+void RemoveBlip(tBlipHandle blip) { CRadar::ClearBlip(blip); }
+
+// CHANGE_BLIP_COLOUR(0165)
+void ChangeBlipColour(tBlipHandle blip, eBlipColour colour) { CRadar::ChangeBlipColour(blip, colour); }
+
+// CHANGE_BLIP_SCALE(0168)
+void ChangeBlipScale(tBlipHandle blip, int32 size) { CRadar::ChangeBlipScale(blip, size); }
+
+// CHANGE_BLIP_DISPLAY(018B)
+void ChangeBlipDisplay(tBlipHandle blip, eBlipDisplay display) { CRadar::ChangeBlipDisplay(blip, display); }
+
+// SET_BLIP_ALWAYS_DISPLAY_ON_ZOOMED_RADAR(07BF)
+void SetBlipAlwaysDisplayOnZoomedRadar(tBlipHandle blip, bool display) { CRadar::SetBlipAlwaysDisplayInZoom(blip, display); }
+
+// SET_BLIP_AS_FRIENDLY(07E0)
+void SetBlipAsFriendly(tBlipHandle blip, bool friendly) { CRadar::SetBlipFriendly(blip, friendly); }
+
+// SET_COORD_BLIP_APPEARANCE(08FB)
+void SetCoordBlipAppearance(tBlipHandle blip, eBlipAppearance appearance) { CRadar::SetCoordBlipAppearance(blip, appearance); }
+
+// SET_NEAR_CLIP(041D)
+void SetNearClip(float nearClip) { TheCamera.SetNearClipScript(nearClip); }
+
+// GET_FADING_STATUS(016B)
+bool GetFadingStatus() { return TheCamera.GetFading(); }
+
+// SET_WANTED_MULTIPLIER(03C7)
+void SetWantedMultiplier(float multiplier) { FindPlayerWanted()->m_Multiplier = multiplier; }
+
+// SET_AREA_VISIBLE(04BB)
+void SetAreaVisible(eAreaCodes area) {
+    CGame::currArea = area;
+    CStreaming::RemoveBuildingsNotInArea(area);
+}
+
+// SWITCH_POLICE_HELIS(096A)
+void SwitchPoliceHelis(bool enable) { CHeli::SwitchPoliceHelis(enable); }
+
+// REGISTER_FASTEST_TIME(042E)
+void RegisterFastestTime(eStats stat, int32 time) { CStats::RegisterFastestTime(stat, time); }
+
+// SET_MISSION_RESPECT_TOTAL(0997); the argument is an integer that is stored as a float
+void SetMissionRespectTotal(int32 total) { CStats::SetStatValue(STAT_RESPECT_MISSION_TOTAL, (float)total); }
+
+// AWARD_PLAYER_MISSION_RESPECT(0998)
+void AwardPlayerMissionRespect(int32 respect) { CStats::IncrementStat(STAT_RESPECT_MISSION, (float)respect); }
+
+// SET_TOTAL_NUMBER_OF_MISSIONS(042C)
+void SetTotalNumberOfMissions(int32 total) { CStats::SetStatValue(STAT_TOTAL_NUMBER_OF_MISSIONS_IN_GAME, (float)total); }
+
+// RELEASE_ENTITY_FROM_ROPE_FOR_OBJECT(0799)
+void ReleaseEntityFromRopeForObject(CObject& object) { object.ReleaseObjectCarriedWithRope(); }
+
+// RELEASE_ENTITY_FROM_WINCH(0789)
+void ReleaseEntityFromWinch(CVehicle& vehicle) { vehicle.ReleasePickedUpEntityWithWinch(); }
+
+// IS_NEXT_STATION_ALLOWED(0A06)
+bool IsNextStationAllowed(CVehicle& train) { return CTrain::IsNextStationAllowed(static_cast<CTrain*>(&train)); }
+
+// CLOSE_ALL_CAR_DOORS(0508)
+void CloseAllCarDoors(CVehicle& vehicle) { static_cast<CAutomobile&>(vehicle).CloseAllDoors(); }
+
+// POP_CAR_BOOT(04E1)
+void PopCarBoot(CVehicle& vehicle) { static_cast<CAutomobile&>(vehicle).PopBoot(); }
+
+// SET_CAR_MODEL_COMPONENTS(0506); the model argument is ignored by the exe
+void SetCarModelComponents(int32 model, int8 component1, int8 component2) {
+    CVehicleModelInfo::ms_compsToUse[0] = component1;
+    CVehicleModelInfo::ms_compsToUse[1] = component2;
+}
+
+// GET_CAR_HEALTH(0227)
+float GetCarHealth(CVehicle& vehicle) { return vehicle.m_fHealth; }
+
+// GET_OBJECT_HEALTH(071E); truncated to an integer
+int32 GetObjectHealth(CObject& object) { return (int32)object.m_fHealth; }
+
+// GET_CITY_PLAYER_IS_IN(0842); the player argument is not used
+int32 GetCityPlayerIsIn(int32 playerId) { return (int32)CTheZones::m_CurrLevel; }
+
+// STORE_WANTED_LEVEL(01C0)
+int32 StoreWantedLevel(int32 playerId) { return (int32)CWorld::Players[playerId].m_pPed->GetWantedLevel(); }
+
+// GET_CUTSCENE_TIME(02E8)
+int32 GetCutsceneTime() { return (int32)CCutsceneMgr::GetCutsceneTimeInMilleseconds(); }
+
+// GET_TERRITORY_UNDER_CONTROL_PERCENTAGE(08E2)
+int32 GetTerritoryUnderControlPercentage() { return (int32)(CGangWars::TerritoryUnderControlPercentage * 100.0f); }
+
+// DELETE_MENU(08DA); named differently to avoid the Win32 DeleteMenu overload
+void DeleteScriptMenu(uint8 menuId) { CMenuSystem::SwitchOffMenu(menuId); }
+
+// CLEAR_MISSION_AUDIO(040D); the script slot is one based
+void ClearMissionAudio(uint8 slot) { AudioEngine.ClearMissionAudio((uint8)(slot - 1)); }
+
+// IS_GANG_WAR_FIGHTING_GOING_ON(0A03)
+bool IsGangWarFightingGoingOn() { return CGangWars::GangWarFightingGoingOn(); }
+
+// ARE_CREDITS_FINISHED(0436)
+bool AreCreditsFinished() { return !CCredits::bCreditsGoing; }
+
+// HAS_CUTSCENE_LOADED(06B9)
+bool HasCutsceneLoaded() { return (int32)CCutsceneMgr::ms_cutsceneLoadStatus == 2; }
+
+// HAS_CUTSCENE_FINISHED(02E9)
+bool HasCutsceneFinished() { return CCutsceneMgr::HasCutsceneFinished(); }
+
+// IS_SKIP_CUTSCENE_BUTTON_PRESSED(08D0)
+bool IsSkipCutsceneButtonPressed() { return CCutsceneMgr::IsCutsceneSkipButtonBeingPressed(); }
+
+// ARE_MEASUREMENTS_IN_METRES(0424)
+bool AreMeasurementsInMetres() { return CLocalisation::Metric(); }
+
+// IS_HELP_MESSAGE_BEING_DISPLAYED(08FE)
+bool IsHelpMessageBeingDisplayed() { return CHud::HelpMessageDisplayed(); }
+
+// HAS_LANGUAGE_CHANGED(0A0F)
+bool HasLanguageChanged() { return FrontEndMenuManager.HasLanguageChanged(); }
+
+// IS_THIS_MODEL_A_CAR(0A01)
+bool IsThisModelACar(int32 model) { return CModelInfo::IsCarModel(model); }
+
+// HAS_CAR_RECORDING_BEEN_LOADED(07C1)
+bool HasCarRecordingBeenLoaded(int32 fileNumber) { return CVehicleRecording::HasRecordingFileBeenLoaded(fileNumber); }
+
+// IS_PROCEDURAL_INTERIOR_ACTIVE(0867)
+bool IsProceduralInteriorActive(int32 group) { return g_interiorMan.IsGroupActive(group) != 0; }
+
+// IS_2PLAYER_GAME_GOING_ON(0800)
+bool Is2PlayerGameGoingOn() { return CGameLogic::IsCoopGameGoingOn(); }
 }
 
 void notsa::script::commands::misc::RegisterHandlers() {
@@ -346,4 +540,64 @@ void notsa::script::commands::misc::RegisterHandlers() {
     REGISTER_COMMAND_HANDLER(COMMAND_SET_AIRCRAFT_CARRIER_SAM_SITE, SetAircraftCarrierSamSite);
     REGISTER_COMMAND_HANDLER(COMMAND_SWITCH_STREAMING, SwitchStreaming);
     REGISTER_COMMAND_HANDLER(COMMAND_SWITCH_WORLD_PROCESSING, SwitchWorldProcessing);
+
+    REGISTER_COMMAND_HANDLER(COMMAND_BUY_ITEM, BuyItem);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_AREA51_SAM_SITE, SetArea51SamSite);
+    REGISTER_COMMAND_HANDLER(COMMAND_DISPLAY_HUD, DisplayHud);
+    REGISTER_COMMAND_HANDLER(COMMAND_CAN_TRIGGER_GANG_WAR_WHEN_ON_A_MISSION, CanTriggerGangWarWhenOnAMission);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_GANG_WARS_TRAINING_MISSION, SetGangWarsTrainingMission);
+    REGISTER_COMMAND_HANDLER(COMMAND_SWITCH_DEATH_PENALTIES, SwitchDeathPenalties);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_CREATE_RANDOM_COPS, SetCreateRandomCops);
+    REGISTER_COMMAND_HANDLER(COMMAND_HIDE_ALL_FRONTEND_BLIPS, HideAllFrontendBlips);
+    REGISTER_COMMAND_HANDLER(COMMAND_DISPLAY_CAR_NAMES, DisplayCarNames);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_SCRIPT_COOP_GAME, SetScriptCoopGame);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_ENABLE_RC_DETONATE, SetEnableRcDetonate);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_ENABLE_RC_DETONATE_ON_CONTACT, SetEnableRcDetonateOnContact);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_LA_RIOTS, SetLaRiots);
+    REGISTER_COMMAND_HANDLER(COMMAND_SWITCH_EMERGENCY_SERVICES, SwitchEmergencyServices);
+    REGISTER_COMMAND_HANDLER(COMMAND_PAUSE_CURRENT_BEAT_TRACK, PauseCurrentBeatTrack);
+    REGISTER_COMMAND_HANDLER(COMMAND_DRAW_CROSSHAIR, DrawCrosshair);
+    REGISTER_COMMAND_HANDLER(COMMAND_ENABLE_BURGLARY_HOUSES, EnableBurglaryHouses);
+    REGISTER_COMMAND_HANDLER(COMMAND_REMOVE_BLIP, RemoveBlip);
+    REGISTER_COMMAND_HANDLER(COMMAND_CHANGE_BLIP_COLOUR, ChangeBlipColour);
+    REGISTER_COMMAND_HANDLER(COMMAND_CHANGE_BLIP_SCALE, ChangeBlipScale);
+    REGISTER_COMMAND_HANDLER(COMMAND_CHANGE_BLIP_DISPLAY, ChangeBlipDisplay);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_BLIP_ALWAYS_DISPLAY_ON_ZOOMED_RADAR, SetBlipAlwaysDisplayOnZoomedRadar);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_BLIP_AS_FRIENDLY, SetBlipAsFriendly);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_COORD_BLIP_APPEARANCE, SetCoordBlipAppearance);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_NEAR_CLIP, SetNearClip);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_FADING_STATUS, GetFadingStatus);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_WANTED_MULTIPLIER, SetWantedMultiplier);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_AREA_VISIBLE, SetAreaVisible);
+    REGISTER_COMMAND_HANDLER(COMMAND_SWITCH_POLICE_HELIS, SwitchPoliceHelis);
+    REGISTER_COMMAND_HANDLER(COMMAND_REGISTER_FASTEST_TIME, RegisterFastestTime);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_MISSION_RESPECT_TOTAL, SetMissionRespectTotal);
+    REGISTER_COMMAND_HANDLER(COMMAND_AWARD_PLAYER_MISSION_RESPECT, AwardPlayerMissionRespect);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_TOTAL_NUMBER_OF_MISSIONS, SetTotalNumberOfMissions);
+    REGISTER_COMMAND_HANDLER(COMMAND_RELEASE_ENTITY_FROM_ROPE_FOR_OBJECT, ReleaseEntityFromRopeForObject);
+    REGISTER_COMMAND_HANDLER(COMMAND_RELEASE_ENTITY_FROM_WINCH, ReleaseEntityFromWinch);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_NEXT_STATION_ALLOWED, IsNextStationAllowed);
+    REGISTER_COMMAND_HANDLER(COMMAND_CLOSE_ALL_CAR_DOORS, CloseAllCarDoors);
+    REGISTER_COMMAND_HANDLER(COMMAND_POP_CAR_BOOT, PopCarBoot);
+    REGISTER_COMMAND_HANDLER(COMMAND_SET_CAR_MODEL_COMPONENTS, SetCarModelComponents);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_CAR_HEALTH, GetCarHealth);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_OBJECT_HEALTH, GetObjectHealth);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_CITY_PLAYER_IS_IN, GetCityPlayerIsIn);
+    REGISTER_COMMAND_HANDLER(COMMAND_STORE_WANTED_LEVEL, StoreWantedLevel);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_CUTSCENE_TIME, GetCutsceneTime);
+    REGISTER_COMMAND_HANDLER(COMMAND_GET_TERRITORY_UNDER_CONTROL_PERCENTAGE, GetTerritoryUnderControlPercentage);
+    REGISTER_COMMAND_HANDLER(COMMAND_DELETE_MENU, DeleteScriptMenu);
+    REGISTER_COMMAND_HANDLER(COMMAND_CLEAR_MISSION_AUDIO, ClearMissionAudio);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_GANG_WAR_FIGHTING_GOING_ON, IsGangWarFightingGoingOn);
+    REGISTER_COMMAND_HANDLER(COMMAND_ARE_CREDITS_FINISHED, AreCreditsFinished);
+    REGISTER_COMMAND_HANDLER(COMMAND_HAS_CUTSCENE_LOADED, HasCutsceneLoaded);
+    REGISTER_COMMAND_HANDLER(COMMAND_HAS_CUTSCENE_FINISHED, HasCutsceneFinished);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_SKIP_CUTSCENE_BUTTON_PRESSED, IsSkipCutsceneButtonPressed);
+    REGISTER_COMMAND_HANDLER(COMMAND_ARE_MEASUREMENTS_IN_METRES, AreMeasurementsInMetres);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_HELP_MESSAGE_BEING_DISPLAYED, IsHelpMessageBeingDisplayed);
+    REGISTER_COMMAND_HANDLER(COMMAND_HAS_LANGUAGE_CHANGED, HasLanguageChanged);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_THIS_MODEL_A_CAR, IsThisModelACar);
+    REGISTER_COMMAND_HANDLER(COMMAND_HAS_CAR_RECORDING_BEEN_LOADED, HasCarRecordingBeenLoaded);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_PROCEDURAL_INTERIOR_ACTIVE, IsProceduralInteriorActive);
+    REGISTER_COMMAND_HANDLER(COMMAND_IS_2PLAYER_GAME_GOING_ON, Is2PlayerGameGoingOn);
 }
