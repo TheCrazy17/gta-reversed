@@ -9,8 +9,41 @@
 #include "ProcObjectMan.h"
 
 // 0x5DD100 (todo: move)
-static void AtomicCreatePrelitIfNeeded(RpAtomic* atomic) {
-    plugin::Call<0x5DD100, RpAtomic*>(atomic);
+static RpAtomic* AtomicCreatePrelitIfNeeded(RpAtomic* atomic) {
+    auto* const geometry = RpAtomicGetGeometry(atomic);
+    if (RpGeometryGetFlags(geometry) & rpGEOMETRYPRELIT) {
+        return atomic;
+    }
+
+    const auto numVerts = RpGeometryGetNumVertices(geometry);
+    const auto numTris  = RpGeometryGetNumTriangles(geometry);
+
+    // A prelit copy with the first morph target, the first uv set, the triangles and their materials; nothing else
+    // (no normals) is carried over. The old geometry is not destroyed here, the exe does not do it either
+    auto* const copy = RpGeometryCreate(numVerts, numTris, rpGEOMETRYTRISTRIP | rpGEOMETRYTEXTURED | rpGEOMETRYPRELIT);
+
+    std::memcpy(
+        RpMorphTargetGetVertices(RpGeometryGetMorphTarget(copy, 0)),
+        RpMorphTargetGetVertices(RpGeometryGetMorphTarget(geometry, 0)),
+        (size_t)numVerts * sizeof(RwV3d)
+    );
+    std::memcpy(
+        RpGeometryGetVertexTexCoords(copy, rwTEXTURECOORDINATEINDEX0),
+        RpGeometryGetVertexTexCoords(geometry, rwTEXTURECOORDINATEINDEX0),
+        (size_t)numVerts * sizeof(RwTexCoords)
+    );
+
+    auto* const srcTris = RpGeometryGetTriangles(geometry);
+    auto* const dstTris = RpGeometryGetTriangles(copy);
+    std::memcpy(dstTris, srcTris, (size_t)numTris * sizeof(RpTriangle));
+    for (auto i = 0; i < numTris; i++) {
+        RpGeometryTriangleSetMaterial(copy, &dstTris[i], RpGeometryTriangleGetMaterial(geometry, &srcTris[i]));
+    }
+
+    RpGeometryUnlock(copy);
+    RpGeometryGetFlags(copy) |= rpGEOMETRYPOSITIONS; // The exe sets it by hand after the unlock
+    RpAtomicSetGeometry(atomic, copy, rpATOMICSAMEBOUNDINGSPHERE);
+    return atomic;
 }
 
 // 0x5DD1E0 (do not hook! it has retarded calling conv)
@@ -95,6 +128,7 @@ void CPlantMgr::InjectHooks() {
     RH_ScopedInstall(_ProcessEntryCollisionDataSections_RemoveLocTris, 0x5DBF20);
     RH_ScopedInstall(_UpdateLocTris, 0x5DCF00);
     RH_ScopedInstall(Render, 0x5DBAE0);
+    RH_ScopedGlobalInstall(AtomicCreatePrelitIfNeeded, 0x5DD100);
     //RH_ScopedGlobalInstall(LoadModels, 0x5DD220); // uses `__usercall`, can't hook
 
     // Do not uncomment!
