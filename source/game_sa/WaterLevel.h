@@ -274,6 +274,16 @@ public:
 
     static void PreRenderWater();
     static bool GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, float* pOutWaterLevel, float* pOutGroundLevel);
+
+    //! What was hit by the vertical line of `GetGroundLevel` (the surface and piece of the second collision object)
+    struct ColData {
+        uint8 SurfaceType;
+        uint8 PieceType;
+    };
+    static bool GetGroundLevel(const CVector& pos, float* outGroundLevel, ColData* outColData, float height);
+    static bool GetGroundLevel_WS(const CVector& pos, float* outGroundLevel, ColData* outColData, float height);
+    static bool IsLocationOutOfWorldBounds_WS(const CVector& pos, int32 border);
+
     static bool GetWaterLevel(float x, float y, float z, float& pOutWaterLevel, uint8 bTouchingWater, CVector* pVecNormals);
     static bool LoadDataFile();
     static void LoadTextures();
@@ -333,13 +343,10 @@ public:
     CreateBeachToy(const CVector&, eBeachToy)
     FindNearestWaterAndItsFlow()
     FixVertexOnToLine(CWaterVertex*, CWaterVertex*, CWaterVertex*, float*)
-    GetGroundLevel(const CVector&, float*, ColData*, float)
-    GetGroundLevel_WS(const CVector&, float*, ColData*, float)
     RenderAndEmptyRenderBuffer()
     AddToQuadsAndTrianglesList(int32, int32, int32, uint32)
     AddWaterLevelQuad(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar, uint32)
     AddWaterLevelTriangle(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar, uint32)
-    IsLocationOutOfWorldBounds_WS(const CVector&, int32)
     MarkQuadsAndPolysToBeRendered(int32, int32, bool)
     RenderBoatWakes()
     RenderDetailedSeaBedSegment(int32, int32, float, float, float, float)

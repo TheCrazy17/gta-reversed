@@ -55,6 +55,9 @@ void CWaterLevel::InjectHooks() {
     RH_ScopedGlobalInstall(SetCameraRange, 0x6E9C80);
     RH_ScopedInstall(RenderHighDetailWaterRectangle, 0x6EB810);
     RH_ScopedInstall(GetWaterDepth, 0x6EA960);
+    RH_ScopedGlobalInstall(GetGroundLevel, 0x6EA8A0);
+    RH_ScopedGlobalInstall(GetGroundLevel_WS, 0x6EA920);
+    RH_ScopedGlobalInstall(IsLocationOutOfWorldBounds_WS, 0x6E76F0);
     RH_ScopedInstall(CalculateWavesOnlyForCoordinate2, 0x6E7210);
     RH_ScopedOverloadedInstall(RenderHighDetailWaterTriangle, "", 0x6EDDC0, void(*)(int32, int32, CRenPar, int32, int32, CRenPar, int32, int32, CRenPar));
     RH_ScopedInstall(FillQuadsAndTrianglesList, 0x6E7B30);
@@ -949,9 +952,9 @@ bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, fl
         return false;
     }
 
-    // The ground level is not reversed yet. When there is none the depth is taken as if it was far below
+    // When there is no ground within 30 units the depth is taken as if it was far below (0x859014)
     float groundLevel{};
-    if (!plugin::CallAndReturn<bool, 0x6EA8A0, const CVector&, float*, void*, float>(vecPos, &groundLevel, nullptr, 30.0f)) {
+    if (!GetGroundLevel(vecPos, &groundLevel, nullptr, 30.0f)) {
         groundLevel = -100.0f;
     }
 
@@ -965,6 +968,47 @@ bool CWaterLevel::GetWaterDepth(const CVector& vecPos, float* pOutWaterDepth, fl
         *pOutGroundLevel = groundLevel;
     }
     return true;
+}
+
+// 0x6E76F0
+bool CWaterLevel::IsLocationOutOfWorldBounds_WS(const CVector& pos, int32 border) {
+    // The world is 120 by 120 tiles of 50 units around the origin; the exe does this in double precision
+    // (x87 with a 53 bit mantissa), so a float expression could pick the neighbouring tile at a tile edge
+    const auto TileOf = [](float coord) {
+        return (int32)std::floor((double)coord * (double)0.02f + (double)60.0f);
+    };
+    const auto tileX = TileOf(pos.x);
+    const auto tileY = TileOf(pos.y);
+
+    const auto upper = 120 - border;
+    return !(tileX >= border && tileX < upper && tileY >= border && tileY < upper);
+}
+
+// 0x6EA8A0
+bool CWaterLevel::GetGroundLevel(const CVector& pos, float* outGroundLevel, ColData* outColData, float height) {
+    CColPoint colPoint;
+    CEntity*  hitEntity{};
+
+    // Only buildings and dummies count as ground. The end of the line is `-height` and not `pos.z - height`,
+    // that is how the exe passes it
+    if (!CWorld::ProcessVerticalLine({ pos.x, pos.y, pos.z + height }, -height, colPoint, hitEntity, true, false, false, false, true, false, nullptr)) {
+        return false;
+    }
+
+    *outGroundLevel = colPoint.m_vecPoint.z; // The exe does not check this pointer
+    if (outColData) {
+        outColData->SurfaceType = (uint8)colPoint.m_nSurfaceTypeB;
+        outColData->PieceType   = colPoint.m_nPieceTypeB;
+    }
+    return true;
+}
+
+// 0x6EA920
+bool CWaterLevel::GetGroundLevel_WS(const CVector& pos, float* outGroundLevel, ColData* outColData, float height) {
+    if (IsLocationOutOfWorldBounds_WS(pos, 0)) {
+        return false;
+    }
+    return GetGroundLevel(pos, outGroundLevel, outColData, height);
 }
 
 // 0x6E7760
