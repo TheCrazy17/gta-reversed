@@ -53,6 +53,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(MakeRequestForNodesToBeLoaded, 0x450D70);
     RH_ScopedInstall(UpdateStreaming, 0x450A60);
     RH_ScopedInstall(TakeWidthIntoAccountForWandering, 0x4509A0);
+    RH_ScopedInstall(TakeWidthIntoAccountForCoors, 0x44DA30);
     RH_ScopedInstall(Shutdown, 0x450950);
     RH_ScopedOverloadedInstall(FindNodeCoorsForScript, "TwoNodes", 0x450780, CVector(CPathFind::*)(CNodeAddress, CNodeAddress, float&, bool*));
     RH_ScopedOverloadedInstall(FindNodeCoorsForScript, "LinkedNode", 0x4505E0, CVector(CPathFind::*)(CNodeAddress, bool*));
@@ -82,7 +83,7 @@ void CPathFind::InjectHooks() {
     RH_ScopedInstall(FindNthNodeClosestToCoors, 0x44F8C0);
     RH_ScopedInstall(FindNodeClosestInRegion, 0x44F2C0);
     RH_ScopedInstall(CalcDistToAnyConnectingLinks, 0x44F190);
-    //RH_ScopedInstall(CalcRoadDensity, 0x44EFC0);
+    RH_ScopedInstall(CalcRoadDensity, 0x44EFC0);
     RH_ScopedInstall(TestForPedTrafficLight, 0x44D480);
     RH_ScopedInstall(UnMarkAllRoadNodesAsDontWander, 0x44D400);
     RH_ScopedInstall(TidyUpNodeSwitchesAfterMission, 0x44D3B0);
@@ -1769,7 +1770,70 @@ void CPathFind::SwitchPedRoadsOffInArea(float xMin, float xMax, float yMin, floa
     SwitchRoadsOffInArea(xMin, xMax, yMin, yMax, zMin, zMax, bSwitchOff, false, bBackToOriginal);
 }
 
+// 0x44DA30
+void CPathFind::TakeWidthIntoAccountForCoors(CNodeAddress nodeA, CNodeAddress nodeB, int16 randomSeed, float* outX, float* outY) {
+    if (nodeA.m_wAreaId == UINT16_MAX || !m_pPathNodes[nodeA.m_wAreaId]) {
+        return;
+    }
+    if (nodeB.m_wAreaId == UINT16_MAX || !m_pPathNodes[nodeB.m_wAreaId]) {
+        return;
+    }
+
+    // The offset is limited by the narrower node. The seed is sign extended, so its upper nibble is an arithmetic shift
+    const auto widthA   = m_pPathNodes[nodeA.m_wAreaId][nodeA.m_wNodeId].m_nPathWidth;
+    const auto widthB   = m_pPathNodes[nodeB.m_wAreaId][nodeB.m_wNodeId].m_nPathWidth;
+    const auto minWidth = (int32)std::min(widthA, widthB);
+    const auto seed     = (int32)randomSeed;
+
+    *outX += (float)((((seed) & 0xF) - 7) * minWidth) * 0.00775f;
+    *outY += (float)((((seed >> 4) & 0xF) - 7) * minWidth) * 0.00775f;
+}
+
 // 0x44EFC0
 float CPathFind::CalcRoadDensity(float x, float y) {
-    return plugin::CallMethodAndReturn<float, 0x44EFC0, CPathFind*, float, float>(this, x, y);
+    float density = 0.0f;
+
+    for (auto area = 0u; area < NUM_PATH_MAP_AREAS; area++) {
+        const auto* const nodes = m_pPathNodes[area];
+        if (!nodes) {
+            continue;
+        }
+
+        // Only the vehicle nodes that are within 80 units on both axes count
+        const auto numVehicleNodes = (int32)m_anNumVehicleNodes[area];
+        for (auto n = 0; n < numVehicleNodes; n++) {
+            const auto& node    = nodes[n];
+            const auto  nodePos = node.GetPosition();
+            if (!(std::abs(nodePos.x - x) < 80.0f) || !(std::abs(nodePos.y - y) < 80.0f)) {
+                continue;
+            }
+
+            // The link ids of a node are consecutive; the base id is signed in the exe
+            const int32 baseLink = node.m_wBaseLinkId;
+            for (auto l = 0; l < (int32)node.m_nNumLinks; l++) {
+                const auto linked = m_pNodeLinks[area][baseLink + l];
+                const auto* const linkedNodes = m_pPathNodes[linked.m_wAreaId];
+                if (!linkedNodes) {
+                    continue;
+                }
+
+                const auto linkedPos = linkedNodes[linked.m_wNodeId].GetPosition();
+                const auto dy        = nodePos.y - linkedPos.y;
+                const auto dx        = nodePos.x - linkedPos.x;
+                const auto length    = std::sqrt(dy * dy + dx * dx);
+
+                // The exe tests the node table of the navi link's area here, not the navi node table
+                const auto navi = m_pNaviLinks[area][baseLink + l];
+                if (!m_pPathNodes[navi.m_wAreaId]) {
+                    continue;
+                }
+
+                const auto& carLink = m_pNaviNodes[navi.m_wAreaId][navi.m_wCarPathLinkId];
+                density += (float)carLink.m_numOppositeDirLanes * length;
+                density += (float)carLink.m_numSameDirLanes * length;
+            }
+        }
+    }
+
+    return density * 0.0004f;
 }

@@ -377,7 +377,9 @@ public:
 
     void Shutdown();
     CVector TakeWidthIntoAccountForWandering(CNodeAddress nodeAddress, int16 randomSeed);
-    void TakeWidthIntoAccountForCoors(CNodeAddress address, CNodeAddress address2, uint16 seed, float* fOut1, float* fOut2);
+
+    //! Moves (`outX`, `outY`) sideways by a random amount that fits the narrower of the two nodes; the low nibble of `randomSeed` is used for X, the next one for Y
+    void TakeWidthIntoAccountForCoors(CNodeAddress nodeA, CNodeAddress nodeB, int16 randomSeed, float* outX, float* outY);
 
     /*!
     * TODO: Move this garbage to source file instead, no need for it in here.

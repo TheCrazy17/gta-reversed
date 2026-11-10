@@ -1710,7 +1710,7 @@ bool CPopulation::AddToPopulation(float arg0, float arg1, float arg2, float arg3
         return retval;
     }
 
-    plugin::CallMethod<0x44DA30, CPathFind*, CNodeAddress, CNodeAddress, int32, float*, float*>(&ThePaths, nodeA, nodeB, rand(), &pos.x, &pos.y);
+    ThePaths.TakeWidthIntoAccountForCoors(nodeA, nodeB, (int16)rand(), &pos.x, &pos.y);
 
     if (type >= 7 && type <= 16) {
         PlaceGangMembers((ePedType)type, count, pos);
