@@ -113,6 +113,7 @@ void CPad::InjectHooks() {
     RH_ScopedInstall(GetAnaloguePadDown, 0x540980);
 #ifndef NOTSA_USE_SDL3
     RH_ScopedInstall(GetMouseState, 0x746ED0);
+    RH_ScopedGlobalInstall(DIReleaseMouse, 0x746F70);
 #endif
 }
 
@@ -1468,8 +1469,14 @@ int GetCurrentKeyPressed(RsKeyCodes& keys) {
 }
 
 #ifndef NOTSA_USE_SDL3
-IDirectInputDevice8* DIReleaseMouse() { // todo: wininput
-    return plugin::CallAndReturn<IDirectInputDevice8*, 0x746F70>();
+// 0x746F70
+void DIReleaseMouse() { // todo: wininput
+    // The exe leaves the result of Release in eax, the callers do not look at it
+    if (auto* const mouse = PSGLOBAL(diMouse)) {
+        mouse->Unacquire();
+        mouse->Release();
+        PSGLOBAL(diMouse) = nullptr;
+    }
 }
 
 void InitialiseMouse(bool exclusive) {
