@@ -1318,7 +1318,7 @@ void InjectHooksMain() {
         CTaskSimpleFall::InjectHooks();
         CTaskSimpleClimb::InjectHooks();
         CTaskComplexPlayHandSignalAnim::InjectHooks();
-        // CTaskComplexWaitForPed::InjectHooks();
+        CTaskComplexWaitForPed::InjectHooks();
         CTaskComplexJump::InjectHooks();
         CTaskComplexWanderStandard::InjectHooks();
         CTaskComplexSunbathe::InjectHooks();
