@@ -113,6 +113,8 @@ void CCarCtrl::InjectHooks()
     RH_ScopedInstall(FlyAIHeliInCertainDirection, 0x429A70);
     RH_ScopedInstall(FlyAIHeliToTarget_FixedOrientation, 0x423940);
     RH_ScopedInstall(FlyAIPlaneInCertainDirection, 0x423000);
+    RH_ScopedInstall(ProbeAheadOfPlane, 0x422E10);
+    RH_ScopedInstall(GetObstacleHeightAheadOfPlane, 0x422F80);
     RH_ScopedInstall(GenerateCarCreationCoors2, 0x424210);
     RH_ScopedInstall(GenerateEmergencyServicesCar, 0x42F9C0);
     RH_ScopedInstall(GenerateOneEmergencyServicesCar, 0x42B7D0);
@@ -1522,6 +1524,48 @@ void CCarCtrl::FlyAIHeliToTarget_FixedOrientation(CHeli* heli, float Orientation
     heli->m_fSteeringUpDown    = Clamp(std::abs(errorForward) >= 5.0f ? errorForward * -0.015f : speedForward, -0.5f, 0.5f);
 }
 
+// 0x422E10
+bool CCarCtrl::ProbeAheadOfPlane(CPlane* plane, float pitch, float heading, float* outHitZ) {
+    // The ray starts where the plane will be in 50 frames at its current speed and is 200 units long
+    const CVector start = plane->GetPosition() + plane->m_vecMoveSpeed * 50.0f;
+
+    CVector dir{ std::cos(heading), std::sin(heading), 0.0f };
+    dir.Normalise();
+
+    // Heading in the XY plane, tilted up or down by the pitch
+    const CVector tilted{ dir.x * std::cos(pitch), dir.y * std::cos(pitch), std::sin(pitch) };
+    const CVector end = tilted * 200.0f + start;
+
+    CColPoint colPoint;
+    CEntity*  hitEntity{};
+    if (!CWorld::ProcessLineOfSight(start, end, colPoint, hitEntity, true, false, false, false, false, false, false, true)) {
+        return false;
+    }
+    *outHitZ = colPoint.m_vecPoint.z;
+    return true;
+}
+
+// 0x422F80
+float CCarCtrl::GetObstacleHeightAheadOfPlane(CPlane* plane, float heading) {
+    // Pitches of the probes (6, 3, 0, -20, -40 and -60 degrees)
+    static auto& PITCHES = StaticRef<std::array<float, 6>>(0x8A5B2C);
+
+    float highest = 0.0f;
+    for (auto i = 0u; i < PITCHES.size(); i++) {
+        float hitZ;
+        if (!ProbeAheadOfPlane(plane, PITCHES[i], heading, &hitZ)) {
+            continue;
+        }
+        if (i == 0) {
+            return 100000.0f; // Already the steepest upward probe is blocked
+        }
+        if (!(highest > hitZ)) {
+            highest = hitZ;
+        }
+    }
+    return highest;
+}
+
 // 0x423000
 void CCarCtrl::FlyAIPlaneInCertainDirection(CPlane* pPlane) {
     static_assert(offsetof(CPlane, m_fLeftRightSkid) == 0x988 && offsetof(CPlane, m_fSteeringUpDown) == 0x98C);
@@ -1573,7 +1617,7 @@ void CCarCtrl::FlyAIPlaneInCertainDirection(CPlane* pPlane) {
                     continue;
                 }
 
-                const auto clearance = plugin::CallAndReturn<float, 0x422F80, CPlane*, float>(pPlane, angle + target);
+                const auto clearance = GetObstacleHeightAheadOfPlane(pPlane, angle + target);
                 if (clearance < 150.0f) {
                     plane.m_planeHeadingPrev = angle * 1.1f + plane.m_planeHeading;
                     plane.m_altitude         = std::max(clearance + plane.m_minAltitude, plane.m_maxAltitude);
