@@ -285,7 +285,14 @@ bool CGame::Shutdown() {
     CSkidmarks::Shutdown();
     CWeaponEffects::Shutdown();
     CTimeCycle::Shutdown();
-    CCover::m_ListOfProcessedBuildings.Flush();
+    // CWorld::ShutDown above already destroyed the buildings this list points at. The exe's Flush (0x552470) just
+    // frees the nodes without looking at the items; the checked Flush asserts that every item is still a valid building
+    for (auto* node = CCover::m_ListOfProcessedBuildings.m_Head; node;) {
+        auto* const next = node->Next;
+        delete node;
+        node = next;
+    }
+    CCover::m_ListOfProcessedBuildings.m_Head = nullptr;
     CPedGroups::CleanUpForShutDown();
     CTaskSequences::CleanUpForShutdown();
     CInformGroupEventQueue::Flush();

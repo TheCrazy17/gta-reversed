@@ -131,6 +131,15 @@ public:
         m_DealWithNoMemory = false;
     }
 
+    /*!
+    * @brief Mark every slot as free without running any destructor
+    * @note For shutting the game down: the exe's CPools::ShutDown (0x5519F0) only releases the storage of each pool.
+    *       Destructing the objects there makes entities resolve references that live in pools freed earlier in the same shutdown
+    */
+    void ForgetObjects() {
+        rng::fill_n(m_SlotState, m_Capacity, SlotState{});
+    }
+
     // Clears pool
     void Clear() {
         if (notsa::bugfixes::CPool_DestructOnClear) {

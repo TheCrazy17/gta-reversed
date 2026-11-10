@@ -93,23 +93,33 @@ void CPools::Initialise() {
 // 0x5519F0
 void CPools::ShutDown() {
     NOTSA_LOG_DEBUG("Shutdown pool started");
-    delete std::exchange(ms_pPtrNodeSingleLinkPool, nullptr);
-    delete std::exchange(ms_pPtrNodeDoubleLinkPool, nullptr);
-    delete std::exchange(ms_pEntryInfoNodePool, nullptr);
-    delete std::exchange(ms_pPedPool, nullptr);
-    delete std::exchange(ms_pVehiclePool, nullptr);
-    delete std::exchange(ms_pBuildingPool, nullptr);
-    delete std::exchange(ms_pObjectPool, nullptr);
-    delete std::exchange(ms_pDummyPool, nullptr);
-    delete std::exchange(ms_pColModelPool, nullptr);
-    delete std::exchange(ms_pTaskPool, nullptr);
-    delete std::exchange(ms_pEventPool, nullptr);
-    delete std::exchange(ms_pPointRoutePool, nullptr);
-    delete std::exchange(ms_pPatrolRoutePool, nullptr);
-    delete std::exchange(ms_pNodeRoutePool, nullptr);
-    delete std::exchange(ms_pTaskAllocatorPool, nullptr);
-    delete std::exchange(ms_pPedIntelligencePool, nullptr);
-    delete std::exchange(ms_pPedAttractorPool, nullptr);
+
+    // Like the exe, only release the storage of the pools: the objects are not destructed. Their destructors would walk
+    // references (CEntity::ResolveReferences), tasks and event sources that live in pools already freed by this same
+    // function, which crashed the game on exit
+    const auto Release = [](auto*& pool) {
+        if (pool) {
+            pool->ForgetObjects();
+        }
+        delete std::exchange(pool, nullptr);
+    };
+    Release(ms_pPtrNodeSingleLinkPool);
+    Release(ms_pPtrNodeDoubleLinkPool);
+    Release(ms_pEntryInfoNodePool);
+    Release(ms_pPedPool);
+    Release(ms_pVehiclePool);
+    Release(ms_pBuildingPool);
+    Release(ms_pObjectPool);
+    Release(ms_pDummyPool);
+    Release(ms_pColModelPool);
+    Release(ms_pTaskPool);
+    Release(ms_pEventPool);
+    Release(ms_pPointRoutePool);
+    Release(ms_pPatrolRoutePool);
+    Release(ms_pNodeRoutePool);
+    Release(ms_pTaskAllocatorPool);
+    Release(ms_pPedIntelligencePool);
+    Release(ms_pPedAttractorPool);
     NOTSA_LOG_DEBUG("Shutdown pool done");
 }
 
