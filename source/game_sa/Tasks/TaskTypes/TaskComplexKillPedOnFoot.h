@@ -36,7 +36,13 @@ public:
     ~CTaskComplexKillPedOnFoot() override;
 
     eTaskType GetTaskType() const override { return Type; }
-    CTask* Clone() const override { return new CTaskComplexKillPedOnFoot(m_target, m_time, m_pedFlags, m_actionDelay, m_actionChance, m_nCompetence); }
+    CTask* Clone() const override {
+        // The exe carries these two flags over as well; the other flags of the clone start out fresh
+        auto* const clone = new CTaskComplexKillPedOnFoot(m_target, m_time, m_pedFlags, m_actionDelay, m_actionChance, m_nCompetence);
+        clone->m_bAimImmediate           = m_bAimImmediate;
+        clone->m_bWaitForPlayerToBeSafe  = m_bWaitForPlayerToBeSafe;
+        return clone;
+    }
     bool   MakeAbortable(CPed* ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent* event = nullptr) override;
     CTask* CreateNextSubTask(CPed* ped) override;
     CTask* CreateFirstSubTask(CPed* ped) override;
@@ -48,6 +54,12 @@ private:
     static void InjectHooks();
 
     CTaskComplexKillPedOnFoot* Constructor(CPed* target, int32 time, int32 pedFlags, int32 delay, int32 chance, int8 a7);
+
+    // 0x620EF0
+    CTaskComplexKillPedOnFoot* Destructor() {
+        this->CTaskComplexKillPedOnFoot::~CTaskComplexKillPedOnFoot();
+        return this;
+    }
 };
 
 VALIDATE_SIZE(CTaskComplexKillPedOnFoot, 0x38);
