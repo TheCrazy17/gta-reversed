@@ -17,7 +17,6 @@ public:
     CTask*    Clone() const override { return new CTaskComplexGoPickUpEntity{*this}; } // 0x692C80
     eTaskType GetTaskType() const override { return Type; }                            // 0x691A40
 
-    // Not reversed yet, these forward to the original code
     CTask* CreateNextSubTask(CPed* ped) override;  // 0x691AE0
     CTask* CreateFirstSubTask(CPed* ped) override; // 0x693610
     CTask* ControlSubTask(CPed* ped) override;     // 0x691D50
@@ -37,9 +36,9 @@ private: // Wrappers for hooks
 
 public:
     CEntity* m_pEntity;
-    CVector  m_vecPosition;
-    CVector  m_vecPickupPosition;
-    uint32   m_nTimePassedSinceLastSubTaskCreatedInMs;
+    CVector  m_vecPosition;       // Offset of the entity in the hand of the ped
+    CVector  m_vecPickupPosition; // Where the ped stands to pick the entity up, in the space of the entity
+    uint32   m_nSubTaskCreatedTimeMs; // When the last sub task was made; the sub tasks are given up on after a while
     int32    m_nAnimGroupId;
     bool     m_bAnimBlockReferenced;
     char     _pad[3];
