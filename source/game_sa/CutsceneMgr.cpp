@@ -92,12 +92,16 @@ void CCutsceneMgr::UpdateCutsceneObjectBoundingBox(RpClump* clump, eModelID mode
     assert(IsModelIDForCutScene(modelId));
     assert(RwObjectGetType(clump) == rpCLUMP);
 
-    // Figure out bounding sphere radius
-    float radius = 0.f;
+    auto& cm = CTempColModels::ms_colModelCutObj[modelId - MODEL_CUTOBJ01];
+
+    // The exe grows the radius from the col model's current one (it never shrinks) and caps it at max(current, 20),
+    // so a stray atomic can't blow the culling sphere up. Starting from 0 also made it shrink between updates
+    const auto prevRadius = cm.GetBoundingSphere().m_fRadius;
+    float radius = prevRadius;
     RpClumpForAllAtomics(clump, CalculateBoundingSphereRadiusCB, &radius);
+    radius = std::min(radius, prevRadius < 20.f ? 20.f : prevRadius);
 
     // Now update the col model with it
-    auto& cm = CTempColModels::ms_colModelCutObj[modelId - MODEL_CUTOBJ01];
     cm.GetBoundingSphere().m_fRadius = radius;
     cm.GetBoundingBox() = CBoundingBox{ // Bounding box of the sphere basically
         {-radius, -radius, -radius},
@@ -112,7 +116,12 @@ CCutsceneObject* CCutsceneMgr::CreateCutsceneObject(eModelID modelId) {
     // Create col model for it (If cutscene object)
     if (IsModelIDForCutScene(modelId)) {
         const auto mi = static_cast<CClumpModelInfo*>(CModelInfo::GetModelInfo(modelId));
-        mi->SetColModel(&CTempColModels::ms_colModelCutObj[modelId - MODEL_CUTOBJ01]);
+        auto& cm = CTempColModels::ms_colModelCutObj[modelId - MODEL_CUTOBJ01];
+        mi->SetColModel(&cm);
+
+        // The col model is shared between cutscenes; the bounding box update only ever grows the radius, so the
+        // previous cutscene's radius has to be dropped here (0x5B02FB)
+        cm.GetBoundingSphere().m_fRadius = 0.f;
         UpdateCutsceneObjectBoundingBox(mi->GetRpClump(), modelId);
     }
 
@@ -261,7 +270,9 @@ void CCutsceneMgr::FinishCutscene() {
 
 // 0x5B0550
 uint64 CCutsceneMgr::GetCutsceneTimeInMilleseconds() {
-    return (uint64)ms_cutsceneTimerS * 1000;
+    // The cast has to cover the product: casting only the seconds made the time advance in steps of a whole second,
+    // so every script that waits for a cutscene time (objects, text, audio, vehicles) fired up to a second late
+    return (uint64)(ms_cutsceneTimerS * 1000.0f);
 }
 
 // 0x5B0570
@@ -349,9 +360,10 @@ void CCutsceneMgr::LoadCutsceneData(const char* cutsceneName) {
 
 // 0x5B11C0
 void CCutsceneMgr::LoadCutsceneData_loading() {
-    // Make sure all neceesary models are streamed in
+    // Make sure all neceesary models are streamed in. The exe only waits for the cutscene object models; the others
+    // (peds, vehicles) are not checked here, and an unloaded one would otherwise block the whole cutscene
     for (const auto model : ms_iModelIndex | rngv::take(ms_numLoadObjectNames)) {
-        if (!CStreaming::IsModelLoaded(model)) {
+        if (IsModelIDForCutScene((eModelID)model) && !CStreaming::IsModelLoaded(model)) {
             return;
         }
     }
@@ -892,8 +904,11 @@ void CCutsceneMgr::SetCutsceneAnim(const char* animName, CObject* object) {
     const auto cpyOfTheAnim = ms_cutsceneAssociations.CopyAnimation(animName);
     CStreaming::IHaveUsedStreamingMemory();
 
+    // The exe rewinds the copy and leaves it stopped; Start() would set IS_PLAYING here. SetupCutsceneToStart is what
+    // starts it, once the object is in the world, so playing earlier lets the anim run before the cutscene timer does
+    cpyOfTheAnim->SetCurrentTime(0.f);
+    cpyOfTheAnim->SetFlag(ANIMATION_IS_PLAYING, false);
     cpyOfTheAnim->SetFlag(ANIMATION_CAN_EXTRACT_VELOCITY, true);
-    cpyOfTheAnim->Start(0.f);
 
     const auto blendData = RpAnimBlendClumpGetData(object->GetRpClump());
     blendData->m_AnimList.Prepend(&cpyOfTheAnim->m_Link);

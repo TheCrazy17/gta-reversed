@@ -110,7 +110,10 @@ void CCutsceneObject::PreRender() {
                     auto* animData = RpAnimBlendClumpGetData(GetRpClump());
                     auto* morphTarget = RpGeometryGetMorphTarget(RpAtomicGetGeometry(firstAtomic), 0);
                     auto* sphere = RpMorphTargetGetBoundingSphere(morphTarget);
-                    sphere->center = animData->m_FrameDatas[0].BonePos;
+                    // The exe takes the animated root bone translation (0x5B1F01..0x5B1F23), not BonePos (the rest pose
+                    // offset). RenderWare culls the atomic against this sphere, so a stale center hides the attached
+                    // skinned part (the head of a cutscene character) as soon as the shot moves
+                    sphere->center = animData->m_FrameDatas[0].KeyFrame->t;
                 }
             }
         }
