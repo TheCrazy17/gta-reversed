@@ -11,6 +11,8 @@ public:
 public:
     static constexpr auto Type = TASK_COMPLEX_EVASIVE_STEP;
 
+    static void InjectHooks();
+
     CTaskComplexEvasiveStep(CEntity* entity, const CVector& pos);
     ~CTaskComplexEvasiveStep() override;
 
@@ -21,5 +23,18 @@ public:
     CTask* ControlSubTask(CPed* ped) override { return m_pSubTask; } // 0x653550
 
     CTask* CreateSubTask(eTaskType taskType);
+
+private: // Wrappers for hooks
+    // 0x6532D0
+    CTaskComplexEvasiveStep* Constructor(CEntity* entity, const CVector& pos) {
+        this->CTaskComplexEvasiveStep::CTaskComplexEvasiveStep(entity, pos);
+        return this;
+    }
+
+    // 0x653350
+    CTaskComplexEvasiveStep* Destructor() {
+        this->CTaskComplexEvasiveStep::~CTaskComplexEvasiveStep();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskComplexEvasiveStep, 0x1C);

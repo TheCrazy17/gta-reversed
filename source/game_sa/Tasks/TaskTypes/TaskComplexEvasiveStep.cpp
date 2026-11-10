@@ -4,6 +4,20 @@
 #include "TaskSimpleEvasiveStep.h"
 #include "TaskSimpleAchieveHeading.h"
 
+void CTaskComplexEvasiveStep::InjectHooks() {
+    RH_ScopedVirtualClass(CTaskComplexEvasiveStep, 0x86F218, 11);
+    RH_ScopedCategory("Tasks/TaskTypes");
+
+    RH_ScopedInstall(Constructor, 0x6532D0);
+    RH_ScopedInstall(Destructor, 0x653350);
+    RH_ScopedInstall(CreateSubTask, 0x6533E0);
+    RH_ScopedVMTInstall(Clone, 0x655870);
+    RH_ScopedVMTInstall(GetTaskType, 0x653340);
+    RH_ScopedVMTInstall(CreateNextSubTask, 0x6534F0);
+    RH_ScopedVMTInstall(CreateFirstSubTask, 0x653540);
+    RH_ScopedVMTInstall(ControlSubTask, 0x653550);
+}
+
 // 0x6532D0
 CTaskComplexEvasiveStep::CTaskComplexEvasiveStep(CEntity* entity, const CVector& pos) : CTaskComplex() {
     m_Pos = pos;
@@ -18,18 +32,15 @@ CTaskComplexEvasiveStep::~CTaskComplexEvasiveStep() {
 
 // 0x6533E0
 CTask* CTaskComplexEvasiveStep::CreateSubTask(eTaskType taskType) {
-    return plugin::CallMethodAndReturn<CTask*, 0x6533E0, CTaskComplexEvasiveStep*, eTaskType>(this, taskType);
-
     switch (taskType) {
     case TASK_SIMPLE_EVASIVE_STEP:
         return new CTaskSimpleEvasiveStep(m_Entity);
     case TASK_SIMPLE_ACHIEVE_HEADING: {
-        auto angle = CGeneral::GetRadianAngleBetweenPoints(-m_Pos.x, -m_Pos.y, 0.0f, 0.0f);
+        // Faces away from the position to evade; the exe passes the angle on without limiting it
+        const auto angle = CGeneral::GetRadianAngleBetweenPoints(-m_Pos.x, -m_Pos.y, 0.0f, 0.0f);
         return new CTaskSimpleAchieveHeading(angle, 2.0f, 0.2f);
     }
-    case TASK_FINISHED:
-        return nullptr;
-    default:
+    default: // TASK_FINISHED and anything else
         return nullptr;
     }
 }

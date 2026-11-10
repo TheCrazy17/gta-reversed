@@ -12,6 +12,8 @@ public:
 public:
     static constexpr auto Type = TASK_SIMPLE_EVASIVE_STEP;
 
+    static void InjectHooks();
+
     explicit CTaskSimpleEvasiveStep(CEntity* entity);
     ~CTaskSimpleEvasiveStep() override;
 
@@ -22,5 +24,18 @@ public:
 
     void StartAnim(CPed* ped);
     static void FinishAnimEvasiveStepCB(CAnimBlendAssociation *assoc, void* data);
+
+private: // Wrappers for hooks
+    // 0x653160
+    CTaskSimpleEvasiveStep* Constructor(CEntity* entity) {
+        this->CTaskSimpleEvasiveStep::CTaskSimpleEvasiveStep(entity);
+        return this;
+    }
+
+    // 0x6531D0
+    CTaskSimpleEvasiveStep* Destructor() {
+        this->CTaskSimpleEvasiveStep::~CTaskSimpleEvasiveStep();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskSimpleEvasiveStep, 0x14);

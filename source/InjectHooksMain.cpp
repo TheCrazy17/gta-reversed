@@ -418,6 +418,10 @@
 #include "TaskComplexStuckInAir.h"
 #include "TaskSimpleHoldEntity.h"
 #include "TaskSimpleCower.h"
+#include "TaskComplexEvasiveCower.h"
+#include "TaskComplexEvasiveStep.h"
+#include "TaskSimpleEvasiveDive.h"
+#include "TaskSimpleEvasiveStep.h"
 #include "TaskSimpleHitFromBack.h"
 #include "TaskSimpleHitFromBehind.h"
 #include "TaskSimpleHitFromFront.h"
@@ -1083,9 +1087,9 @@ void InjectHooksMain() {
         CTaskComplexEnterCarAsDriverTimed::InjectHooks();
         CTaskComplexEnterCarAsPassengerTimed::InjectHooks();
         // CTaskComplexEnterCarAsPassengerWait::InjectHooks();
-        // CTaskComplexEvasiveCower::InjectHooks();
+        CTaskComplexEvasiveCower::InjectHooks();
         // CTaskComplexEvasiveDiveAndGetUp::InjectHooks();
-        // CTaskComplexEvasiveStep::InjectHooks();
+        CTaskComplexEvasiveStep::InjectHooks();
         // CTaskComplexExtinguishFireOnFoot::InjectHooks();
         CTaskComplexExtinguishFires::InjectHooks();
         // CTaskComplexFallAndStayDown::InjectHooks();
@@ -1220,8 +1224,8 @@ void InjectHooksMain() {
         CTaskSimpleDrownInCar::InjectHooks();
         CTaskSimpleDuckToggle::InjectHooks();
         // CTaskSimpleDuckWhileShotsWhizzing::InjectHooks();
-        // CTaskSimpleEvasiveDive::InjectHooks();
-        // CTaskSimpleEvasiveStep::InjectHooks();
+        CTaskSimpleEvasiveDive::InjectHooks();
+        CTaskSimpleEvasiveStep::InjectHooks();
         CTaskSimpleFightingControl::InjectHooks();
         CTaskSimpleFinishBrain::InjectHooks();
         CTaskSimpleGunControl::InjectHooks();

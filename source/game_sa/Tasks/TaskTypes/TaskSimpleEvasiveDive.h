@@ -7,6 +7,8 @@ class NOTSA_EXPORT_VTABLE CTaskSimpleEvasiveDive final : public CTaskSimple {
 public:
     static constexpr auto Type = TASK_SIMPLE_EVASIVE_DIVE;
 
+    static void InjectHooks();
+
     CTaskSimpleEvasiveDive(CVehicle *vehicle);
     ~CTaskSimpleEvasiveDive() override;
 
@@ -17,6 +19,19 @@ public:
 
     void StartAnim(CPed* ped);
     static void FinishAnimEvasiveDiveCB(CAnimBlendAssociation *assoc, void* data);
+
+private: // Wrappers for hooks
+    // 0x653560
+    CTaskSimpleEvasiveDive* Constructor(CVehicle* vehicle) {
+        this->CTaskSimpleEvasiveDive::CTaskSimpleEvasiveDive(vehicle);
+        return this;
+    }
+
+    // 0x6535D0
+    CTaskSimpleEvasiveDive* Destructor() {
+        this->CTaskSimpleEvasiveDive::~CTaskSimpleEvasiveDive();
+        return this;
+    }
 
 private:
     CVehicle::Ref          m_EvadeVeh{};  //< The vehicle to evade
