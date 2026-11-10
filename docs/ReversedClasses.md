@@ -1,17 +1,17 @@
 # Reimplementation progress (*): 100%
 This file is updated automatically every time the `hooks.json` file is updated (which happens every time there are changes to hooks made by a commit), and shows the current progress of reversed categories in the project.
 
-Last update was at Nov 09, 2026 at 23:12:31 UTC
-(Triggered by commit [e2779b6a](https://github.com/TheCrazy17/gta-reversed/commit/e2779b6a))
+Last update was at Nov 10, 2026 at 00:15:46 UTC
+(Triggered by commit [c1c328c8](https://github.com/TheCrazy17/gta-reversed/commit/c1c328c8))
 
 ## (*) Disclaimers
 **The progress** is based on the number of functions we have documented and reimplemented, so it might not completely reflect the actual progress, it's meant to be a rough estimate.
 
 **The percentages and the number of categories** shown here may not be completely accurate, because not all categories and functions are documented yet.
 
-## Stats (8641 out of 8641 functions done in 772 categories)
+## Stats (8708 out of 8708 functions done in 781 categories)
 
-#### Completely reversed categories (772/772) [100%]
+#### Completely reversed categories (781/781) [100%]
 
 <details>
 <summary>See list of categories</summary>
@@ -371,6 +371,15 @@ Last update was at Nov 09, 2026 at 23:12:31 UTC
 - CKeyGen (4)<br />
 - CTaskCategories (4)<br />
 - CTaskSimpleGangDriveBy (3)<br />
+- CTaskInteriorBeInHouse (8)<br />
+- CTaskInteriorBeInOffice (8)<br />
+- CTaskInteriorBeInShop (6)<br />
+- CTaskInteriorGoToInfo (7)<br />
+- CTaskInteriorShopKeeper (7)<br />
+- CTaskInteriorSitAtDesk (9)<br />
+- CTaskInteriorUseInfo (8)<br />
+- CTaskInteriorLieInBed (7)<br />
+- CTaskInteriorSitInChair (7)<br />
 - CTaskComplexUseClosestFreeScriptedAttractorRun (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractorSprint (4)<br />
 - CTaskComplexUseClosestFreeScriptedAttractor (8)<br />
@@ -790,14 +799,14 @@ Last update was at Nov 09, 2026 at 23:12:31 UTC
 
 </details>
 
-#### Partially reversed categories (0/772) [0%]
+#### Partially reversed categories (0/781) [0%]
 
 <details>
 <summary>See list of categories</summary>
 
 </details>
 
-#### Not-at-all reversed categories (0/772) [0%]
+#### Not-at-all reversed categories (0/781) [0%]
 
 <details>
 <summary>See list of categories</summary>

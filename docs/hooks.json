@@ -23195,6 +23195,341 @@
     "IsReversed": true
   },
   {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "GetInfoForPedToUse",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "CreateNextSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "CreateFirstSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInHouse",
+    "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "GetInfoForPedToUse",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "CreateNextSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "CreateFirstSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInOffice",
+    "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "GetWanderType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorBeInShop",
+    "Name": "ScanForStuff",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "CreateNextSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "CreateFirstSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorGoToInfo",
+    "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "CreateNextSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "CreateFirstSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorShopKeeper",
+    "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "FinishAnimCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "StartRandomLoopAnim",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "StartRandomOneOffAnim",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitAtDesk",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "CreateNextSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "CreateFirstSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorUseInfo",
+    "Name": "ControlSubTask",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "FinishAnimCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorLieInBed",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "Constructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "Destructor",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "FinishAnimCB",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "Clone",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "GetTaskType",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "MakeAbortable",
+    "IsReversed": true
+  },
+  {
+    "Category": "CTaskInteriorSitInChair",
+    "Name": "ProcessPed",
+    "IsReversed": true
+  },
+  {
     "Category": "CTaskComplexUseClosestFreeScriptedAttractorRun",
     "Name": "Constructor",
     "IsReversed": true
