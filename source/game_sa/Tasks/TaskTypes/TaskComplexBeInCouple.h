@@ -3,21 +3,25 @@
 #include "TaskComplex.h"
 
 class NOTSA_EXPORT_VTABLE CTaskComplexBeInCouple : public CTaskComplex {
+public:
     enum WalkSide : int32 {
         NONE,
         RIGHT,
         LEFT,
     };
+
 public:
-    WalkSide m_walkOnSide{};
+    WalkSide m_walkOnSide{}; // Not used by any exe function
     CPed*    m_partner{}; // The other ped this (the owner of the task) ped is together with
     bool     m_isLeader{};
     bool     m_holdHands{};
     bool     m_lookAtEachOther{};
     float    m_giveUpDist{};
-    int8     m_prevSide{};
+    int8     m_prevSide{}; // The WalkSide the arm IK was last set up for
 public:
     static constexpr auto Type = TASK_COMPLEX_BE_IN_COUPLE;
+
+    static void InjectHooks();
 
     CTaskComplexBeInCouple(
         CPed* pPed,
@@ -36,5 +40,21 @@ public:
     CTask* CreateNextSubTask(CPed* ped) override;
     CTask* ControlSubTask(CPed* ped) override;
     void AbortArmIK(CPed* ped);
+
+    //! @returns Which side of the partner `ped` is on, seen from the partner (`LEFT` or `RIGHT`)
+    WalkSide GetWalkSide(CPed* ped);
+
+private: // Wrappers for hooks
+    // 0x6836F0
+    CTaskComplexBeInCouple* Constructor(CPed* ped, bool isLeader, bool holdHands, bool lookAtEachOther, float giveUpDist) {
+        this->CTaskComplexBeInCouple::CTaskComplexBeInCouple(ped, isLeader, holdHands, lookAtEachOther, giveUpDist);
+        return this;
+    }
+
+    // 0x683780
+    CTaskComplexBeInCouple* Destructor() {
+        this->CTaskComplexBeInCouple::~CTaskComplexBeInCouple();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskComplexBeInCouple, 0x20);

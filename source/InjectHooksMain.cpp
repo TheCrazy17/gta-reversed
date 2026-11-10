@@ -461,6 +461,7 @@
 #include "TaskSimplePickUpEntity.h"
 #include "TaskComplexEnterCarAsDriverTimed.h"
 #include "TaskComplexBeInGroup.h"
+#include "TaskComplexBeInCouple.h"
 #include "TaskComplexBeCop.h"
 #include "TaskComplexAvoidOtherPedWhileWandering.h"
 #include "TaskComplexArrestPed.h"
@@ -1384,9 +1385,10 @@ void InjectHooksMain() {
         CTaskComplexUseWaterCannon::InjectHooks();
         // CTaskComplexDriveToPoint::InjectHooks();
         CTaskSimpleSlideToCoord::InjectHooks();
-        // CTaskComplexPartnerDeal::InjectHooks();
+        CTaskComplexPartnerDeal::InjectHooks();
         CTaskSimplePickUpEntity::InjectHooks();
         CTaskComplexBeInGroup::InjectHooks();
+        CTaskComplexBeInCouple::InjectHooks();
         // CTaskComplexBeCop::InjectHooks();
         CTaskComplexAvoidOtherPedWhileWandering::InjectHooks();
         CTaskComplexArrestPed::InjectHooks();
