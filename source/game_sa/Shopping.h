@@ -115,6 +115,8 @@ public:
     static void StoreVehicleMods();
     static void RestoreClothesState();
     static void RestoreVehicleMods();
+    static int32 GetNumberOfItemsInShop() { return ms_numItemsInShop; } // NOTSA, used by GET_NUMBER_OF_ITEMS_IN_SHOP
+    static uint32 GetItemInShop(int32 index) { return ms_shopContents[index]; } // NOTSA, used by GET_ITEM_IN_SHOP
     static void SetCurrentProperty(CMultiBuilding* property);
     static void UpdateStats(size_t index, bool increment);
     static void Load();

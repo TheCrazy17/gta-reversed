@@ -12,6 +12,7 @@ namespace comparasion { void RegisterHandlers(); };
 namespace game { void RegisterHandlers(); };
 namespace generic { void RegisterHandlers(); };
 namespace math { void RegisterHandlers(); };
+namespace misc { void RegisterHandlers(); };
 namespace mission { void RegisterHandlers(); };
 namespace object { void RegisterHandlers(); };
 namespace pad { void RegisterHandlers(); };
