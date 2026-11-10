@@ -1,12 +1,15 @@
 #include "StdInc.h"
 
 #include "AutoPilot.h"
+#include "PathFind.h"
+#include "Curves.h"
 
 void CAutoPilot::InjectHooks() {
     RH_ScopedClass(CAutoPilot);
     RH_ScopedCategoryGlobal();
 
     RH_ScopedInstall(RemoveOnePathNode, 0x41B950);
+    RH_ScopedInstall(ModifySpeed, 0x41B980);
 }
 
 // 0x6D5E20
@@ -50,8 +53,50 @@ CAutoPilot::CAutoPilot() : m_aPathFindNodesInfo() {
     m_fMaxTrafficSpeed = 0.0F;
 }
 
+// 0x41B980
 void CAutoPilot::ModifySpeed(float target) {
-    plugin::CallMethod<0x41B980, CAutoPilot*, float>(this, target);
+    // Out of range and NaN values become INT32_MIN like in the exe's float to int conversion
+    const auto ToInt32 = [](double v) {
+        return std::isfinite(v) && v > -2147483649.0 && v < 2147483648.0 ? (int32)v : INT32_MIN;
+    };
+
+    // How far along the current curve the vehicle is, measured with the old speed. The time difference is unsigned
+    // and the duration signed, as the x87 code loads them
+    const auto now      = CTimer::GetTimeInMS();
+    const auto progress = (float)((double)(uint32)(now - (uint32)field_C) / (double)(int32)m_nSpeedScaleFactor);
+
+    m_speed = target > 0.01f ? target : 0.01f; // A NaN also ends up as 0.01
+
+    // The exe tests the path node tables of the two link areas here, not the navi node tables
+    if (!ThePaths.m_pPathNodes[m_nCurrentPathNodeInfo.m_wAreaId] || !ThePaths.m_pPathNodes[m_nNextPathNodeInfo.m_wAreaId]) {
+        return;
+    }
+
+    const auto& curLink  = ThePaths.GetCarPathLink(m_nCurrentPathNodeInfo);
+    const auto& nextLink = ThePaths.GetCarPathLink(m_nNextPathNodeInfo);
+
+    // The same curve CCarCtrl uses when a vehicle enters a link; only the time to go through it is recomputed
+    const auto LinkDir = [](const CCarPathLink& link, float sign) {
+        const auto* const raw = reinterpret_cast<const int8*>(&link.m_dir);
+        return CVector2D{ (float)raw[0] * 0.01f * sign, (float)raw[1] * 0.01f * sign };
+    };
+    const auto curDir  = LinkDir(curLink, (float)_smthCurr);
+    const auto nextDir = LinkDir(nextLink, (float)_smthNext);
+
+    const auto curOffset  = (curLink.OneWayLaneOffset() + (float)m_nCurrentLane) * 5.4f;
+    const auto nextOffset = (nextLink.OneWayLaneOffset() + (float)m_nNextLane) * 5.4f;
+
+    const auto curPos  = curLink.GetNodeCoors();
+    const auto nextPos = nextLink.GetNodeCoors();
+    const CVector startPos{ curPos.x + curOffset * curDir.y, curPos.y - curOffset * curDir.x, 0.0f };
+    const CVector endPos{ nextPos.x + nextOffset * nextDir.y, nextPos.y - nextOffset * nextDir.x, 0.0f };
+
+    const auto scaleFactor = CCurves::CalcSpeedScaleFactor(startPos, endPos, curDir.x, curDir.y, nextDir.x, nextDir.y);
+    const auto duration    = ToInt32((double)scaleFactor * (1000.0 / (double)m_speed));
+    m_nSpeedScaleFactor    = (uint32)duration;
+
+    // The start time moves so that the vehicle stays at the same point of the curve
+    field_C = ToInt32((double)now - (double)progress * (double)duration);
 }
 
 // 0x41B950
