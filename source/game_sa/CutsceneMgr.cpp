@@ -539,7 +539,8 @@ bool CCutsceneMgr::LoadCutSceneFile(const char* csFileName) {
     csFileSzBytes  *= STREAMING_SECTOR_SIZE;
 
     // Allocate data for the file
-    auto csFileData{ std::make_unique<char[]>(csFileSzBytes * STREAMING_SECTOR_SIZE) };
+    // The size is already in bytes here; multiplying by the sector size again made the zero filled buffer 2048 times too big
+    auto csFileData{ std::make_unique<char[]>(csFileSzBytes) };
 
     // Load cutscene data
     {
@@ -626,9 +627,10 @@ bool CCutsceneMgr::LoadCutSceneFile(const char* csFileName) {
                 auto& o = ms_cutsceneOffset;
                 VERIFY(sscanf_s(ln + strlen("offset"), "%f %f %f", &o.x, &o.y, &o.z) == 3);
 
-                // Warp ped out of the vehicle
+                // Warp ped out of the vehicle. The exe passes door 0 (0x5B0A45), which is not one of the real doors; the
+                // door only picks the side searched first when the exit point is blocked
                 if (const auto plyr = FindPlayerPed(); plyr->IsInVehicle()) {
-                    CTaskSimpleCarSetPedOut{ plyr->m_pVehicle, TARGET_DOOR_FRONT_LEFT, true }.ProcessPed(plyr);
+                    CTaskSimpleCarSetPedOut{ plyr->m_pVehicle, (eTargetDoor)0, true }.ProcessPed(plyr);
                 }
 
                 // Load IPLs
@@ -752,16 +754,16 @@ void CCutsceneMgr::LoadCutsceneData_preload() {
         }
     }
 
-    // Unload cutscene models
-    for (int32 i = MODEL_CUTOBJ01; i < MODEL_CUTOBJ20; i++) {
+    // Unload cutscene models; the exe covers all 20 (the last one was skipped) and resets the key of every unreferenced
+    // one, loaded or not, so a name left over from an earlier cutscene can't match a model that is no longer there
+    for (int32 i = MODEL_CUTOBJ01; i <= MODEL_CUTOBJ20; i++) {
         const auto mi = CModelInfo::GetModelInfo(i);
-        if (mi->m_nRefCount) {
+        if (mi->m_nRefCount > 0) {
             continue;
         }
-        if (!CStreaming::IsModelLoaded(i)) {
-            continue;
+        if (CStreaming::IsModelLoaded(i)) {
+            CStreaming::RemoveModel(i);
         }
-        CStreaming::RemoveModel(i);
         mi->m_nKey = CKeyGen::GetUppercaseKey("&*%"); // Set some invalid key I guess? I don't think anything like this is used anywhere :D
     }
 
@@ -813,9 +815,11 @@ void CCutsceneMgr::LoadCutsceneData_preload() {
     // Append objects added by script to the ones added by `LoadCutSceneFile`
     rng::fill(ms_iModelIndex | rngv::drop(ms_numLoadObjectNames) | rngv::take(ms_numAppendObjectNames), MODEL_LOAD_THIS); // Appended objects are loaded directly
     for (auto i = 0; i < ms_numAppendObjectNames; i++) {
+        // The source is the i-th appended name; indexing it with the destination slot (after the objects of the .CUT)
+        // copied empty names, so the appended objects (and their anims) were never found
         const auto objId = ms_numLoadObjectNames++;
-        strcpy_s(ms_cLoadObjectName[objId], ms_cAppendObjectName[objId]);
-        strcpy_s(ms_cLoadAnimName[objId], ms_cAppendAnimName[objId]);
+        strcpy_s(ms_cLoadObjectName[objId], ms_cAppendObjectName[i]);
+        strcpy_s(ms_cLoadAnimName[objId], ms_cAppendAnimName[i]);
     }
     ms_numAppendObjectNames = 0;
 
