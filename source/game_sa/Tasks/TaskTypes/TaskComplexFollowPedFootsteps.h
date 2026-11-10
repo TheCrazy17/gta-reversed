@@ -32,6 +32,17 @@ public:
 private:
     friend void InjectHooksMain();
     static void InjectHooks();
-    CTaskComplexFollowPedFootsteps* Constructor(CPed* ped);
+
+    // 0x694E20
+    CTaskComplexFollowPedFootsteps* Constructor(CPed* ped) {
+        this->CTaskComplexFollowPedFootsteps::CTaskComplexFollowPedFootsteps(ped);
+        return this;
+    }
+
+    // 0x695DC0
+    CTaskComplexFollowPedFootsteps* Destructor() {
+        this->CTaskComplexFollowPedFootsteps::~CTaskComplexFollowPedFootsteps();
+        return this;
+    }
 };
 VALIDATE_SIZE(CTaskComplexFollowPedFootsteps, 0x20);
