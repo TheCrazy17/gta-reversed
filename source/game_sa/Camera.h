@@ -538,6 +538,13 @@ public:
 };
 VALIDATE_SIZE(CCamera, 0xD78);
 
+// Fields the cutscene flyby camera reads and writes directly (0x5B25F0, 0x5B2090 and 0x5B2330 use these absolute addresses)
+VALIDATE_OFFSET(CCamera, m_bCutsceneFinished, 0xB6F045 - 0xB6F028);
+VALIDATE_OFFSET(CCamera, m_bStartingSpline, 0xB6F05B - 0xB6F028);
+VALIDATE_OFFSET(CCamera, m_fPositionAlongSpline, 0xB6F168 - 0xB6F028);
+VALIDATE_OFFSET(CCamera, m_vecCutSceneOffset, 0xB6F8AC - 0xB6F028);
+VALIDATE_OFFSET(CCamera, m_aPathArray, 0xB6F988 - 0xB6F028);
+
 extern CCamera& TheCamera;
 extern bool& gbModelViewer;
 extern int8& gbCineyCamMessageDisplayed;
