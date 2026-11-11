@@ -160,7 +160,8 @@ float cTransmission::CalculateDriveAcceleration(const float& gasPedal, uint8& cu
                 {
                     float currentDownVelocityDiff = 0.0f;
                     float upDownVelocityDiff      = 0.0f;
-                    float maxVelocityChange       = m_MaxVelocity / static_cast<float>(m_nNumberOfGears) * (1.f / 3.f);
+                    // The exe multiplies by (1.0 - 0.6667f) read from 0x871D50, which is 0.3333 and not 1/3
+                    float maxVelocityChange       = m_MaxVelocity / static_cast<float>(m_nNumberOfGears) * (1.0f - 0.6667f);
                     if (currentGear)
                     {
                         if (currentGear == 1)

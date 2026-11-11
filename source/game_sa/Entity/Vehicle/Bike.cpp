@@ -960,7 +960,8 @@ void CBike::ProcessControlInputs(uint8 playerNum) {
             m_BrakePedal = 0.0f;
         }
         vehicleFlags.bIsHandbrakeOn = false;
-        m_fSteerAngle += (comedyCounter & 0x800) ? 0.03f : -0.08f; // DAT_00858B10 / _DAT_00859018
+        // The exe adds 0.08 (0x859018) when bit 11 is set and subtracts 0.03 (0x858B10) otherwise; the constants were swapped here
+        m_fSteerAngle += (comedyCounter & 0x800) ? 0.08f : -0.03f;
     }
 
     // NOTSA: `CPad::GetPad(0)+0x10E` (a int16 field) wasn't identified this session - the original
