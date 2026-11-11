@@ -212,19 +212,20 @@ void CTaskComplexAvoidOtherPedWhileWandering::SetUpIK(CPed* ped) {
     if (!ped->GetIsOnScreen()) {
         return;
     }
-    if (!g_ikChainMan.GetLookAtEntity(ped)) {
+    // The exe gives up when something else already makes the ped look somewhere (both checks were inverted here, so the ped
+    // only started to look when another look was running), and a task without a parent goes on to look
+    if (g_ikChainMan.GetLookAtEntity(ped)) {
         return;
     }
-    if (!ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_IK)) {
+    if (ped->GetTaskManager().GetTaskSecondary(TASK_SECONDARY_IK)) {
         return;
     }
-    if (!m_Parent) {
-        return;
-    }
-    switch (m_Parent->GetTaskType()) {
-    case TASK_COMPLEX_AVOID_OTHER_PED_WHILE_WANDERING:
-    case TASK_COMPLEX_AVOID_ENTITY:
-        return;
+    if (m_Parent) {
+        switch (m_Parent->GetTaskType()) {
+        case TASK_COMPLEX_AVOID_OTHER_PED_WHILE_WANDERING:
+        case TASK_COMPLEX_AVOID_ENTITY:
+            return;
+        }
     }
     const auto pedToTarget = m_TargetPt - ped->GetPosition();
     const auto pedToTargetDistSq = pedToTarget.SquaredMagnitude();
@@ -235,8 +236,9 @@ void CTaskComplexAvoidOtherPedWhileWandering::SetUpIK(CPed* ped) {
     if (ped->GetForward().Dot(pedToTargetDir) >= CTaskSimpleGoTo::ms_fLookAtThresholdDotProduct) {
         return;
     }
+    // x and y come from the target, but z from the ped
     CVector lookAt = m_TargetPt + pedToTargetDir * 2.f;
-    lookAt.z += 0.61f;
+    lookAt.z = ped->GetPosition().z + pedToTargetDir.z * 2.f + 0.61f;
     g_ikChainMan.LookAt("TaskAvoidOthPed", ped, 0, 5000, BONE_UNKNOWN, &lookAt, false, 0.25f, 500, 3, false);
     m_IsDoingIK = true;
 }

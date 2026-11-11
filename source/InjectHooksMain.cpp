@@ -363,6 +363,8 @@
 #include "TaskComplexReactToGunAimedAt.h"
 #include "TaskSimpleNone.h"
 #include "TaskComplexKillPedOnFoot.h"
+#include "TaskComplexKillAllThreats.h"
+#include "TaskComplexAvoidEntity.h"
 #include "TaskSimpleThrowProjectile.h"
 #include "TaskSimpleGoToPoint.h"
 #include "TaskComplexWanderMedic.h"
@@ -1122,7 +1124,6 @@ void InjectHooksMain() {
         CTaskComplexInWater::InjectHooks();
         CTaskComplexInvestigateDeadPed::InjectHooks();
         CTaskComplexInvestigateDisturbance::InjectHooks();
-        // CTaskComplexKillAllThreats::InjectHooks();
         CTaskComplexKillCriminal::InjectHooks();
 
         CTaskComplexKillPedOnFootArmed::InjectHooks();
@@ -1338,6 +1339,8 @@ void InjectHooksMain() {
         // + CTaskComplexEnterCarAsDriver::InjectHooks();
         // CTaskSimpleNone::InjectHooks();
         CTaskComplexKillPedOnFoot::InjectHooks();
+        CTaskComplexKillAllThreats::InjectHooks();
+        CTaskComplexAvoidEntity::InjectHooks();
         CTaskSimpleThrowProjectile::InjectHooks();
         CTaskSimpleGoToPoint::InjectHooks();
         CTaskComplexWanderMedic::InjectHooks();
