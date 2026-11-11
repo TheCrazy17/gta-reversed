@@ -9,6 +9,9 @@ void CEventPotentialWalkIntoVehicle::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4AE320);
     RH_ScopedVMTInstall(AffectsPed, 0x4AE420);
+    RH_ScopedVMTInstall(GetEventType, 0x4AE390);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AE3B0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AE3A0);
 }
 
 // 0x4AE320

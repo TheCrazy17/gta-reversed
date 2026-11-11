@@ -16,6 +16,7 @@ void CTaskComplexJump::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x67FC00);
     RH_ScopedVMTInstall(Clone, 0x67C5A0);
     RH_ScopedVMTInstall(MakeAbortable, 0x67A070);
+    RH_ScopedVMTInstall(GetTaskType, 0x67A050);
 }
 
 CTaskComplexJump* CTaskComplexJump::Constructor(eForceClimb jumpType) {

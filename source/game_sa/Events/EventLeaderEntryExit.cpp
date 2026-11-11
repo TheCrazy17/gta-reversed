@@ -8,6 +8,8 @@ void CEventLeaderEntryExit::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x43E1C0);
+    RH_ScopedVMTInstall(GetEventType, 0x43E200);
+    RH_ScopedVMTInstall(GetLifeTime, 0x43E210);
 }
 
 // 0x43E1C0

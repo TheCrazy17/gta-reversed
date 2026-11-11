@@ -13,7 +13,7 @@ void CTaskLeanOnVehicle::InjectHooks() {
 
     RH_ScopedVMTInstall(MakeAbortable, 0x661110);
     RH_ScopedVMTInstall(ProcessPed, 0x6648C0);
-
+    RH_ScopedVMTInstall(GetTaskType, 0x661020);
 }
 
 // 0x660F90

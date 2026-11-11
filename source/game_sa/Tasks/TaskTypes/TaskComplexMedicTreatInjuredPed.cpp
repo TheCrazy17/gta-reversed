@@ -27,6 +27,7 @@ void CTaskComplexMedicTreatInjuredPed::InjectHooks() {
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x659FE0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x65A990);
     RH_ScopedVMTInstall(ControlSubTask, 0x65ABF0);
+    RH_ScopedVMTInstall(GetTaskType, 0x658C20);
 }
 
 CTaskComplexMedicTreatInjuredPed* CTaskComplexMedicTreatInjuredPed::Constructor(CVehicle* vehicle, CPed* ped, bool isDriver) {

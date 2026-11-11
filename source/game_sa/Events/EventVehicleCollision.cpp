@@ -14,6 +14,9 @@ void CEventVehicleCollision::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4AC840);
     RH_ScopedVMTInstall(Clone, 0x4B6BC0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B2EE0);
+    RH_ScopedVMTInstall(GetEventType, 0x4AC8F0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AC910);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AC900);
 }
 
 CEventVehicleCollision::CEventVehicleCollision(int16 pieceType, float damageIntensity, CVehicle* vehicle, const CVector& collisionImpactVelocity, const CVector& collisionPosition, int8 moveState, int16 evadeType)

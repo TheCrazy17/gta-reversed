@@ -11,6 +11,7 @@ void CTaskSimpleGetUp::InjectHooks() {
     RH_ScopedInstall(FinishGetUpAnimCB, 0x678110);
     RH_ScopedVMTInstall(ProcessPed, 0x67FA80);
     RH_ScopedVMTInstall(MakeAbortable, 0x677FE0);
+    RH_ScopedVMTInstall(GetTaskType, 0x677F70);
 }
 
 CTaskSimpleGetUp* CTaskSimpleGetUp::Constructor() {

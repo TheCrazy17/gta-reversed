@@ -7,6 +7,9 @@ void CEventEscalator::InjectHooks() {
     RH_ScopedCategory("Events");
 
     RH_ScopedVMTInstall(AffectsPed, 0x4B2580);
+    RH_ScopedVMTInstall(GetEventType, 0x5FF840);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5FF870);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5FF850);
 }
 
 // 0x4B2580

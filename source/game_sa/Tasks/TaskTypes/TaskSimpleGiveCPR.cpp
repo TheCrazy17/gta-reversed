@@ -13,6 +13,7 @@ void CTaskSimpleGiveCPR::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x659A10);
     RH_ScopedVMTInstall(ProcessPed, 0x65A7C0);
     RH_ScopedVMTInstall(MakeAbortable, 0x6589B0);
+    RH_ScopedVMTInstall(GetTaskType, 0x658890);
 }
 
 CTaskSimpleGiveCPR* CTaskSimpleGiveCPR::Constructor(CAccident* pAccident) {

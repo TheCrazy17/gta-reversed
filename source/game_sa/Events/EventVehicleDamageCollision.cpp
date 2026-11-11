@@ -9,6 +9,7 @@ void CEventVehicleDamageCollision::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x6A0620);
     RH_ScopedVMTInstall(CloneEditable, 0x6A0670);
+    RH_ScopedVMTInstall(GetEventType, 0x6A0660);
 }
 
 // 0x6A0620

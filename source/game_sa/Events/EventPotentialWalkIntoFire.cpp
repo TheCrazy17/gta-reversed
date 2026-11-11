@@ -9,6 +9,9 @@ void CEventPotentialWalkIntoFire::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B1E20);
     RH_ScopedVMTInstall(AffectsPed, 0x4B6890);
+    RH_ScopedVMTInstall(GetEventType, 0x4B1ED0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B1EF0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B1EE0);
 }
 
 // 0x4B1E20

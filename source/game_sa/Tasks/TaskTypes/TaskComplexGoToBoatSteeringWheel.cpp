@@ -15,6 +15,7 @@ void CTaskComplexGoToBoatSteeringWheel::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x64E350);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x64E390);
     RH_ScopedVMTInstall(ControlSubTask, 0x64E3B0);
+    RH_ScopedVMTInstall(GetTaskType, 0x6490F0);
 }
 
 // 0x649090

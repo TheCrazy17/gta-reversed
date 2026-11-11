@@ -8,6 +8,9 @@ void CEventDontJoinPlayerGroup::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x6090E0);
+    RH_ScopedVMTInstall(GetEventType, 0x6091A0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x609320);
+    RH_ScopedVMTInstall(GetLifeTime, 0x6091B0);
 }
 
 // 0x6090E0

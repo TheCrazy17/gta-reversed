@@ -17,6 +17,7 @@ void CTaskComplexFallAndGetUp::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x67CB70);
     RH_ScopedVMTInstall(ControlSubTask, 0x6788F0);
     RH_ScopedVMTInstall(MakeAbortable, 0x6787F0);
+    RH_ScopedVMTInstall(GetTaskType, 0x6786F0);
 }
 
 CTaskComplexFallAndGetUp* CTaskComplexFallAndGetUp::Constructor(AnimationId nFallAnimId, AssocGroupId nFallAnimGroup, int32 nFallDownTime) {

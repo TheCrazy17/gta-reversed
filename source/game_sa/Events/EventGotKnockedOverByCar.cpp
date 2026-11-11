@@ -10,6 +10,9 @@ void CEventGotKnockedOverByCar::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4B1C10);
     RH_ScopedVMTInstall(AffectsPed, 0x4B1C70);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7960);
+    RH_ScopedVMTInstall(GetEventType, 0x4B1BD0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B1C00);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B1BE0);
 }
 
 

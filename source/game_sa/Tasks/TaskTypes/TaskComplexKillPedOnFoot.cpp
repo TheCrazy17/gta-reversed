@@ -28,6 +28,7 @@ void CTaskComplexKillPedOnFoot::InjectHooks() {
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x62B490);
     RH_ScopedVMTInstall(ControlSubTask, 0x626260);
     RH_ScopedInstall(CreateSubTask, 0x625E70);
+    RH_ScopedVMTInstall(GetTaskType, 0x620EE0);
 }
 
 namespace {

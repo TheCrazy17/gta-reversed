@@ -8,6 +8,9 @@ void CEventSeenPanickedPed::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x4B2080);
     RH_ScopedVMTInstall(AffectsPed, 0x4B53C0);
+    RH_ScopedVMTInstall(GetEventType, 0x4B20F0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B2120);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B2100);
 }
 
 // 0x4B2080

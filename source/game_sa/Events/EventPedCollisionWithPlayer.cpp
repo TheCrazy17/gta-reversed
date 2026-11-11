@@ -8,6 +8,7 @@ void CEventPedCollisionWithPlayer::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x5FED40);
+    RH_ScopedVMTInstall(GetEventType, 0x5FED90);
 }
 
 // 0x5FED40

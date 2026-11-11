@@ -11,6 +11,8 @@ void CEventStuckInAir::InjectHooks()
     RH_ScopedVMTInstall(GetEventPriority, 0x4B1600);
     RH_ScopedVMTInstall(AffectsPed, 0x4B1580);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4B15B0);
+    RH_ScopedVMTInstall(GetEventType, 0x4B14F0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B1500);
 }
 
 // 0x4B1490

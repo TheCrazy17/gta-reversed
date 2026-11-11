@@ -13,6 +13,7 @@ void CTaskSimpleCarSetPedInAsPassenger::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedVMTInstall(ProcessPed, 0x64B5D0);
+    RH_ScopedVMTInstall(GetTaskType, 0x647060);
 }
 
 // OG constructor was at 0x646FE0

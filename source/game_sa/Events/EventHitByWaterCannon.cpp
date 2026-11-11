@@ -9,6 +9,9 @@ void CEventHitByWaterCannon::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B1290);
     RH_ScopedVMTInstall(AffectsPed, 0x4B1330);
+    RH_ScopedVMTInstall(GetEventType, 0x4B12E0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B1310);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B12F0);
 }
 
 // 0x4B1290

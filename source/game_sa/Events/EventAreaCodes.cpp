@@ -10,6 +10,9 @@ void CEventAreaCodes::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4B2190);
     RH_ScopedVMTInstall(AffectsPed, 0x4B2270);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4B2350);
+    RH_ScopedVMTInstall(GetEventType, 0x4B21F0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x43E2C0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B2200);
 }
 
 // 0x4B2190

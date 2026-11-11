@@ -9,6 +9,9 @@ void CEventSexyPed::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4AEEA0);
     RH_ScopedVMTInstall(AffectsPed, 0x4AEF00);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7280);
+    RH_ScopedVMTInstall(GetEventType, 0x4AEE60);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AEE90);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AEE70);
 }
 
 

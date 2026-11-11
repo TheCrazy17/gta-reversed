@@ -8,6 +8,8 @@ void CEventAcquaintancePedHate::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor2, 0x420E70);
+    RH_ScopedVMTInstall(GetEventType, 0x420F40);
+    RH_ScopedVMTInstall(GetEventPriority, 0x420FD0);
 }
 
 // 0x420E70

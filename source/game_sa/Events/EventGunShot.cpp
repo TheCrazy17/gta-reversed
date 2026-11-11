@@ -11,6 +11,9 @@ void CEventGunShot::InjectHooks() {
     RH_ScopedVMTInstall(IsCriminalEvent, 0x4AC810);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4AC780);
     RH_ScopedVMTInstall(CloneEditable, 0x4B6B20);
+    RH_ScopedVMTInstall(GetEventType, 0x4AC6B0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AC710);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AC6C0);
 }
 
 CEventGunShot* CEventGunShot::Constructor(CEntity* entity, CVector startPoint, CVector endPoint, bool bHasNoSound) { this->CEventGunShot::CEventGunShot(entity, startPoint, endPoint, bHasNoSound); return this; }

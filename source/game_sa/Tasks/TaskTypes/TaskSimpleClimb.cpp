@@ -47,6 +47,7 @@ void CTaskSimpleClimb::InjectHooks() {
     RH_ScopedInstall(GetCameraTargetPos, 0x67A390);
     RH_ScopedVMTInstall(ProcessPed, 0x680DC0);
     RH_ScopedVMTInstall(MakeAbortable, 0x67A280);
+    RH_ScopedVMTInstall(GetTaskType, 0x67A1C0);
 }
 
 // 0x67A110

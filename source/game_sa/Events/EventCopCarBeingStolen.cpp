@@ -8,6 +8,9 @@ void CEventCopCarBeingStolen::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x4B1740);
     RH_ScopedVMTInstall(AffectsPed, 0x4B1860);
+    RH_ScopedVMTInstall(GetEventType, 0x4B17C0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B17E0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B17D0);
 }
 
 // 0x4B1740

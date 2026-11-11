@@ -8,6 +8,7 @@ void CEventScriptedAttractor::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x5FEF40);
+    RH_ScopedVMTInstall(GetEventType, 0x5FEF80);
 }
 
 // 0x5FEF40

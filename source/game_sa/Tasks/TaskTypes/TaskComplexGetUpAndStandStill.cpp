@@ -14,6 +14,7 @@ void CTaskComplexGetUpAndStandStill::InjectHooks() {
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6782A0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x678240);
     RH_ScopedVMTInstall(ControlSubTask, 0x6782B0);
+    RH_ScopedVMTInstall(GetTaskType, 0x678150);
 }
 
 // 0x678130

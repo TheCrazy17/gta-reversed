@@ -18,6 +18,9 @@ void CEventKnockOffBike::InjectHooks()
     RH_ScopedInstall(SetPedOutCar, 0x4AFF60);
     RH_ScopedInstall(CalcForcesAndAnims, 0x4B0020);
     RH_ScopedInstall(SetPedSafePosition, 0x4B4AC0);
+    RH_ScopedVMTInstall(GetEventType, 0x4AFCB0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AFCE0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AFCC0);
 }
 
 CEventKnockOffBike::CEventKnockOffBike(CVehicle* vehicle, const CVector& moveSpeed, const CVector& collisionImpactVelocity, float damageIntensity, float a6, uint8 knockOffType, uint8 knockOffDirection, int32 time, CPed* ped, bool isVictimDriver, bool forceKnockOff)

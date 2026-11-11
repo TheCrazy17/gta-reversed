@@ -9,6 +9,9 @@ void CEventPotentialWalkIntoObject::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4AE5D0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B4950);
+    RH_ScopedVMTInstall(GetEventType, 0x4AE640);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AE660);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AE650);
 }
 
 // 0x4AE5D0

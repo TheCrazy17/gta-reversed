@@ -11,5 +11,6 @@ void CEventHighAngerAtPlayer::InjectHooks() {
     RH_ScopedVMTInstall(GetEventPriority, 0x5FF8F0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B0EC0);
     RH_ScopedVMTInstall(CloneEditable, 0x5FF6D0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5FF6C0);
 }
 

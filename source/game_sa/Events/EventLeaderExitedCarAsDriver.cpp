@@ -9,6 +9,9 @@ void CEventLeaderExitedCarAsDriver::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B8300);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4B0F80);
+    RH_ScopedVMTInstall(GetEventType, 0x4B8320);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B84D0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B8330);
 }
 
 // 0x4B8300

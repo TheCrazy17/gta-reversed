@@ -27,6 +27,7 @@ void CTaskGangHassleVehicle::InjectHooks() {
     RH_ScopedInstall(CreateNextSubTask, 0x65FC80);
     RH_ScopedInstall(CreateFirstSubTask, 0x664BA0);
     RH_ScopedInstall(ControlSubTask, 0x6637C0);
+    RH_ScopedVMTInstall(GetTaskType, 0x65FB50);
 }
 
 // 0x65FAC0

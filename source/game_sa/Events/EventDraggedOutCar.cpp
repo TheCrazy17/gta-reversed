@@ -11,6 +11,9 @@ void CEventDraggedOutCar::InjectHooks() {
     RH_ScopedVMTInstall(AffectsPed, 0x4AD3A0);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4AD3C0);
     RH_ScopedVMTInstall(CloneEditable, 0x4B6DC0);
+    RH_ScopedVMTInstall(GetEventType, 0x4AD2E0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AD320);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AD2F0);
 }
 
 

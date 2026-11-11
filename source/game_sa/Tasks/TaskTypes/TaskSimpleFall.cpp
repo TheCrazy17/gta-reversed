@@ -12,6 +12,7 @@ void CTaskSimpleFall::InjectHooks()
     RH_ScopedInstall(FinishFallAnimCB, 0x6786B0);
     RH_ScopedVMTInstall(ProcessPed, 0x67FAF0);
     RH_ScopedVMTInstall(MakeAbortable, 0x678370);
+    RH_ScopedVMTInstall(GetTaskType, 0x678300);
 }
 
 CTaskSimpleFall* CTaskSimpleFall::Constructor(AnimationId nAnimId, AssocGroupId nAnimGroup, int32 nDownTime)

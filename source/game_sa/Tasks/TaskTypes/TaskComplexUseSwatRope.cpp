@@ -19,6 +19,7 @@ void CTaskComplexUseSwatRope::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x65A3E0);
     RH_ScopedVMTInstall(ControlSubTask, 0x65A460);
     RH_ScopedVMTInstall(MakeAbortable, 0x659530);
+    RH_ScopedVMTInstall(GetTaskType, 0x659440);
 }
 
 CTaskComplexUseSwatRope* CTaskComplexUseSwatRope::Constructor(uint32 ropeId, CHeli* heli) {

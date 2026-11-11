@@ -9,6 +9,9 @@ void CEventFireNearby::InjectHooks() {
     RH_ScopedVMTInstall(AffectsPed, 0x4B1F90);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4B1FC0);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7A70);
+    RH_ScopedVMTInstall(GetEventType, 0x4B1F50);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B1F70);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B1F60);
 }
 
 

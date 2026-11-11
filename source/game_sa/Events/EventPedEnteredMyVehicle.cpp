@@ -9,6 +9,9 @@ void CEventPedEnteredMyVehicle::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4AEB90);
     RH_ScopedVMTInstall(AffectsPed, 0x4AEC00);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7170);
+    RH_ScopedVMTInstall(GetEventType, 0x4AEB40);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AEB80);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AEB50);
 }
 
 

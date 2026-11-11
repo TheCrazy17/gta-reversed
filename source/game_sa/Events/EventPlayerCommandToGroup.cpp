@@ -9,6 +9,7 @@ void CEventPlayerCommandToGroup::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B23D0);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4B24D0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B2440);
 }
 
 // 0x4B23D0

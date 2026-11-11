@@ -11,6 +11,7 @@ void CEventAcquaintancePed::InjectHooks()
     RH_ScopedVMTInstall(AffectsPed, 0x4AFA30);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4AF970);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4AF8F0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x420F00);
 }
 
 // 0x4AF820

@@ -12,6 +12,9 @@ void CEventDeadPed::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4ADF70);
     RH_ScopedVMTInstall(AffectsPed, 0x4B4830);
     RH_ScopedVMTInstall(CloneEditable, 0x4B6E70);
+    RH_ScopedVMTInstall(GetEventType, 0x4ADF20);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4ADF60);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4ADF30);
 }
 
 

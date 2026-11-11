@@ -8,6 +8,9 @@ void CEventNewGangMember::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x608F70);
+    RH_ScopedVMTInstall(GetEventType, 0x608FD0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x609310);
+    RH_ScopedVMTInstall(GetLifeTime, 0x608FE0);
 }
 
 // 0x608F70

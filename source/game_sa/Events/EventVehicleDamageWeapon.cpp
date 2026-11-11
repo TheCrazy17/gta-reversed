@@ -9,6 +9,7 @@ void CEventVehicleDamageWeapon::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x61C2E0);
     RH_ScopedVMTInstall(CloneEditable, 0x61C330);
+    RH_ScopedVMTInstall(GetEventType, 0x61C320);
 }
 
 // 0x61C2E0

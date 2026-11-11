@@ -13,6 +13,7 @@ void CEventPotentialGetRunOver::InjectHooks() {
     RH_ScopedVMTInstall(GetLocalSoundLevel, 0x4AE250);
     RH_ScopedVMTInstall(AffectsPed, 0x4AE2D0);
     RH_ScopedVMTInstall(CloneEditable, 0x4B6F40);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AE220);
 }
 
 

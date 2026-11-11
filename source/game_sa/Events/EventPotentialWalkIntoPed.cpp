@@ -11,6 +11,9 @@ void CEventPotentialWalkIntoPed::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4AE6E0);
     RH_ScopedVMTInstall(AffectsPed, 0x4AE800);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4AE950);
+    RH_ScopedVMTInstall(GetEventType, 0x4AE760);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AE790);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AE770);
 }
 
 // 0x4AE6E0

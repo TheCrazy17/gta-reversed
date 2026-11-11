@@ -10,6 +10,7 @@ void CTaskSimpleStandStill::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x62F310);
     RH_ScopedVMTInstall(MakeAbortable, 0x4B8690);
     RH_ScopedVMTInstall(ProcessPed, 0x62F370);
+    RH_ScopedVMTInstall(GetTaskType, 0x62F350);
 }
 
 // 0x62F310

@@ -11,6 +11,9 @@ void CEventGroupEvent::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x4B6EE0);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4AE0E0);
     RH_ScopedInstall(BaseEventTakesPriorityOverBaseEvent, 0x4AE100);
+    RH_ScopedVMTInstall(GetEventType, 0x4AE030);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AE060);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AE040);
 }
 
 

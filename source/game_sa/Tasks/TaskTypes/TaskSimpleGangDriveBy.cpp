@@ -20,6 +20,7 @@ void CTaskSimpleGangDriveBy::InjectHooks() {
     RH_ScopedInstall(FinishGangDriveByAnimCB, 0x621BE0);
     RH_ScopedVMTInstall(Clone, 0x6236D0);
     RH_ScopedVMTInstall(MakeAbortable, 0x62D290);
+    RH_ScopedVMTInstall(GetTaskType, 0x6218B0);
 }
 
 // 0x6217D0

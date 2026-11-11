@@ -11,5 +11,6 @@ void CEventHealthReallyLow::InjectHooks() {
     RH_ScopedVMTInstall(GetEventPriority, 0x5FF8E0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B0E80);
     RH_ScopedVMTInstall(CloneEditable, 0x5FF550);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5FF540);
 }
 

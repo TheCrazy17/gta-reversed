@@ -14,6 +14,9 @@ void CEventGunAimedAt::InjectHooks() {
     RH_ScopedVMTInstall(ReportCriminalEvent, 0x4B09E0);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4B0810);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7630);
+    RH_ScopedVMTInstall(GetEventType, 0x4B0770);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B07A0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B0780);
 }
 
 

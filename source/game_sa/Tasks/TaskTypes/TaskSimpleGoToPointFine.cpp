@@ -14,6 +14,7 @@ void CTaskSimpleGoToPointFine::InjectHooks() {
     RH_ScopedInstall(Finish, 0x65EF00);
     RH_ScopedInstall(SetTargetPos, 0x65F330);
     RH_ScopedInstall(BaseRatio, 0x65EF30);
+    RH_ScopedVMTInstall(GetTaskType, 0x65EEE0);
 }
 
 // 0x65EEB0

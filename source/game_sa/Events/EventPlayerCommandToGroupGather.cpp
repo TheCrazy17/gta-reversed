@@ -8,6 +8,8 @@ void CEventPlayerCommandToGroupGather::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor, 0x609250);
+    RH_ScopedVMTInstall(GetEventType, 0x609270);
+    RH_ScopedVMTInstall(GetEventPriority, 0x609330);
 }
 
 // 0x609250

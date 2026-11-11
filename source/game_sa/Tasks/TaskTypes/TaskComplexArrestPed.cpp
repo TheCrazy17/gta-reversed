@@ -27,6 +27,7 @@ void CTaskComplexArrestPed::InjectHooks() {
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x6907A0);
     RH_ScopedVMTInstall(ControlSubTask, 0x68D350);
     RH_ScopedInstall(CreateSubTask, 0x68CF80);
+    RH_ScopedVMTInstall(GetTaskType, 0x68B9F0);
 }
 
 // 0x68B990

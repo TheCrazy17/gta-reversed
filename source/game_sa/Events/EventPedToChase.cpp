@@ -9,6 +9,9 @@ void CEventPedToChase::InjectHooks() {
     RH_ScopedInstall(Constructor, 0x4AF130);
     RH_ScopedInstall(Destructor, 0x4AF1C0);
     RH_ScopedVMTInstall(Clone, 0x4B7360);
+    RH_ScopedVMTInstall(GetEventType, 0x4AF190);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AF1B0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AF1A0);
 }
 
 

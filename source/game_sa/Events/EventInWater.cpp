@@ -9,6 +9,9 @@ void CEventInWater::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x4B7810);
     RH_ScopedVMTInstall(AffectsPed, 0x4B13D0);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4B1420);
+    RH_ScopedVMTInstall(GetEventType, 0x4B1390);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B13B0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B13A0);
 }
 
 

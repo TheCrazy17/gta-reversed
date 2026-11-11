@@ -9,6 +9,9 @@ void CEventSexyVehicle::InjectHooks() {
     RH_ScopedInstall(Destructor, 0x4AF0A0);
     RH_ScopedVMTInstall(Clone, 0x4B72F0);
     RH_ScopedVMTInstall(AffectsPed, 0x4AF100);
+    RH_ScopedVMTInstall(GetEventType, 0x4AF070);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AF090);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AF080);
 }
 
 

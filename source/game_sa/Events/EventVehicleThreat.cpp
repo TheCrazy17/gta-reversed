@@ -11,6 +11,7 @@ void CEventVehicleThreat::InjectHooks() {
     RH_ScopedVMTInstall(GetEventPriority, 0x4AFBE0);
     RH_ScopedVMTInstall(AffectsPed, 0x4AFC50);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7520);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AFBD0);
 }
 
 

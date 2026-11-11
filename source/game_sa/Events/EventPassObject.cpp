@@ -8,6 +8,9 @@ void CEventPassObject::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x65DC70);
     RH_ScopedVMTInstall(IsValid, 0x4B1700);
+    RH_ScopedVMTInstall(GetEventType, 0x65DD50);
+    RH_ScopedVMTInstall(GetEventPriority, 0x65DE20);
+    RH_ScopedVMTInstall(GetLifeTime, 0x65DD60);
 }
 
 // 0x65DC70

@@ -11,6 +11,7 @@ void CTaskSimpleLand::InjectHooks() {
     RH_ScopedInstall(FinishAnimCB, 0x678FA0);
     RH_ScopedVMTInstall(MakeAbortable, 0x678F40);
     RH_ScopedVMTInstall(ProcessPed, 0x67D380);
+    RH_ScopedVMTInstall(GetTaskType, 0x678ED0);
 }
 
 CTaskSimpleLand* CTaskSimpleLand::Constructor(AnimationId nAnimId) {

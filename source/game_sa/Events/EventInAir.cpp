@@ -9,6 +9,9 @@ void CEventInAir::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B0CB0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B0C00);
+    RH_ScopedVMTInstall(GetEventType, 0x4B0CD0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B0CF0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B0CE0);
 }
 
 // 0x4B0CB0

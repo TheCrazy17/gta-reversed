@@ -10,6 +10,9 @@ void CEventVehicleDied::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4B0D10);
     RH_ScopedVMTInstall(Clone, 0x4B76D0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B0E00);
+    RH_ScopedVMTInstall(GetEventType, 0x4B0D70);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B0D90);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B0D80);
 }
 
 CEventVehicleDied::CEventVehicleDied (CVehicle* vehicle)

@@ -8,6 +8,9 @@ void CEventLeanOnVehicle::InjectHooks() {
 
     RH_ScopedInstall(Constructor, 0x65DAF0);
     RH_ScopedVMTInstall(IsValid, 0x4B16C0);
+    RH_ScopedVMTInstall(GetEventType, 0x65DB50);
+    RH_ScopedVMTInstall(GetEventPriority, 0x65DE10);
+    RH_ScopedVMTInstall(GetLifeTime, 0x65DB60);
 }
 
 // 0x65DAF0

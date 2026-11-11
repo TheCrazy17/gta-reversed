@@ -16,6 +16,7 @@ void CTaskSimpleJump::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x67C510);
     RH_ScopedVMTInstall(MakeAbortable, 0x679B60);
     RH_ScopedVMTInstall(ProcessPed, 0x680C60);
+    RH_ScopedVMTInstall(GetTaskType, 0x679AE0);
 }
 
 CTaskSimpleJump* CTaskSimpleJump::Constructor(bool bCanClimb) {

@@ -10,6 +10,9 @@ void CEventVehicleHitAndRun::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4AE990);
     RH_ScopedVMTInstall(Clone, 0x4B7100);
     RH_ScopedVMTInstall(ReportCriminalEvent, 0x4B27D0);
+    RH_ScopedVMTInstall(GetEventType, 0x4AEA00);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AEA40);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AEA10);
 }
 
 CEventVehicleHitAndRun::CEventVehicleHitAndRun(CPed* victim, CVehicle* vehicle)

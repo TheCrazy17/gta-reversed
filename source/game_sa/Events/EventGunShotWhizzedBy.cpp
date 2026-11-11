@@ -9,6 +9,9 @@ void CEventGunShotWhizzedBy::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x4B1FD0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B5120);
+    RH_ScopedVMTInstall(GetEventType, 0x4B2030);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B2060);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B2040);
 }
 
 // 0x4B1FD0

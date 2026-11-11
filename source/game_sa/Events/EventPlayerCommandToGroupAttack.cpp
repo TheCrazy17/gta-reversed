@@ -8,6 +8,8 @@ void CEventPlayerCommandToGroupAttack::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x5F6340);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4B2530);
+    RH_ScopedVMTInstall(GetEventType, 0x5F6360);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5F6400);
 }
 
 // 0x5F6340

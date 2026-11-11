@@ -13,6 +13,9 @@ void CEventAttractor::InjectHooks()
     RH_ScopedVMTInstall(AffectsPed, 0x4AF4B0);
     RH_ScopedVMTInstall(CloneEditable, 0x4B7440);
     RH_ScopedInstall(IsEffectActive, 0x4AF460);
+    RH_ScopedVMTInstall(GetEventType, 0x4AF3D0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4AF3F0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4AF3E0);
 }
 
 CEventAttractor::CEventAttractor(C2dEffectPedAttractor* effect, CEntity* entity, bool bAvoidLookingAtAttractor, eTaskType taskType) :

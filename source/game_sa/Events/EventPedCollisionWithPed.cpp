@@ -11,6 +11,9 @@ void CEventPedCollisionWithPed::InjectHooks()
     RH_ScopedInstall(Constructor, 0x4AC990);
     RH_ScopedVMTInstall(TakesPriorityOver, 0x4ACAD0);
     RH_ScopedVMTInstall(AffectsPed, 0x4ACB10);
+    RH_ScopedVMTInstall(GetEventType, 0x4ACA40);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4ACA60);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4ACA50);
 }
 
 // 0x4AC990

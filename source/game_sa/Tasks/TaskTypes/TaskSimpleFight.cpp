@@ -254,6 +254,7 @@ void CTaskSimpleFight::InjectHooks() {
     RH_ScopedInstall(LoadMeleeData, 0x5BEDC0);
     RH_ScopedInstall(GetHitLevel, 0x5BD360);
     RH_ScopedInstall(GetHitSound, 0x5BD3B0);
+    RH_ScopedVMTInstall(GetTaskType, 0x61C520);
 }
 
 CTaskSimpleFight* CTaskSimpleFight::Constructor(CEntity* entity, int32 nCommand, uint32 nIdlePeriod) {

@@ -18,6 +18,7 @@ void CTaskSimpleCarSetPedInAsDriver::InjectHooks() {
     RH_ScopedCategory("Tasks/TaskTypes");
 
     RH_ScopedVMTInstall(ProcessPed, 0x64B950);
+    RH_ScopedVMTInstall(GetTaskType, 0x647150);
 }
 
 // 0x6470E0

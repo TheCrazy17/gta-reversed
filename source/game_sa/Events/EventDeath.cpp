@@ -9,6 +9,9 @@ void CEventDeath::InjectHooks() {
     RH_ScopedInstall(Constructor0, 0x4ADDF0);
     RH_ScopedInstall(Constructor1, 0x4ADE50);
     RH_ScopedVMTInstall(Clone, 0x4B6E30);
+    RH_ScopedVMTInstall(GetEventType, 0x4ADE20);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4ADE40);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4ADE30);
 }
 
 

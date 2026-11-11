@@ -10,6 +10,7 @@ void CTaskSimplePause::InjectHooks() {
     RH_ScopedVMTInstall(ProcessPed, 0x48E830);
     RH_ScopedVMTInstall(Clone, 0x48E780);
     RH_ScopedVMTInstall(MakeAbortable, 0x48E810);
+    RH_ScopedVMTInstall(GetTaskType, 0x48E800);
 }
 
 // 0x48E750

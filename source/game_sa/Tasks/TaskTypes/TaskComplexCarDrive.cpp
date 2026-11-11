@@ -26,6 +26,7 @@ void CTaskComplexCarDrive::InjectHooks() {
     RH_ScopedVMTInstall(CreateNextSubTask, 0x644E20);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x645100);
     RH_ScopedVMTInstall(ControlSubTask, 0x645240);
+    RH_ScopedVMTInstall(GetTaskType, 0x63C9C0);
 }
 
 // 0x63C9D0

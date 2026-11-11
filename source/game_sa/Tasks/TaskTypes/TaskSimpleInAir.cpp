@@ -14,6 +14,7 @@ void CTaskSimpleInAir::InjectHooks()
     RH_ScopedInstall(DeleteAnimCB, 0x678E60);
     RH_ScopedVMTInstall(ProcessPed, 0x680600);
     RH_ScopedVMTInstall(MakeAbortable, 0x678DC0);
+    RH_ScopedVMTInstall(GetTaskType, 0x678D40);
 }
 
 CTaskSimpleInAir* CTaskSimpleInAir::Constructor(bool bUsingJumpGlide, bool bUsingFallGlide, bool bUsingClimbJump)

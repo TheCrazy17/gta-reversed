@@ -11,6 +11,7 @@ void CEventCreatePartnerTask::InjectHooks() {
     RH_ScopedVMTInstall(GetEventPriority, 0x5F6410);
     RH_ScopedVMTInstall(Clone, 0x5F6280);
     RH_ScopedVMTInstall(AffectsPed, 0x5F62F0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5F6270);
 }
 
 

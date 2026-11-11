@@ -9,6 +9,8 @@ void CEventAcquaintancePedHateBadlyLit::InjectHooks()
 
     RH_ScopedInstall(Constructor, 0x5FF250);
     RH_ScopedVMTInstall(AffectsPed, 0x4AFA90);
+    RH_ScopedVMTInstall(GetEventType, 0x5FF2D0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5FF8A0);
 }
 
 // 0x5FF250

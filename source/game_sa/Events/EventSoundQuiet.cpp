@@ -10,6 +10,9 @@ void CEventSoundQuiet::InjectHooks()
     RH_ScopedInstall(Constructor, 0x5E05B0);
     RH_ScopedVMTInstall(AffectsPed, 0x4B5240);
     RH_ScopedVMTInstall(CloneEditable, 0x5E0670);
+    RH_ScopedVMTInstall(GetEventType, 0x5DEA60);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5DEAD0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5DEA70);
 }
 
 // 0x5E05B0

@@ -18,6 +18,7 @@ void CTaskComplexGoToAttractor::InjectHooks() {
     RH_ScopedVMTInstall(Clone, 0x66D130);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x66B6C0);
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x670420);
+    RH_ScopedVMTInstall(GetTaskType, 0x66B690);
 }
 
 // 0x66B640

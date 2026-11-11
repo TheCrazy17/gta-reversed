@@ -6,6 +6,7 @@ void CTaskSimpleCarDriveTimed::InjectHooks() {
     RH_ScopedVirtualClass(CTaskSimpleCarDriveTimed, 0x859E50, 9);
     RH_ScopedCategory("Tasks/TaskTypes");
     RH_ScopedVMTInstall(ProcessPed, 0x46F610);
+    RH_ScopedVMTInstall(GetTaskType, 0x46F600);
 }
 
 CTaskSimpleCarDriveTimed* CTaskSimpleCarDriveTimed::Constructor(CVehicle* vehicle, int32 nTime) {

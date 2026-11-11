@@ -10,6 +10,9 @@ void CEventDanger::InjectHooks() {
     RH_ScopedVMTInstall(AffectsPed, 0x4B5470);
     RH_ScopedVMTInstall(AffectsPedGroup, 0x4B54E0);
     RH_ScopedVMTInstall(GetSourceEntity, 0x4B2700);
+    RH_ScopedVMTInstall(GetEventType, 0x4B2670);
+    RH_ScopedVMTInstall(GetEventPriority, 0x4B2690);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B2680);
 }
 
 CEventDanger* CEventDanger::Constructor(CEntity* dangerFrom, float dangerRadius) { this->CEventDanger::CEventDanger(dangerFrom, dangerRadius); return this; }

@@ -6,6 +6,9 @@ void CEventOnFire::InjectHooks() {
     RH_ScopedVirtualClass(CEventOnFire, 0x86CCC0, 16);
     RH_ScopedCategory("Events");
     RH_ScopedVMTInstall(AffectsPed, 0x4B1050);
+    RH_ScopedVMTInstall(GetEventType, 0x5FF770);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5FF890);
+    RH_ScopedVMTInstall(GetLifeTime, 0x5FF780);
 }
 
 // 0x4B1050

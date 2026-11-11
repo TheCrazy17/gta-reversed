@@ -10,6 +10,7 @@ void CTaskSimpleHitHead::InjectHooks() {
     RH_ScopedInstall(FinishAnimCB, 0x653150);
     RH_ScopedVMTInstall(MakeAbortable, 0x6530F0);
     RH_ScopedVMTInstall(ProcessPed, 0x657A10);
+    RH_ScopedVMTInstall(GetTaskType, 0x653080);
 }
 CTaskSimpleHitHead* CTaskSimpleHitHead::Constructor() { this->CTaskSimpleHitHead::CTaskSimpleHitHead(); return this; }
 

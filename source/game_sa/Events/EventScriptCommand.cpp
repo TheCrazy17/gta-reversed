@@ -17,6 +17,7 @@ void CEventScriptCommand::InjectHooks()
     RH_ScopedInstall(TakesPriorityOver, 0x4B0BA0);
     RH_ScopedInstall(IsValid, 0x4B0AB0);
     RH_ScopedInstall(CloneScriptTask, 0x4B0AA0);
+    RH_ScopedVMTInstall(GetLifeTime, 0x4B0A40);
 }
 
 // 0x4B0A00

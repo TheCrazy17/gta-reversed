@@ -8,6 +8,8 @@ void CEventSeenCop::InjectHooks()
     RH_ScopedCategory("Events");
 
     RH_ScopedInstall(Constructor1, 0x5FF380);
+    RH_ScopedVMTInstall(GetEventType, 0x5FF3B0);
+    RH_ScopedVMTInstall(GetEventPriority, 0x5FF880);
 }
 
 // 0x5FF380

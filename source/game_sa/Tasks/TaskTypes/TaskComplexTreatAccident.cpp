@@ -18,6 +18,7 @@ void CTaskComplexTreatAccident::InjectHooks()
     RH_ScopedVMTInstall(CreateFirstSubTask, 0x65A8F0);
     RH_ScopedVMTInstall(CreateNextSubTask, 0x65A830);
     RH_ScopedVMTInstall(ControlSubTask, 0x658B90);
+    RH_ScopedVMTInstall(GetTaskType, 0x658AD0);
 }
 
 // 0x658AB0
