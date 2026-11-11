@@ -1017,10 +1017,10 @@ int32 CBike::ProcessEntityCollision(CEntity* entity, CColPoint* outColPoints) {
     if (m_pDriver && m_nTestPedCollision) {
         const auto pcd = m_pDriver->GetColData();
         if (!pcd->m_nNumLines) {
-            std::array<CColPoint, 32> pedCPs{};
-
+            // The exe offsets the copied matrix with a rotation only multiply (0x59C790) of the seat dummy; TransformPoint would add the
+            // bike position a second time and put the driver's colmodel at twice the world coordinates, where it never touches anything
             CMatrix driverMat = GetMatrix();
-            driverMat.GetPosition() += GetDriverSeatDummyPositionWS();
+            driverMat.GetPosition() += GetMatrix().TransformVector(GetDriverSeatDummyPositionOS());
 
             std::array<CColPoint, 32> pedEntityColPts{};
             const auto numPedEntityColPts = CCollision::ProcessColModels(
@@ -1036,8 +1036,9 @@ int32 CBike::ProcessEntityCollision(CEntity* entity, CColPoint* outColPoints) {
                 if (m_nTestPedCollision == 1) {
                     m_nTestPedCollision = 0;
                 } else {
-                    for (auto i = 0; i < numPedEntityColPts && numColPts < 32; i++) {
-                        const auto& pedEntityCP = pedCPs[i];
+                    // The exe stops appending at 31 points and reads the points ProcessColModels just produced for the driver
+                    for (auto i = 0; i < numPedEntityColPts && numColPts < 31; i++) {
+                        const auto& pedEntityCP = pedEntityColPts[i];
                         if (pedEntityCP.m_nPieceTypeA == PED_COL_SPHERE_LEG) {
                             continue;
                         }
@@ -1286,8 +1287,8 @@ void CBike::ProcessControl() {
                 m_RideAnimData.BarSteerAngle += ts * 0.017453292f;
             }
 
-            // The bike leans on the stand, the lean follows the way it sits
-            const auto smoothing = (float)std::pow(0.97, (double)ts);
+            // The bike leans on the stand, the lean follows the way it sits; the exe keeps the decay bases as floats widened to double
+            const auto smoothing = (float)std::pow((double)0.97f, (double)ts);
             const auto sideness  = std::clamp(GetRight().z, -1.0f, 1.0f);
             const auto lean      = smoothing * m_RideAnimData.DesiredLeanAngle - (std::asin(sideness) + 0.2617994f) * (1.0f - smoothing);
             m_RideAnimData.DesiredLeanAngle = lean;
@@ -1503,7 +1504,7 @@ void CBike::ProcessControl() {
                 m_RideAnimData.BarSteerAngle += ts * 0.02617994f;
             }
         } else if (std::abs(m_vecMoveSpeed.x) < 0.01f && std::abs(m_vecMoveSpeed.y) < 0.01f && m_fSteerAngle == 0.0f) {
-            m_RideAnimData.BarSteerAngle = (float)std::pow(0.96, (double)ts) * m_RideAnimData.BarSteerAngle;
+            m_RideAnimData.BarSteerAngle = (float)std::pow((double)0.96f, (double)ts) * m_RideAnimData.BarSteerAngle;
         } else {
             auto steerShare = 1.0f;
             if (speedForward > 0.01f && (m_WheelCounts[0] > 0.0f || m_WheelCounts[1] > 0.0f) && GetStatus() == STATUS_PLAYER) {
@@ -1729,10 +1730,10 @@ void CBike::ProcessControl() {
             const auto smoothing = std::pow(m_BikeHandling->m_fDesLean, ts);
             lean = (std::asin(roll) - animLean) * (1.0f - smoothing) + smoothing * m_RideAnimData.DesiredLeanAngle;
         } else if (bikeFlags.bOnSideStand) {
-            const auto smoothing = (float)std::pow(0.97, (double)ts);
+            const auto smoothing = (float)std::pow((double)0.97f, (double)ts);
             lean = smoothing * m_RideAnimData.DesiredLeanAngle - (std::asin(GetRight().z) + animLean + 0.2617994f) * (1.0f - smoothing);
         } else {
-            lean = (float)std::pow(0.95, (double)ts) * m_RideAnimData.DesiredLeanAngle;
+            lean = (float)std::pow((double)0.95f, (double)ts) * m_RideAnimData.DesiredLeanAngle;
         }
         m_RideAnimData.DesiredLeanAngle = lean;
         m_RideAnimData.LeanAngle        = lean;
