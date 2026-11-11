@@ -74,6 +74,11 @@ CInterestingEvents* CInterestingEvents::Constructor() {
 
 // 0x856880
 CInterestingEvents::~CInterestingEvents() {
+    // This runs at exit, after CGame::Shutdown released the entity pools. The entities the events point at are gone, and
+    // reading their reference lists faulted on exit; the exe only gets away with it while the freed memory stays mapped
+    if (!GetPedPool()) {
+        return;
+    }
     for (auto& event : m_Events) {
         CEntity::ClearReference(event.entity);
     }
