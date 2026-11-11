@@ -45,8 +45,11 @@ public:
         } bikeFlags;
         uint8 nBikeFlags;
     };
-    CVector m_vecAveGroundNormal;
-    CVector m_vecGroundRight;
+    // The exe's constructor leaves these two alone and relies on zeroed pool memory. The held-up code at the end of ProcessControl
+    // (side stand) reads the ground normal in the first frame of a parked bike, before the wheels have probed the ground; a pool
+    // slot filled with 0xCDCDCDCD made that torque the maximum, proportional to the time step, so a long first frame flipped the bike
+    CVector m_vecAveGroundNormal{};
+    CVector m_vecGroundRight{};
     CVector m_vecOldSpeedForPlayback;
     tBikeHandlingData* m_BikeHandling;
     CRideAnimData m_RideAnimData;
