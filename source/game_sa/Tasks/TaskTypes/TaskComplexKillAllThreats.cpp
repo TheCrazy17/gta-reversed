@@ -34,17 +34,10 @@ CPed* CTaskComplexKillAllThreats::FindNextThreat(CPed* ped) {
     // The exe keeps the found ped and a zeroed scanner on its stack and hands both to the scan at 0x607A90, a method of the scanner.
     // The scan looks at the 16 peds around the ped, from the strongest acquaintance type (4) down, and stores the ped it settles on
     CPed*                   found{};
+    int32                   foundType{}; // The exe reuses the slot of its own parameter for this, nothing reads it
     CPedAcquaintanceScanner scanner{};
-    CPed* const             pedArg = ped; // The scan wants the address of a CPed*, the exe passes the address of its own copy of the parameter
-    plugin::CallMethod<0x607A90, CPedAcquaintanceScanner*, CPed*, int32, CEntity**, int32, CPed**, CPed* const*>(
-        &scanner,
-        ped,
-        4,
-        ped->GetIntelligence()->GetPedEntities(),
-        16,
-        &found,
-        &pedArg
-    );
+    scanner.SetOnlyScriptPedAllowed();   // The exe sets the byte at +0xC of the scanner to 1 and keeps the other two flags zero
+    scanner.ScanForAcquaintances(ped, 4, ped->GetIntelligence()->GetPedEntities(), 16, &found, &foundType);
     return found;
 }
 

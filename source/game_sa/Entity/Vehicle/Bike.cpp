@@ -927,10 +927,10 @@ void CBike::ProcessControlInputs(uint8 playerNum) {
             }
         }
     } else {
-        // Nearly stationary: both pedals fully pressed at once triggers a burnout/wheelie-prep hold
-        // (NOTSA: `this+0x594 != 10` gates this too - exact field/meaning not identified this
-        // session, kept as a raw offset check).
-        if (pad->GetAccelerate() > 150 && pad->GetBrake() > 150 && *(int*)((char*)this + 0x594) != 10) {
+        // Nearly stationary: both pedals fully pressed at once triggers a burnout/wheelie-prep hold, never on a BMX
+        // The exe compares the int at +0x594 with 10; that is the sub type of the vehicle and 10 is VEHICLE_TYPE_BMX
+        static_assert(offsetof(CVehicle, m_nVehicleSubType) == 0x594);
+        if (pad->GetAccelerate() > 150 && pad->GetBrake() > 150 && !IsSubBMX()) {
             m_GasPedal   = (float)pad->GetAccelerate() / 255.0f;
             m_nBrakesOn  = true;
             m_BrakePedal = (float)pad->GetBrake() / 255.0f;

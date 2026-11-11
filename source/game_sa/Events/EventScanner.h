@@ -20,6 +20,14 @@ public:
     bool m_bScanAllowedInVehicle;
     bool m_bScanAllowedScriptedTask;
 
+    static void InjectHooks();
+
+    bool IsScanAllowed(CPed* ped);
+    void ScanForPedAcquaintanceEvents(CPed* ped, CEntity** entities, int32 count);
+
+    //! Not reversed yet; fills `outPed` with the ped it settles on and `outType` with the acquaintance type that matched
+    void ScanForAcquaintances(CPed* ped, int32 acquaintanceType, CEntity** entities, int32 numEntities, CPed** outPed, int32* outType);
+
     void SetOnlyScriptPedAllowed() {
         m_bScanAllowedScriptPed    = true;
         m_bScanAllowedInVehicle    = false;
@@ -42,16 +50,27 @@ public:
 class CObjectPotentialCollisionScanner {
 public:
     CTaskTimer m_timer;
+
+    //! Not reversed yet
+    void ScanForObjectPotentialCollisionEvents(CPed& ped);
 };
 
 class CSexyPedScanner {
 public:
     CTaskTimer m_timer;
+
+    static void InjectHooks();
+
+    void ScanForSexyPedEvents(CPed* ped, CEntity** entities, int32 count);
 };
 
 class CNearbyFireScanner {
 public:
     CTaskTimer m_timer;
+
+    static void InjectHooks();
+
+    void ScanForNearbyFireEvents(CPed* ped);
 };
 
 VALIDATE_SIZE(CPedAcquaintanceScanner, 0x10);
@@ -73,6 +92,8 @@ public:
     static inline auto& m_sDeadPedWalkingTimer = StaticRef<uint32>(0xC0B038);
 
 public:
+    static void InjectHooks();
+
     CEventScanner();
     ~CEventScanner() = default;
 
@@ -83,6 +104,10 @@ public:
     auto& GetAcquaintanceScanner() {
         return m_pedAcquaintanceScanner;
     }
+
+private:
+    //! Not reversed yet; the exe ignores the `this` it is called with
+    static void ScanForPedPotentialCollisionEvents(CPed& ped, CPed* closestPed);
 };
 
 VALIDATE_SIZE(CEventScanner, 0xD4);

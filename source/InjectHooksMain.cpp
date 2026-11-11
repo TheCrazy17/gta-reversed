@@ -731,6 +731,10 @@ void InjectHooksMain() {
     CPlayerRelationshipRecorder::InjectHooks();
     CEventSource::InjectHooks();
     CAttractorScanner::InjectHooks();
+    CEventScanner::InjectHooks();
+    CPedAcquaintanceScanner::InjectHooks();
+    CSexyPedScanner::InjectHooks();
+    CNearbyFireScanner::InjectHooks();
     CTaskSimpleGangDriveBy::InjectHooks();
     CPedSaveStructure::InjectHooks();
 

@@ -9,6 +9,11 @@ void CAttractorScanner::InjectHooks() {
     RH_ScopedInstall(Clear, 0x5FFF90);
 }
 
+// 0x6060A0
+void CAttractorScanner::ScanForAttractors(CPed& ped) {
+    plugin::CallMethod<0x6060A0, CAttractorScanner*, CPed&>(this, ped);
+}
+
 // 0x5FFF90
 void CAttractorScanner::Clear() {
     for (auto i = 0u; i < std::size(field_18); i++) {

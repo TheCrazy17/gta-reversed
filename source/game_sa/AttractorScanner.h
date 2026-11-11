@@ -9,6 +9,7 @@
 #include "TaskTimer.h"
 
 struct C2dEffect;
+class CPed;
 
 class CAttractorScanner {
 public:
@@ -24,6 +25,9 @@ public:
     static void InjectHooks();
 
     void Clear();
+
+    //! Not reversed yet
+    void ScanForAttractors(CPed& ped);
 };
 
 VALIDATE_SIZE(CAttractorScanner, 0x90);
